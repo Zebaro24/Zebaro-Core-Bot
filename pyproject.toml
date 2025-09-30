@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "zebaro-core-bot"
+version = "0.1.0"
+description = ""
+authors = ["Zebaro <denok100100@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.13"
+aiogram = "^3.22.0"
+discord-py = "^2.6.3"
+pydantic-settings = "^2.11.0"
+docker = "^7.1.0"
+
+[tool.poetry.group.dev.dependencies]

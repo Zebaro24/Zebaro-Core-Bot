@@ -1,0 +1,12 @@
+services:
+  zebaro-core-bot:
+    build: .
+    image: ghcr.io/zebaro24/zebaro-core-bot:latest
+    container_name: zebaro-core-bot
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN
+      - TELEGRAM_ADMIN_ID
+      - DISCORD_BOT_TOKEN
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

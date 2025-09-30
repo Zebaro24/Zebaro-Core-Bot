@@ -1,0 +1,19 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.env
+.venv/
+
+# IDE and editors
+.vscode/
+.idea/
+
+# Logs and temporary files
+*.log
+*.sqlite3
+*.db
