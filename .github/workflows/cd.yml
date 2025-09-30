@@ -1,0 +1,92 @@
+name: CD
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # Set version from tag
+      - name: Set version
+        id: set-version
+        run: |
+          VERSION=${GITHUB_REF##*/}
+          VERSION=${VERSION#v}
+          echo "VERSION=$VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      # Set repository name in lowercase
+      - name: Set repository name
+        id: set-repo-name
+        run: |
+          REPO_NAME=$(basename "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          OWNER_NAME=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "REPO_NAME=$REPO_NAME" >> $GITHUB_ENV
+          echo "OWNER_NAME=$OWNER_NAME" >> $GITHUB_ENV
+
+      # Log in to GitHub Container Registry
+      - name: Log in to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build and push Docker image
+      - name: Build and push Docker image
+        run: |
+          docker build -f Dockerfile \
+            -t ghcr.io/$OWNER_NAME/$REPO_NAME:${VERSION} .
+          docker push ghcr.io/$OWNER_NAME/$REPO_NAME:${VERSION}
+
+          docker tag ghcr.io/$OWNER_NAME/$REPO_NAME:${VERSION} \
+                     ghcr.io/$OWNER_NAME/$REPO_NAME:latest
+          docker push ghcr.io/$OWNER_NAME/$REPO_NAME:latest
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment:
+      name: prod
+    steps:
+      - name: Checkout only docker-compose.yml
+        uses: actions/checkout@v3
+        with:
+          sparse-checkout: docker-compose.yml
+          fetch-depth: 1
+      - name: Copy docker-compose
+        uses: appleboy/scp-action@v0.1.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: |
+            docker-compose.yml
+          target: /srv/zebaro-core/
+
+      - name: Deploy containers via docker-compose
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /srv/zebaro-core
+            docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+            
+            export TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+            export TELEGRAM_ADMIN_ID=${{ secrets.TELEGRAM_ADMIN_ID }}
+            export DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }}
+            
+            docker compose -p zebaro-core up -d --pull always
+            docker image prune -f
