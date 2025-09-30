@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,11 +11,18 @@ class Settings(BaseSettings):
     debug: bool = False
 
     telegram_admin_id: int | None = None
+    telegram_docker_access_ids: list[int] | None = None
 
     telegram_bot_token: str | None = None
     discord_bot_token: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+    @field_validator("telegram_docker_access_ids", mode="before")
+    def split_admin_ids(cls, v): # noqa
+        if isinstance(v, str):
+            return [int(i) for i in v.split(",") if i]
+        return v
 
 
 settings = Settings()

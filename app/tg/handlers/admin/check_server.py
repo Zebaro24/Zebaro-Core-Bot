@@ -4,11 +4,9 @@ from aiogram.filters import Command
 
 from app.services.docker_service.manager import DockerManager
 from app.tg.keyboards.docker import get_docker_manager_kb
-from app.tg.middlewares.admin_middleware import AdminMiddleware
 from app.tg.middlewares.docker_middleware import docker_middleware
 
 router = Router()
-router.message.middleware(AdminMiddleware())
 router.message.middleware(docker_middleware)
 
 

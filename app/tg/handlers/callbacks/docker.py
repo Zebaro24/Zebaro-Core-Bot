@@ -11,7 +11,6 @@ from app.tg.middlewares.docker_middleware import docker_middleware
 
 router = Router()
 router.callback_query.middleware(docker_middleware)
-router.callback_query.middleware(AdminMiddleware())
 
 
 @router.callback_query(DockerManagerCallback.filter())

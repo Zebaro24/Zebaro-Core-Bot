@@ -87,6 +87,7 @@ jobs:
             export TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
             export TELEGRAM_ADMIN_ID=${{ secrets.TELEGRAM_ADMIN_ID }}
             export DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }}
+            export TELEGRAM_DOCKER_ACCESS_IDS=${{ secrets.TELEGRAM_DOCKER_ACCESS_IDS }}
             
             docker compose -p zebaro-core up -d --pull always
             docker image prune -f

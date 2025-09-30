@@ -7,6 +7,7 @@ services:
     environment:
       - TELEGRAM_BOT_TOKEN
       - TELEGRAM_ADMIN_ID
+      - TELEGRAM_DOCKER_ACCESS_IDS
       - DISCORD_BOT_TOKEN
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

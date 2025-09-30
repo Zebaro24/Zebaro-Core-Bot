@@ -21,6 +21,6 @@ async def start_command(message: Message):
     )
     await message.answer(text)
 
-    if settings.telegram_admin_id == message.chat.id:
+    if message.chat.id in settings.telegram_docker_access_ids:
         text_commands = "/check_server - Проверить работающие контейнеры"
         await message.answer(text_commands)
