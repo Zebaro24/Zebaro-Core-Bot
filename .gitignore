@@ -17,3 +17,6 @@ venv/
 *.log
 *.sqlite3
 *.db
+
+# Dev version
+docker-compose.override.yml

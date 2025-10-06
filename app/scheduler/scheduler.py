@@ -12,7 +12,5 @@ class Scheduler(AsyncIOScheduler):
 scheduler = Scheduler()
 
 
-async def start_scheduler():
+def start_scheduler():
     scheduler.start()
-    while True:
-        await asyncio.sleep(3600)

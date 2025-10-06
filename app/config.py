@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     discord_bot_token: str | None = None
 
+    mongo_uri: str = "mongodb://localhost:27017/zebaro_core"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @field_validator("telegram_docker_access_ids", mode="before")
