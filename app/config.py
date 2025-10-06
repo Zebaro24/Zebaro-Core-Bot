@@ -18,6 +18,8 @@ class Settings(BaseSettings):
 
     mongo_uri: str = "mongodb://localhost:27017/zebaro_core"
 
+    playwright_ws_endpoint: str = "ws://localhost:9222"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @field_validator("telegram_docker_access_ids", mode="before")

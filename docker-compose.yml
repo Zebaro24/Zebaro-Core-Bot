@@ -16,6 +16,14 @@ services:
       retries: 5
       start_period: 20s
 
+  zebaro-core-playwright:
+    image: mcr.microsoft.com/playwright:v1.55.0-noble
+    container_name: zebaro-core-playwright
+    restart: unless-stopped
+    command: npx playwright@1.55.0 run-server --port 9222
+    expose:
+      - "9222"
+
   zebaro-core-bot:
     build: .
     image: ghcr.io/zebaro24/zebaro-core-bot:latest
@@ -30,5 +38,6 @@ services:
       - TELEGRAM_DOCKER_ACCESS_IDS
       - DISCORD_BOT_TOKEN
       - MONGO_URI=mongodb://zebaro-core-db:27017/zebaro_core
+      - PLAYWRIGHT_WS_ENDPOINT=ws://zebaro-core-playwright:9222
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

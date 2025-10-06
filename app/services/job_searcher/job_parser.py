@@ -1,4 +1,5 @@
 from urllib.parse import urlparse
+
 from playwright.async_api import async_playwright, TimeoutError
 from playwright_stealth import Stealth
 from bs4 import BeautifulSoup
@@ -10,6 +11,11 @@ from app.services.job_searcher.listeners.no_fluff_jobs_listeners import NoFluffJ
 from app.services.job_searcher.listeners.robota_ua_listeners import RobotaUAListeners
 from app.services.job_searcher.listeners.work_ua_listeners import WorkUAListeners
 from app.services.job_searcher.job_container import Job, JobStorage
+
+from app.config import settings
+import logging
+
+logger = logging.getLogger('playwright.async_api')
 
 listeners_dict = {
     "www.work.ua": WorkUAListeners(),
@@ -31,17 +37,19 @@ class JobParser:
         try:
             await page.goto(url, wait_until='load', timeout=5000)
         except TimeoutError:
-            print(f"Превышен таймаут для {url}, продолжаем с текущим состоянием страницы")
+            logger.error(f"Превышен таймаут для {url}, продолжаем с текущим состоянием страницы")
         return await page.content()
 
     async def parse_urls(self):
-        async with Stealth().use_async(async_playwright()) as p:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context()
+        async with async_playwright() as pw:
+            browser = await pw.chromium.connect(settings.playwright_ws_endpoint)
+            context = browser.contexts[0] if browser.contexts else await browser.new_context()
             page = await context.new_page()
+            stealth = Stealth()
+            await stealth.apply_stealth_async(page)
 
             for url_text in self.urls:
-                print(f"Parsing {url_text}")
+                logger.info(f"Parsing {url_text}")
                 url = urlparse(url_text)
                 listeners = self.get_listeners(url.netloc)
 
