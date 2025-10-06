@@ -20,3 +20,4 @@ venv/
 
 # Dev version
 docker-compose.override.yml
+mongo_db/
