@@ -15,6 +15,8 @@ async def main():
         datefmt="%H:%M:%S"
     )
 
+    logging.info("Starting Zebaro-Core-Bot...")
+
     start_scheduler()
 
     await asyncio.gather(
@@ -24,4 +26,7 @@ async def main():
     )
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logging.info("Program terminated by user")
