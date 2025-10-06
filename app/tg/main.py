@@ -7,6 +7,7 @@ from app.config import settings
 
 from app.tg.handlers import start
 from app.tg.handlers.admin import check_server
+from app.tg.handlers.admin import get_job_openings
 
 from app.tg.handlers.callbacks import docker
 
@@ -27,6 +28,8 @@ async def start_bot():
 
     dp.include_router(check_server.router)
     dp.include_router(docker.router)
+
+    dp.include_router(get_job_openings.router)
 
     # scheduler.add_job(job_notification, "cron", hour=10, minute=15 , args=[bot])
     # await job_notification(bot)
