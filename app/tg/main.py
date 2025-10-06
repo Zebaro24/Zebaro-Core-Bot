@@ -10,7 +10,7 @@ from app.tg.handlers.admin import check_server
 
 from app.tg.handlers.callbacks import docker
 
-from app.tg.notification.check_notification import check_notification
+from app.tg.notification.job_notification import job_notification
 
 from app.scheduler import scheduler
 
@@ -28,8 +28,11 @@ async def start_bot():
     dp.include_router(check_server.router)
     dp.include_router(docker.router)
 
-    scheduler.add_job(check_notification, "cron", hour=17, minute=52 , args=[bot])
-    scheduler.add_job(check_notification, "cron", hour=17, minute=53 , args=[bot])
+    # scheduler.add_job(job_notification, "cron", hour=10, minute=15 , args=[bot])
+    # await job_notification(bot)
+    scheduler.add_job(job_notification, "cron", hour=12, args=[bot])
+    scheduler.add_job(job_notification, "cron", hour=14, args=[bot])
+    scheduler.add_job(job_notification, "cron", hour=16, args=[bot])
 
     await bot.delete_webhook(drop_pending_updates=True)
     try:
