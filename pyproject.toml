@@ -11,5 +11,6 @@ aiogram = "^3.22.0"
 discord-py = "^2.6.3"
 pydantic-settings = "^2.11.0"
 docker = "^7.1.0"
+apscheduler = "^3.11.0"
 
 [tool.poetry.group.dev.dependencies]

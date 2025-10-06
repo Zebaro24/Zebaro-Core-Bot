@@ -3,6 +3,7 @@ import logging
 
 from app.tg import start_bot as start_tg
 from app.ds import start_bot as start_ds
+from app.scheduler import start_scheduler
 
 
 async def main():
@@ -14,6 +15,7 @@ async def main():
     await asyncio.gather(
         start_tg(),
         start_ds(),
+        start_scheduler(),
     )
 
 if __name__ == "__main__":
