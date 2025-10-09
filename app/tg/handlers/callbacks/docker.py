@@ -64,13 +64,13 @@ async def container_info_callback(query: CallbackQuery, callback_data: DockerCon
     elif callback_data.action == "start_stop":
         if container.get_status() != "Exited":
             await query.answer("Контейнер останавливается...")
-            container.container.stop()
+            container.stop()
         else:
             await query.answer("Контейнер запускается...")
-            container.container.start()
+            container.start()
         return
     elif callback_data.action == "log_file":
-        logs = container.container.logs().decode()
+        logs = container.get_short_log()
 
         file = BufferedInputFile(logs.encode("utf-8"), filename=f"{container.get_name()}_logs.txt")
 
