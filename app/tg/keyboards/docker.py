@@ -71,6 +71,11 @@ def get_docker_container_kb(container: DockerContainer):
         )
     ], [
         InlineKeyboardButton(
+            text="Рестарт 🔁",
+            callback_data=DockerContainerCallback(action="restart", container_key=container.get_name()).pack()
+        )
+    ], [
+        InlineKeyboardButton(
             text="Получить лог файл 📄",
             callback_data=DockerContainerCallback(action="log_file", container_key=container.get_name()).pack()
         )

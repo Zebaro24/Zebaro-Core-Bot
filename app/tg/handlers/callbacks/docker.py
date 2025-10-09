@@ -69,6 +69,8 @@ async def container_info_callback(query: CallbackQuery, callback_data: DockerCon
             await query.answer("Контейнер запускается...")
             container.start()
         return
+    elif callback_data.action == "restart":
+        container.restart()
     elif callback_data.action == "log_file":
         logs = container.get_short_log()
 

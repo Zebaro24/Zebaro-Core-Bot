@@ -108,6 +108,9 @@ class DockerContainer:
     def stop(self):
         self.container.stop()
 
+    def restart(self):
+        self.container.restart()
+
     def get_short_log(self):
         logs = self.container.logs(tail=20).decode()
         return logs
