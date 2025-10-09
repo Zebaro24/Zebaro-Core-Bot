@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 
 from app.services.docker_service.container import DockerContainer
+from app.utils.format_memory import format_memory
 from app.utils.format_time import format_duration
 
 
@@ -64,7 +65,7 @@ class DockerProject:
 
     def get_short_info(self):
         text = f"<b>🚀 {self.name} {self.get_status_emoji()}</b>\n"
-        text += f"💾 RAM: {self.get_memory_usage():.2f} MB | 🖥️ CPU: {(self.get_cpu_usage() * 100):.2f}%\n"
+        text += f"💾 RAM: {format_memory(self.get_memory_usage())} | 🖥️ CPU: {(self.get_cpu_usage() * 100):.2f}%\n"
         text += f"🔁 Restarts: {self.get_restarts()}"
         if uptime_str := format_duration(self.get_uptime()):
             text += f" | ⏱️ Uptime: {uptime_str}"
@@ -76,6 +77,15 @@ class DockerProject:
         for container in self.containers:
             text += f"{container.get_short_info()}\n\n"
 
+        text += self.get_memory_used_text()
+        return text
+
+    def get_memory_used_text(self):
+        mem = 0
+        for c in self.containers:
+            mem += c.get_memory_usage()
+
+        text = f"💾 Используется {format_memory(mem)} оперативки"
         return text
 
 

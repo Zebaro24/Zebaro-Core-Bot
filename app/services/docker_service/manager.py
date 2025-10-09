@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from app.services.docker_service.container import DockerContainer
 from app.services.docker_service.project import DockerProject
+from app.utils.format_memory import format_memory
 
 
 class DockerManager:
@@ -38,6 +39,8 @@ class DockerManager:
         for p_name, project in self.project_dict.items():
             text += f"{project.get_short_info()}\n\n"
 
+        text += self.get_memory_used_text()
+
         return text
 
     def update_stats(self):
@@ -46,6 +49,14 @@ class DockerManager:
 
     def get_memory_total(self):
         return self.client.info()["MemTotal"]
+
+    def get_memory_used_text(self):
+        mem = 0
+        for c in self.containers_dict.values():
+            mem += c.get_memory_usage()
+
+        text = f"💾 Используется {format_memory(mem)}/{format_memory(self.get_memory_total())} оперативки"
+        return text
 
     def get_project_by_key(self, key):
         return self.project_dict.get(key)

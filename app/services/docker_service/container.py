@@ -4,6 +4,7 @@ from html import escape
 
 from docker.models.containers import Container
 
+from app.utils.format_memory import format_memory
 from app.utils.format_time import format_duration
 
 
@@ -45,9 +46,7 @@ class DockerContainer:
         memory_usage = self.stats["memory_stats"]["usage"]
         cache = self.stats["memory_stats"]["stats"].get("cache", 0)
 
-        mem_used_mb = (memory_usage - cache) / (1024 ** 2)
-
-        return mem_used_mb
+        return memory_usage - cache
 
     def get_cpu_usage(self) -> float:
         if not self.stats:
@@ -86,7 +85,7 @@ class DockerContainer:
     def get_short_info(self):
         text = f"<b>📦 {self.get_name().title()}</b>\n"
         text += f"⚡️ Status: {self.get_status_emoji()} {self.get_status()}\n"
-        text += f"💾 RAM: {self.get_memory_usage():.2f} MB | 🖥️ CPU: {(self.get_cpu_usage() * 100):.2f}%\n"
+        text += f"💾 RAM: {format_memory(self.get_memory_usage())} | 🖥️ CPU: {(self.get_cpu_usage() * 100):.2f}%\n"
         text += f"🔁 Restarts: {self.get_restarts()}\n"
         if uptime_str := format_duration(self.get_uptime()):
             text += f"⏱️ Uptime: {uptime_str}\n"
