@@ -1,5 +1,6 @@
 from datetime import datetime
 from datetime import UTC
+from html import escape
 
 from docker.models.containers import Container
 
@@ -95,7 +96,8 @@ class DockerContainer:
         text = self.get_short_info()
 
         logs = self.container.logs(tail=20).decode()
+        logs_escaped = escape(logs)
 
-        text += f"\n<b>Logs:</b>\n<pre>{logs}</pre>"
+        text += f"\n<b>Logs:</b>\n<pre>{logs_escaped}</pre>"
 
         return text
