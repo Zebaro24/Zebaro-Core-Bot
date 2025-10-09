@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 from app.services.docker_service.container import DockerContainer
 from app.utils.format_time import format_duration
 
@@ -18,8 +20,8 @@ class DockerProject:
             c.reload()
 
     def update_stats(self):
-        for c in self.containers:
-            c.update_stats()
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            executor.map(lambda c: c.update_stats(), self.containers)
 
     def get_status_emoji(self):
         count_disabled = 0

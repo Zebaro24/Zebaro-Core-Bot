@@ -1,4 +1,5 @@
 import docker
+from concurrent.futures import ThreadPoolExecutor
 
 from app.services.docker_service.container import DockerContainer
 from app.services.docker_service.project import DockerProject
@@ -31,11 +32,17 @@ class DockerManager:
             self.containers_dict[c.name] = docker_container
 
     def get_projects_info(self):
+        self.update_stats()
+
         text= "<b>🐳 Docker проекты:</b>\n\n"
         for p_name, project in self.project_dict.items():
             text += f"{project.get_short_info()}\n\n"
 
         return text
+
+    def update_stats(self):
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            executor.map(lambda c: c.update_stats(), self.containers_dict.values())
 
     def get_memory_total(self):
         return self.client.info()["MemTotal"]
@@ -50,6 +57,23 @@ class DockerManager:
         return f"<DockerManager {list(self.project_dict.values())}>"
 
 if __name__ == '__main__':
+    import time
+
+    start = time.perf_counter()
+
     dm = DockerManager()
     dm.update_projects()
+
+    print(f"Execution time: {time.perf_counter() - start:.6f} секунд")
+
+    container = list(dm.containers_dict.values())[0]
+    container.update_stats()
+    print(container.get_short_info())
+
+    print(f"Execution time: {time.perf_counter() - start:.6f} секунд")
+
+    start = time.perf_counter()
+
     print(dm.get_projects_info())
+
+    print(f"Execution time: {time.perf_counter() - start:.6f} секунд")
