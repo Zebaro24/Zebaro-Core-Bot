@@ -44,7 +44,7 @@ class DockerManager:
         return text
 
     def update_stats(self):
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=32) as executor:
             executor.map(lambda c: c.update_stats(), self.containers_dict.values())
 
     def get_memory_total(self):
