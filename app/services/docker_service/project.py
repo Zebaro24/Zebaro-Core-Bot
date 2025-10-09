@@ -64,7 +64,9 @@ class DockerProject:
         return uptime
 
     def get_short_info(self):
-        text = f"<b>🚀 {self.name} {self.get_status_emoji()}</b>\n"
+        text = f"<b>🚀 {self.name} {self.get_status_emoji()}"
+        text += f" | 📦 {len(self.containers)} cont" if len(self.containers) > 1 else ""
+        text += "</b>\n"
         text += f"💾 RAM: {format_memory(self.get_memory_usage())} | 🖥️ CPU: {(self.get_cpu_usage() * 100):.2f}%\n"
         text += f"🔁 Restarts: {self.get_restarts()}"
         if uptime_str := format_duration(self.get_uptime()):
