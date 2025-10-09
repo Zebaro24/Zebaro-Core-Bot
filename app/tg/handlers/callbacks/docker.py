@@ -62,12 +62,12 @@ async def container_info_callback(query: CallbackQuery, callback_data: DockerCon
         container.update_stats()
         await query.message.edit_text(container.get_info(), reply_markup=get_docker_container_kb(container))
     elif callback_data.action == "start_stop":
-        if container.container.status != "running":
-            container.container.start()
-            await query.answer("Контейнер запускается...")
-        else:
-            container.container.stop()
+        if container.get_status() != "Exited":
             await query.answer("Контейнер останавливается...")
+            container.container.stop()
+        else:
+            await query.answer("Контейнер запускается...")
+            container.container.start()
         return
     elif callback_data.action == "log_file":
         logs = container.container.logs().decode()

@@ -16,8 +16,8 @@ class DockerProject:
         return docker_container
 
     def reload_containers(self):
-        for c in self.containers:
-            c.reload()
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            executor.map(lambda c: c.reload(), self.containers)
 
     def update_stats(self):
         with ThreadPoolExecutor(max_workers=10) as executor:
