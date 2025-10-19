@@ -31,7 +31,7 @@ async def start_bot():
 
     dp.include_router(get_job_openings.router)
 
-    # scheduler.add_job(job_notification, "cron", hour=10, minute=15 , args=[bot])
+    # scheduler.add_job(job_notification, "cron", hour=10, minute=15, args=[bot])
     # await job_notification(bot)
     scheduler.add_job(job_notification, "cron", hour=12, args=[bot])
     scheduler.add_job(job_notification, "cron", hour=14, args=[bot])
