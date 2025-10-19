@@ -16,5 +16,7 @@ pymongo = "^4.15.2"
 playwright = "^1.55.0"
 playwright-stealth = "^2.0.0"
 beautifulsoup4 = "^4.14.2"
+uvicorn = "^0.37.0"
+fastapi = "^0.119.0"
 
 [tool.poetry.group.dev.dependencies]
