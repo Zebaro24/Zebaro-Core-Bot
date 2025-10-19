@@ -28,5 +28,13 @@ class Settings(BaseSettings):
             return [int(i) for i in v.split(",") if i]
         return v
 
+    @model_validator(mode="after")
+    def check_all_not_none(cls, model): # noqa
+        values = model.model_dump()
+        missing = [k for k, v in values.items() if v is None]
+        if missing:
+            raise ValueError(f"The following settings are not set: {', '.join(missing)}")
+        return model
+
 
 settings = Settings()
