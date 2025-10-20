@@ -4,6 +4,7 @@ import logging
 from app.db import start_db
 from app.tg import start_bot as start_tg
 from app.ds import start_bot as start_ds
+from app.webhooks import start_webhooks
 
 from app.scheduler import start_scheduler
 
@@ -23,6 +24,7 @@ async def main():
         start_db(),
         start_tg(),
         start_ds(),
+        start_webhooks(),
     )
 
 if __name__ == "__main__":

@@ -15,6 +15,11 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str | None = None
     discord_bot_token: str | None = None
+    personal_github_token: str | None = None
+
+    personal_github_secret: str | None = None
+
+    webhook_url: str | None = None
 
     mongo_uri: str = "mongodb://localhost:27017/zebaro_core"
 
