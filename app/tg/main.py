@@ -6,9 +6,8 @@ from aiogram.client.bot import DefaultBotProperties
 from app.config import settings
 from app.services.github.github_manager import GithubManager
 
-from app.tg.handlers import start
-from app.tg.handlers.admin import check_server
-from app.tg.handlers.admin import get_job_openings
+from app.tg.handlers import start, get_chat_id
+from app.tg.handlers.admin import check_server, mongo, get_job_openings
 
 from app.tg.handlers.callbacks import docker
 
@@ -27,9 +26,11 @@ async def start_bot():
     dp = Dispatcher()
 
     dp.include_router(start.router)
+    dp.include_router(get_chat_id.router)
 
     dp.include_router(check_server.router)
     dp.include_router(docker.router)
+    dp.include_router(mongo.router)
 
     dp.include_router(get_job_openings.router)
 

@@ -26,5 +26,6 @@ async def start_command(message: Message):
         await message.answer(text_commands)
 
     if message.chat.id == settings.telegram_admin_id:
-        text_commands = "/get_job_openings - Поиск новых вакансий"
+        text_commands = "/get_job_openings - Поиск новых вакансий\n"
+        text_commands += "/mongo - Обращение в MongoDB\n"
         await message.answer(text_commands)
