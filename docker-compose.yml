@@ -39,5 +39,10 @@ services:
       - DISCORD_BOT_TOKEN
       - MONGO_URI=mongodb://zebaro-core-db:27017/zebaro_core
       - PLAYWRIGHT_WS_ENDPOINT=ws://zebaro-core-playwright:9222
+      - PERSONAL_GITHUB_TOKEN
+      - PERSONAL_GITHUB_SECRET
+      - WEBHOOK_URL
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "${SERVER_PORT}:8000"

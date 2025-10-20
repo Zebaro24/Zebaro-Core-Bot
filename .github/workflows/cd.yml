@@ -88,6 +88,10 @@ jobs:
             export TELEGRAM_ADMIN_ID=${{ secrets.TELEGRAM_ADMIN_ID }}
             export DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }}
             export TELEGRAM_DOCKER_ACCESS_IDS=${{ secrets.TELEGRAM_DOCKER_ACCESS_IDS }}
+            export PERSONAL_GITHUB_TOKEN=${{ secrets.PERSONAL_GITHUB_TOKEN }}
+            export PERSONAL_GITHUB_SECRET=${{ secrets.PERSONAL_GITHUB_SECRET }}
+            export WEBHOOK_URL=${{ vars.WEBHOOK_URL }}
+            export SERVER_PORT=${{ vars.SERVER_PORT }}
             
             docker compose -p zebaro-core up -d --pull always
             docker image prune -f
