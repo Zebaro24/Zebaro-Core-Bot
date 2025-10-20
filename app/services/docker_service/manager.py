@@ -32,6 +32,13 @@ class DockerManager:
             docker_container = self.project_dict[project_name].add_container(c)
             self.containers_dict[c.name] = docker_container
 
+    def get_open_ports(self):
+        ports = set()
+        for c in self.containers_dict.values():
+            ports.update(c.get_open_ports())
+        sorted_ports = sorted(ports, key=int)
+        return sorted_ports
+
     def get_projects_info(self):
         self.update_stats()
 
@@ -40,6 +47,8 @@ class DockerManager:
             text += f"{project.get_short_info()}\n\n"
 
         text += self.get_memory_used_text()
+        if ports := self.get_open_ports():
+            text += f"🌐 Open ports: {", ".join(ports)}\n"
 
         return text
 
@@ -55,7 +64,7 @@ class DockerManager:
         for c in self.containers_dict.values():
             mem += c.get_memory_usage()
 
-        text = f"💾 Используется {format_memory(mem)}/{format_memory(self.get_memory_total())} оперативки"
+        text = f"💾 Используется {format_memory(mem)}/{format_memory(self.get_memory_total())} оперативки\n"
         return text
 
     def get_project_by_key(self, key):

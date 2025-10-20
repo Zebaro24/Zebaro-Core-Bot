@@ -63,6 +63,13 @@ class DockerProject:
                 uptime = c.get_uptime()
         return uptime
 
+    def get_open_ports(self):
+        ports = set()
+        for c in self.containers:
+            ports.update(c.get_open_ports())
+        sorted_ports = sorted(ports, key=int)
+        return sorted_ports
+
     def get_short_info(self):
         text = f"<b>🚀 {self.name} {self.get_status_emoji()}"
         text += f" | 📦 {len(self.containers)} cont" if len(self.containers) > 1 else ""
@@ -71,6 +78,8 @@ class DockerProject:
         text += f"🔁 Restarts: {self.get_restarts()}"
         if uptime_str := format_duration(self.get_uptime()):
             text += f" | ⏱️ Uptime: {uptime_str}"
+        if ports := self.get_open_ports():
+            text += f"\n🌐 Open ports: {", ".join(ports)}"
         return text
 
     def get_info(self):

@@ -82,6 +82,22 @@ class DockerContainer:
         uptime = now - started_dt
         return int(uptime.total_seconds())
 
+    def get_open_ports(self) -> set[str]:
+        ports = self.container.attrs["NetworkSettings"].get("Ports", {})
+        if not ports:
+            return set()
+
+        open_ports = set()
+        for mappings in ports.values():
+            if not mappings:
+                continue
+            for mapping in mappings:
+                host_port = mapping.get("HostPort")
+                if host_port:
+                    open_ports.add(host_port)
+
+        return open_ports
+
     def get_short_info(self):
         text = f"<b>📦 {self.get_name().title()}</b>\n"
         text += f"⚡️ Status: {self.get_status_emoji()} {self.get_status()}\n"
@@ -89,6 +105,8 @@ class DockerContainer:
         text += f"🔁 Restarts: {self.get_restarts()}\n"
         if uptime_str := format_duration(self.get_uptime()):
             text += f"⏱️ Uptime: {uptime_str}\n"
+        if ports := self.get_open_ports():
+            text += f"🌐 Open ports: {", ".join(ports)}\n"
         return text
 
     def get_info(self):
