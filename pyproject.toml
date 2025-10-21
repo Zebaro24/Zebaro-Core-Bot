@@ -22,21 +22,22 @@ fastapi = "^0.119.0"
 
 [tool.poetry.group.dev.dependencies]
 # Linting and formatting
-black = "^23.0"
-isort = "^5.12"
-flake8 = "^6.0"
-flake8-bugbear = "^23.0"
+black = "^25.9"
+isort = "^7.0"
+flake8 = "^7.3"
+flake8-bugbear = "^24.12"
+flake8-pyproject = "^1.2.3"
 
 # Type checking
-mypy = "^1.0"
+mypy = "^1.18"
 
 # Testing
-pytest = "^7.4"
-pytest-cov = "^4.1"
+pytest = "^8.4"
+pytest-cov = "^7.0"
 
 # Security
-bandit = "^1.7"
-safety = "^2.3"
+bandit = "^1.8"
+safety = "^3.6"
 
 # ----------------------------
 # Black configuration
