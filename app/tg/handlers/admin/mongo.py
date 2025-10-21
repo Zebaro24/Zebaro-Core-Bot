@@ -2,19 +2,16 @@ import json
 from html import escape
 
 from aiogram import Router
-from aiogram.types import Message
 from aiogram.filters import Command
+from aiogram.types import Message
 
-from app.db.client import jobs_collection, github_notification_collection
+from app.db.client import github_notification_collection, jobs_collection
 from app.tg.middlewares.admin_middleware import AdminMiddleware
 
 router = Router()
 router.message.middleware(AdminMiddleware())
 
-ALLOWED_COLLECTIONS = {
-    "jobs": jobs_collection,
-    "github_notification": github_notification_collection
-}
+ALLOWED_COLLECTIONS = {"jobs": jobs_collection, "github_notification": github_notification_collection}
 
 ALLOWED_COMMANDS = {"find", "update_many", "insert_one"}
 
@@ -22,17 +19,19 @@ ALLOWED_COMMANDS = {"find", "update_many", "insert_one"}
 @router.message(Command("mongo"))
 async def mongo_command(message: Message):
     if message.text.strip() == "/mongo":
-        await message.answer(escape(
-            "Формат команды:\n"
-            "/mongo <collection> <command> <JSON>\n"
-            "Примеры:\n"
-            "/mongo jobs find {\"status\":\"active\"}\n"
-            "/mongo jobs update_many {\"status\":\"pending\"} {\"$set\":{\"status\":\"done\"}}\n"
-            "/mongo jobs insert_one {\"name\":\"New Job\",\"status\":\"pending\"}"
-        ))
+        await message.answer(
+            escape(
+                "Формат команды:\n"
+                "/mongo <collection> <command> <JSON>\n"
+                "Примеры:\n"
+                '/mongo jobs find {"status":"active"}\n'
+                '/mongo jobs update_many {"status":"pending"} {"$set":{"status":"done"}}\n'
+                '/mongo jobs insert_one {"name":"New Job","status":"pending"}'
+            )
+        )
         return
 
-    text = message.text[len("/mongo"):].strip()
+    text = message.text[len("/mongo") :].strip()
     parts = text.split(maxsplit=2)  # collection, command, json
 
     if len(parts) < 2:

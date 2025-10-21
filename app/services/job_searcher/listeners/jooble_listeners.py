@@ -1,22 +1,32 @@
 from datetime import datetime
+
 from bs4 import Tag
 
 from app.services.job_searcher.listeners.base_listeners import BaseListeners
 
 months = {
-    "січня": 1, "лютого": 2, "березня": 3, "квітня": 4,
-    "травня": 5, "червня": 6, "липня": 7, "серпня": 8,
-    "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12
+    "січня": 1,
+    "лютого": 2,
+    "березня": 3,
+    "квітня": 4,
+    "травня": 5,
+    "червня": 6,
+    "липня": 7,
+    "серпня": 8,
+    "вересня": 9,
+    "жовтня": 10,
+    "листопада": 11,
+    "грудня": 12,
 }
 
 
 class JoobleListeners(BaseListeners):
     platform_name = "Jooble"
-    all_jobs = "div.infinite-scroll-component > div > ul > li > div[data-test-name=\"_jobCard\"]"
+    all_jobs = 'div.infinite-scroll-component > div > ul > li > div[data-test-name="_jobCard"]'
 
     job_id = "pass"
     title = "h2"
-    company = "p[data-test-name=\"_companyName\"]"
+    company = 'p[data-test-name="_companyName"]'
     description = "div:nth-child(2) > div > div"
     date = "div:nth-child(2) > div > div"
     link = "a"
@@ -37,7 +47,7 @@ class JoobleListeners(BaseListeners):
         if not text[0].isdigit():
             return None
 
-        date_str = text.split("2025")[0].strip() + ' 2025'
+        date_str = text.split("2025")[0].strip() + " 2025"
         day, month_word, year = date_str.split()
         month = months[month_word]
         dt = datetime(int(year), month, int(day))
@@ -47,4 +57,4 @@ class JoobleListeners(BaseListeners):
         element = element.select_one(self.link)
         if not element:
             raise Exception("No link found")
-        return element.get('href')
+        return element.get("href")

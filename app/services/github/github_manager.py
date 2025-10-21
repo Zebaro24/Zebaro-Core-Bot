@@ -1,14 +1,15 @@
-from app.config import settings
-from app.services.github.github_repo_event import GithubRepoEvent
-from app.services.github.github_repo_webhook import GithubRepoWebhook
-from app.db.client import github_notification_collection
-
-from aiogram import Bot
-import hmac, hashlib
-
+import hashlib
+import hmac
 import logging
 
-logger = logging.getLogger('github.manager')
+from aiogram import Bot
+
+from app.config import settings
+from app.db.client import github_notification_collection
+from app.services.github.github_repo_event import GithubRepoEvent
+from app.services.github.github_repo_webhook import GithubRepoWebhook
+
+logger = logging.getLogger("github.manager")
 
 
 class GithubManager:
@@ -32,7 +33,6 @@ class GithubManager:
             return
 
         await GithubManager.github_repo_events[full_repo_name].handle(event, payload)
-
 
     def create_handler(self, full_repo_name, tg_chat_id, thread_id=None):
         github_repo_webhook = GithubRepoWebhook(full_repo_name, self.github_webhook_url)
@@ -83,20 +83,24 @@ class GithubManager:
 
     @staticmethod
     async def add_notification_to_db(full_repo_name, tg_chat_id, thread_id=None):
-        existing = await github_notification_collection.find_one({
-            "full_repo_name": full_repo_name,
-            "tg_chat_id": tg_chat_id,
-            "thread_id": thread_id,
-        })
-        if not existing:
-            await github_notification_collection.insert_one({
+        existing = await github_notification_collection.find_one(
+            {
                 "full_repo_name": full_repo_name,
                 "tg_chat_id": tg_chat_id,
                 "thread_id": thread_id,
-            })
+            }
+        )
+        if not existing:
+            await github_notification_collection.insert_one(
+                {
+                    "full_repo_name": full_repo_name,
+                    "tg_chat_id": tg_chat_id,
+                    "thread_id": thread_id,
+                }
+            )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import asyncio
 
     async def add_notification_to_db():

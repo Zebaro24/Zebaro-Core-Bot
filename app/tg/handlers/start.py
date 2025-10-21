@@ -1,7 +1,9 @@
-from aiogram import Router
-from aiogram.types import Message
-from aiogram.filters import CommandStart
 from asyncio import sleep
+
+from aiogram import Router
+from aiogram.filters import CommandStart
+from aiogram.types import Message
+
 from app.config import settings
 
 router = Router()

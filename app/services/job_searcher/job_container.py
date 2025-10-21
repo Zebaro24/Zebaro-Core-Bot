@@ -47,8 +47,7 @@ class JobStorage:
     async def remove_jobs_already_in_db(self):
         for job in list(self.jobs):
             exists = await jobs_collection.count_documents(
-                {"platform_name": job.platform_name, "job_id": job.job_id},
-                limit=1
+                {"platform_name": job.platform_name, "job_id": job.job_id}, limit=1
             )
             if exists:
                 self.jobs.remove(job)

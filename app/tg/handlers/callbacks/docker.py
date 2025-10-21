@@ -1,12 +1,15 @@
-from io import BytesIO
-
 from aiogram import Router
-from aiogram.types import CallbackQuery, InputFile, BufferedInputFile
+from aiogram.types import BufferedInputFile, CallbackQuery
 
 from app.services.docker_service.manager import DockerManager
-from app.tg.keyboards.docker import DockerProjectCallback, get_docker_manager_kb, get_docker_project_kb, \
-    DockerContainerCallback, DockerManagerCallback, get_docker_container_kb
-from app.tg.middlewares.admin_middleware import AdminMiddleware
+from app.tg.keyboards.docker import (
+    DockerContainerCallback,
+    DockerManagerCallback,
+    DockerProjectCallback,
+    get_docker_container_kb,
+    get_docker_manager_kb,
+    get_docker_project_kb,
+)
 from app.tg.middlewares.docker_middleware import docker_middleware
 
 router = Router()
@@ -14,18 +17,21 @@ router.callback_query.middleware(docker_middleware)
 
 
 @router.callback_query(DockerManagerCallback.filter())
-async def manager_info_callback(query: CallbackQuery, callback_data: DockerManagerCallback,
-                                docker_manager: DockerManager):
+async def manager_info_callback(
+    query: CallbackQuery, callback_data: DockerManagerCallback, docker_manager: DockerManager
+):
     if callback_data.action == "refresh":
         await query.message.edit_text("⏳ Загрузка...", reply_markup=None)
         docker_manager.update_projects()
-        await query.message.edit_text(docker_manager.get_projects_info(),
-                                      reply_markup=get_docker_manager_kb(docker_manager))
+        await query.message.edit_text(
+            docker_manager.get_projects_info(), reply_markup=get_docker_manager_kb(docker_manager)
+        )
 
 
 @router.callback_query(DockerProjectCallback.filter())
-async def project_info_callback(query: CallbackQuery, callback_data: DockerProjectCallback,
-                                docker_manager: DockerManager):
+async def project_info_callback(
+    query: CallbackQuery, callback_data: DockerProjectCallback, docker_manager: DockerManager
+):
     if not docker_manager.project_dict:
         await query.answer("⏳ Загрузка...")
         docker_manager.update_projects()
@@ -45,8 +51,9 @@ async def project_info_callback(query: CallbackQuery, callback_data: DockerProje
 
 
 @router.callback_query(DockerContainerCallback.filter())
-async def container_info_callback(query: CallbackQuery, callback_data: DockerContainerCallback,
-                                  docker_manager: DockerManager):
+async def container_info_callback(
+    query: CallbackQuery, callback_data: DockerContainerCallback, docker_manager: DockerManager
+):
     if not docker_manager.project_dict:
         await query.answer("⏳ Загрузка...")
         docker_manager.update_projects()

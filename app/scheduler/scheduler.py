@@ -1,7 +1,5 @@
-import asyncio
-
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.executors.asyncio import AsyncIOExecutor
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
 class Scheduler(AsyncIOScheduler):

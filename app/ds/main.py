@@ -1,15 +1,14 @@
 import asyncio
 import logging
 
-from app.config import settings
-
 import discord
 from discord.ext import commands
 
+from app.config import settings
 from app.ds.cogs.commands import Commands
 from app.ds.cogs.events import Events
 
-logger = logging.getLogger('discord.client')
+logger = logging.getLogger("discord.client")
 
 
 async def start_bot():

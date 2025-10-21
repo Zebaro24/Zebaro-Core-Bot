@@ -1,5 +1,6 @@
 from bs4.element import Tag
 
+
 class BaseListeners:
     platform_name: str | None = None
     all_jobs: str | None = None
@@ -17,7 +18,6 @@ class BaseListeners:
             for field in ["platform_name", "job_id", "title", "company", "description", "date"]
         )
 
-
     @staticmethod
     def _get_one_by_selector(element: Tag, selector_text: str):
         selector = element.select_one(selector_text)
@@ -28,7 +28,6 @@ class BaseListeners:
     @staticmethod
     def _get_all_by_selector(element: Tag, selector_text: str):
         return element.select(selector_text)
-
 
     def get_all_jobs(self, element: Tag):
         if not self.all_jobs:

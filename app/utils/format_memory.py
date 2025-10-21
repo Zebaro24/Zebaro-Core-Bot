@@ -1,5 +1,5 @@
 def format_memory(b: float) -> str:
-    mb = b / (1024 ** 2)
+    mb = b / (1024**2)
 
     if mb >= 1024:
         gb = mb / 1024

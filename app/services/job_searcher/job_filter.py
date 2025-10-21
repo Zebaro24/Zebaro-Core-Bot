@@ -1,4 +1,4 @@
-from app.services.job_searcher.job_container import JobStorage, Job
+from app.services.job_searcher.job_container import Job, JobStorage
 
 
 class JobFilter:
@@ -43,8 +43,5 @@ class JobFilter:
 
     @staticmethod
     def filter_without_company(job: Job) -> bool:
-        without_list = [
-            "фоп",
-            "school"
-        ]
+        without_list = ["фоп", "school"]
         return any([without_str in job.company.lower() for without_str in without_list])

@@ -1,5 +1,4 @@
-from datetime import datetime
-from datetime import UTC
+from datetime import UTC, datetime
 from html import escape
 
 from docker.models.containers import Container
@@ -55,7 +54,9 @@ class DockerContainer:
         if not self.stats["memory_stats"]:
             return 0
 
-        cpu_delta = self.stats["cpu_stats"]["cpu_usage"]["total_usage"] - self.stats["precpu_stats"]["cpu_usage"]["total_usage"]
+        cpu_delta = (
+            self.stats["cpu_stats"]["cpu_usage"]["total_usage"] - self.stats["precpu_stats"]["cpu_usage"]["total_usage"]
+        )
         system_delta = self.stats["cpu_stats"]["system_cpu_usage"] - self.stats["precpu_stats"]["system_cpu_usage"]
 
         per_cpu = self.stats["cpu_stats"]["cpu_usage"].get("percpu_usage")
@@ -74,7 +75,7 @@ class DockerContainer:
     def get_uptime(self) -> int:
         if self.container.status != "running":
             return 0
-        started_at = self.container.attrs['State']['StartedAt']
+        started_at = self.container.attrs["State"]["StartedAt"]
         started_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
 
         now = datetime.now(UTC)

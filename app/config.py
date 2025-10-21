@@ -28,13 +28,13 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @field_validator("telegram_docker_access_ids", mode="before")
-    def split_admin_ids(cls, v): # noqa
+    def split_admin_ids(cls, v):  # noqa
         if isinstance(v, str):
             return [int(i) for i in v.split(",") if i]
         return v
 
     @model_validator(mode="after")
-    def check_all_not_none(cls, model): # noqa
+    def check_all_not_none(cls, model):  # noqa
         values = model.model_dump()
         missing = [k for k, v in values.items() if v is None]
         if missing:

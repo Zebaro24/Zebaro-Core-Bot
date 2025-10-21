@@ -1,7 +1,9 @@
-from bs4 import Tag
 from datetime import datetime
 
+from bs4 import Tag
+
 from app.services.job_searcher.listeners.base_listeners import BaseListeners
+
 
 class WorkUAListeners(BaseListeners):
     platform_name = "Work.ua"

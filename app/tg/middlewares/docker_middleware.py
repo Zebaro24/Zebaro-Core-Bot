@@ -1,7 +1,8 @@
 from aiogram import BaseMiddleware
-from app.services.docker_service.manager import DockerManager
 from aiogram.types import Message
+
 from app.config import settings
+from app.services.docker_service.manager import DockerManager
 
 
 class DockerMiddleware(BaseMiddleware):
@@ -14,5 +15,6 @@ class DockerMiddleware(BaseMiddleware):
             return None
         data["docker_manager"] = self.docker
         return await handler(event, data)
+
 
 docker_middleware = DockerMiddleware()

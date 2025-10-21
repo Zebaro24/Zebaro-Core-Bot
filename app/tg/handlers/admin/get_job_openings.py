@@ -1,6 +1,6 @@
 from aiogram import Router
-from aiogram.types import Message
 from aiogram.filters import Command
+from aiogram.types import Message
 
 from app.tg.middlewares.admin_middleware import AdminMiddleware
 from app.tg.notification.job_notification import job_notification

@@ -1,6 +1,6 @@
 from aiogram import Router
-from aiogram.types import Message
 from aiogram.filters import Command
+from aiogram.types import Message
 
 from app.services.docker_service.manager import DockerManager
 from app.tg.keyboards.docker import get_docker_manager_kb

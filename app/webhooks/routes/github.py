@@ -1,12 +1,12 @@
 import logging
 
-from fastapi import APIRouter, Request, Response, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.services.github.github_manager import GithubManager
 
 router = APIRouter()
 
-logger = logging.getLogger('github.webhook')
+logger = logging.getLogger("github.webhook")
 
 
 @router.post("")

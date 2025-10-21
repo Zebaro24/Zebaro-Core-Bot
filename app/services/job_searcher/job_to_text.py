@@ -9,11 +9,11 @@ def job_to_html(job):
     company = html.escape(job.company or "")
 
     text = f'<a href="{link}">{title} - {platform}</a>\n'
-    text += f'Company: <b>{company}</b>'
+    text += f"Company: <b>{company}</b>"
 
     if job.date:
         date_str = job.date.strftime("%d.%m.%Y") if isinstance(job.date, datetime) else str(job.date)
-        text += f' Date: <i>{html.escape(date_str)}</i>'
+        text += f" Date: <i>{html.escape(date_str)}</i>"
 
     if job.description:
         description = html.escape(job.description)

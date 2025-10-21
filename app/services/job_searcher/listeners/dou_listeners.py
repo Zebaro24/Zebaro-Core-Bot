@@ -5,10 +5,20 @@ from bs4 import Tag
 from app.services.job_searcher.listeners.base_listeners import BaseListeners
 
 months = {
-    "січня": 1, "лютого": 2, "березня": 3, "квітня": 4,
-    "травня": 5, "червня": 6, "липня": 7, "серпня": 8,
-    "вересня": 9, "жовтня": 10, "листопада": 11, "грудня": 12
+    "січня": 1,
+    "лютого": 2,
+    "березня": 3,
+    "квітня": 4,
+    "травня": 5,
+    "червня": 6,
+    "липня": 7,
+    "серпня": 8,
+    "вересня": 9,
+    "жовтня": 10,
+    "листопада": 11,
+    "грудня": 12,
 }
+
 
 class DouListeners(BaseListeners):
     platform_name = "Dou"
@@ -34,4 +44,4 @@ class DouListeners(BaseListeners):
 
     def get_link(self, element: Tag):
         element = element.select_one(self.link)
-        return element.get('href')
+        return element.get("href")

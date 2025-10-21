@@ -3,26 +3,21 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.bot import DefaultBotProperties
+
 from app.config import settings
-from app.services.github.github_manager import GithubManager
-
-from app.tg.handlers import start, get_chat_id
-from app.tg.handlers.admin import check_server, mongo, get_job_openings
-
-from app.tg.handlers.callbacks import docker
-
-from app.tg.notification.job_notification import job_notification
-
 from app.scheduler import scheduler
-from app.webhooks.setup import setup_webhook_telegram, get_url_webhook_telegram, get_url_webhook_github
+from app.services.github.github_manager import GithubManager
+from app.tg.handlers import get_chat_id, start
+from app.tg.handlers.admin import check_server, get_job_openings, mongo
+from app.tg.handlers.callbacks import docker
+from app.tg.notification.job_notification import job_notification
+from app.webhooks.setup import get_url_webhook_github, get_url_webhook_telegram, setup_webhook_telegram
 
-logger = logging.getLogger('aiogram.dispatcher')
+logger = logging.getLogger("aiogram.dispatcher")
+
 
 async def start_bot():
-    bot = Bot(
-        token=settings.telegram_bot_token,
-        default=DefaultBotProperties(parse_mode="HTML")
-    )
+    bot = Bot(token=settings.telegram_bot_token, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher()
 
     dp.include_router(start.router)
@@ -58,6 +53,7 @@ async def start_bot():
             await bot.delete_webhook(drop_pending_updates=True)
         github_manager.delete_all_handlers()
         await bot.session.close()
+
 
 if __name__ == "__main__":
     asyncio.run(start_bot())

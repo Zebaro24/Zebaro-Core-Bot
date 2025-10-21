@@ -4,15 +4,16 @@ from bs4 import Tag
 
 from app.services.job_searcher.listeners.base_listeners import BaseListeners
 
+
 class DjinniListeners(BaseListeners):
     platform_name = "Djinni"
     all_jobs = "ul.list-jobs > li"
 
     job_id = "pass"
     title = "h2"
-    company = "a[data-analytics=\"company_page\"]"
+    company = 'a[data-analytics="company_page"]'
     description = "span.js-truncated-text"
-    date = "span.text-nowrap[data-toggle=\"tooltip\"]"
+    date = 'span.text-nowrap[data-toggle="tooltip"]'
     link = "a.job-item__title-link"
 
     def get_job_id(self, element):
@@ -34,4 +35,3 @@ class DjinniListeners(BaseListeners):
         if not element:
             raise Exception("No link found")
         return f"https://djinni.co{element.get('href')}"
-

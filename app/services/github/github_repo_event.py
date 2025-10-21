@@ -24,20 +24,12 @@ class GithubRepoEvent:
 
         if message_id:
             try:
-                await self.bot.edit_message_text(
-                    chat_id=self.tg_chat_id,
-                    message_id=message_id,
-                    text=text
-                )
+                await self.bot.edit_message_text(chat_id=self.tg_chat_id, message_id=message_id, text=text)
                 return
             except TelegramBadRequest as e:
                 logger.warning(f"Cannot edit message for key {key}: {e}")
 
-        sent = await self.bot.send_message(
-            chat_id=self.tg_chat_id,
-            text=text,
-            message_thread_id=self.thread_id
-        )
+        sent = await self.bot.send_message(chat_id=self.tg_chat_id, text=text, message_thread_id=self.thread_id)
         self._messages_cache[key] = sent.message_id
 
     async def handle(self, event_name, payload):
@@ -143,7 +135,13 @@ class GithubRepoEvent:
             await self.send_or_edit_message(workflow_id, text)
         else:
             await self.send_or_edit_message(workflow_id, text)
-            notify_text = f"🎉 <b>Workflow Finished:</b> <i>{name}</i> ({conclusion.upper()})\n📦 Repo: {repo}\n🚀 Event: {event_type}\n🕒 Time: {time_str}\n🔗 <a href='{url}'>Open workflow</a>"
+            notify_text = (
+                f"🎉 <b>Workflow Finished:</b> <i>{name}</i> ({conclusion.upper()})\n"
+                f"📦 Repo: {repo}\n"
+                f"🚀 Event: {event_type}\n"
+                f"🕒 Time: {time_str}\n"
+                f"🔗 <a href='{url}'>Open workflow</a>"
+            )
             message = await self.send_message(notify_text)
             await asyncio.sleep(10)
             await message.delete()

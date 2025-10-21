@@ -2,6 +2,7 @@ from bs4 import Tag
 
 from app.services.job_searcher.listeners.base_listeners import BaseListeners
 
+
 class RobotaUAListeners(BaseListeners):
     platform_name = "Robota.ua"
     all_jobs = "alliance-vacancy-card-desktop"

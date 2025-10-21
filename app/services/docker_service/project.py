@@ -99,7 +99,6 @@ class DockerProject:
         text = f"💾 Используется {format_memory(mem)} оперативки"
         return text
 
-
     def __str__(self):
         return f"<DockerProject {self.name} {self.containers}>"
 

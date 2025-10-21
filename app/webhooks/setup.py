@@ -1,6 +1,7 @@
+from aiogram import Bot, Dispatcher
+
 from app.config import settings
 from app.webhooks.routes import telegram
-from aiogram import Bot, Dispatcher
 
 
 def get_url_webhook_github():
@@ -16,6 +17,6 @@ def setup_webhook_telegram(bot: Bot, dp: Dispatcher):
     telegram.dp = dp
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print(get_url_webhook_telegram())
     print(get_url_webhook_github())

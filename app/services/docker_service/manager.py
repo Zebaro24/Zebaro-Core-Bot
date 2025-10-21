@@ -1,5 +1,6 @@
-import docker
 from concurrent.futures import ThreadPoolExecutor
+
+import docker
 
 from app.services.docker_service.container import DockerContainer
 from app.services.docker_service.project import DockerProject
@@ -42,8 +43,8 @@ class DockerManager:
     def get_projects_info(self):
         self.update_stats()
 
-        text= "<b>🐳 Docker проекты:</b>\n\n"
-        for p_name, project in self.project_dict.items():
+        text = "<b>🐳 Docker проекты:</b>\n\n"
+        for project in self.project_dict.values():
             text += f"{project.get_short_info()}\n\n"
 
         text += self.get_memory_used_text()
@@ -76,7 +77,8 @@ class DockerManager:
     def __str__(self):
         return f"<DockerManager {list(self.project_dict.values())}>"
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import time
 
     start = time.perf_counter()

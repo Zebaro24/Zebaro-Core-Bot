@@ -1,21 +1,20 @@
+import logging
 from urllib.parse import urlparse
 
-from playwright.async_api import async_playwright, TimeoutError
-from playwright_stealth import Stealth
 from bs4 import BeautifulSoup
+from playwright.async_api import TimeoutError, async_playwright
+from playwright_stealth import Stealth
 
+from app.config import settings
+from app.services.job_searcher.job_container import Job, JobStorage
 from app.services.job_searcher.listeners.djinni_listeners import DjinniListeners
 from app.services.job_searcher.listeners.dou_listeners import DouListeners
 from app.services.job_searcher.listeners.jooble_listeners import JoobleListeners
 from app.services.job_searcher.listeners.no_fluff_jobs_listeners import NoFluffJobsListeners
 from app.services.job_searcher.listeners.robota_ua_listeners import RobotaUAListeners
 from app.services.job_searcher.listeners.work_ua_listeners import WorkUAListeners
-from app.services.job_searcher.job_container import Job, JobStorage
 
-from app.config import settings
-import logging
-
-logger = logging.getLogger('playwright.async_api')
+logger = logging.getLogger("playwright.async_api")
 
 listeners_dict = {
     "www.work.ua": WorkUAListeners(),
@@ -27,6 +26,7 @@ listeners_dict = {
     # https://www.pracuj.pl/
 }
 
+
 class JobParser:
     def __init__(self, urls: list[str], jos_storage: JobStorage):
         self.urls = urls
@@ -35,7 +35,7 @@ class JobParser:
     @staticmethod
     async def get_page(page, url: str):
         try:
-            await page.goto(url, wait_until='load', timeout=5000)
+            await page.goto(url, wait_until="load", timeout=5000)
         except TimeoutError:
             logger.error(f"Превышен таймаут для {url}, продолжаем с текущим состоянием страницы")
         return await page.content()
@@ -76,7 +76,8 @@ class JobParser:
             raise ValueError(f"No listeners for {netloc}")
         return listeners_dict[netloc]
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     test_urls = [
         # "https://www.work.ua/jobs-remote-python+developer/",
         # "https://robota.ua/zapros/python-developer/ukraine/params;scheduleIds=3",

@@ -1,6 +1,6 @@
-from aiogram.types import Update
 from aiogram import Bot, Dispatcher
-from fastapi import APIRouter, Request, Response, HTTPException
+from aiogram.types import Update
+from fastapi import APIRouter, HTTPException, Request, Response
 
 router = APIRouter()
 

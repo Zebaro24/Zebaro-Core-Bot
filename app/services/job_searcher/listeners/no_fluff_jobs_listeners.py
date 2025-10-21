@@ -2,6 +2,7 @@ from bs4 import Tag
 
 from app.services.job_searcher.listeners.base_listeners import BaseListeners
 
+
 class NoFluffJobsListeners(BaseListeners):
     platform_name = "No Fluff Jobs"
     all_jobs = "div.list-container > a"
