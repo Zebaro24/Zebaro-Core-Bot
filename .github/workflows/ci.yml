@@ -106,9 +106,8 @@ jobs:
         run: poetry run bandit -r app
 
       - name: Run Safety
-        run: |
-          poetry export -f requirements.txt --without-hashes --output requirements.txt
-          poetry run safety check --file requirements.txt
+        run:
+          poetry run safety check
 
   test:
     name: Tests & Coverage
