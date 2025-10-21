@@ -24,8 +24,9 @@ async def get_chat_id_command(message: Message):
 
     if chat.type in ["group", "supergroup"]:
         try:
-            members_count = await message.bot.get_chat_member_count(chat.id)
-            text += f"👥 <b>Members:</b> {members_count}\n"
+            if bot := message.bot:
+                members_count = await bot.get_chat_member_count(chat.id)
+                text += f"👥 <b>Members:</b> {members_count}\n"
         except TelegramBadRequest:
             text += "👥 <b>Members:</b> ❌ Cannot fetch\n"
 

@@ -79,7 +79,7 @@ class JobParser:
 
 if __name__ == "__main__":
     test_urls = [
-        # "https://www.work.ua/jobs-remote-python+developer/",
+        "https://www.work.ua/jobs-remote-python+developer/",
         # "https://robota.ua/zapros/python-developer/ukraine/params;scheduleIds=3",
         # "https://robota.ua/zapros/python-developer/other_countries/params;scheduleIds=3",
         # "https://nofluffjobs.com/ua-ru/viddalena-robota?criteria=jobPosition%3D%27python%20developer%27",

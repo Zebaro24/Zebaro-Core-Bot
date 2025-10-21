@@ -23,7 +23,9 @@ class GithubRepoWebhook:
         self.hook_id: str | None = None
 
     def enable_webhook(self):
-        hooks = requests.get(f"https://api.github.com/repos/{self.full_repo_name}/hooks", headers=self.headers).json()
+        hooks = requests.get(
+            f"https://api.github.com/repos/{self.full_repo_name}/hooks", headers=self.headers, timeout=5
+        ).json()
 
         existing_hook = None
         for hook in hooks:
@@ -56,6 +58,7 @@ class GithubRepoWebhook:
                     f"https://api.github.com/repos/{self.full_repo_name}/hooks/{existing_hook['id']}",
                     headers=self.headers,
                     json=payload,
+                    timeout=5,
                 )
                 if r.status_code in [200, 201]:
                     logger.info(f"Webhook обновлён для {self.full_repo_name}")
@@ -78,7 +81,7 @@ class GithubRepoWebhook:
         }
 
         r = requests.post(
-            f"https://api.github.com/repos/{self.full_repo_name}/hooks", json=payload, headers=self.headers
+            f"https://api.github.com/repos/{self.full_repo_name}/hooks", json=payload, headers=self.headers, timeout=5
         )
         if r.status_code in [200, 201]:
             logger.info(f"Webhook создан для {self.full_repo_name}")
@@ -86,13 +89,17 @@ class GithubRepoWebhook:
             logger.error(f"Ошибка при создании webhook для {self.full_repo_name}: {r.text}")
 
     def disable_webhook(self):
-        hooks = requests.get(f"https://api.github.com/repos/{self.full_repo_name}/hooks", headers=self.headers).json()
+        hooks = requests.get(
+            f"https://api.github.com/repos/{self.full_repo_name}/hooks", headers=self.headers, timeout=5
+        ).json()
 
         for hook in hooks:
             if hook["config"].get("url") == self.github_webhook_url:
                 hook_id = hook["id"]
                 r = requests.delete(
-                    f"https://api.github.com/repos/{self.full_repo_name}/hooks/{hook_id}", headers=self.headers
+                    f"https://api.github.com/repos/{self.full_repo_name}/hooks/{hook_id}",
+                    headers=self.headers,
+                    timeout=5,
                 )
                 if r.status_code == 204:
                     logger.info(f"Webhook удалён из {self.full_repo_name}")

@@ -39,13 +39,13 @@ class DockerProject:
         return status
 
     def get_memory_usage(self):
-        total_mem = 0
+        total_mem = 0.0
         for c in self.containers:
             total_mem += c.get_memory_usage()
         return total_mem
 
     def get_cpu_usage(self):
-        total_cpu = 0
+        total_cpu = 0.0
         for c in self.containers:
             total_cpu += c.get_cpu_usage()
         return total_cpu
@@ -92,7 +92,7 @@ class DockerProject:
         return text
 
     def get_memory_used_text(self):
-        mem = 0
+        mem = 0.0
         for c in self.containers:
             mem += c.get_memory_usage()
 

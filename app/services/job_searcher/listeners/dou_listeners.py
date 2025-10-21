@@ -43,5 +43,7 @@ class DouListeners(BaseListeners):
         return dt
 
     def get_link(self, element: Tag):
-        element = element.select_one(self.link)
-        return element.get("href")
+        select_element = element.select_one(self.link)
+        if not select_element:
+            raise Exception("No link found")
+        return select_element.get("href")

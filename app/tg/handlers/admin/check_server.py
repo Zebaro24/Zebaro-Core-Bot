@@ -14,7 +14,8 @@ router.message.middleware(docker_middleware)
 async def check_server_command(message: Message, docker_manager: DockerManager):
     await message.answer("Check server...")
 
-    await message.bot.send_chat_action(message.chat.id, "typing")
+    if bot := message.bot:
+        await bot.send_chat_action(message.chat.id, "typing")
 
     docker_manager.update_projects()
 

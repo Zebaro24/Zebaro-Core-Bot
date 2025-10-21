@@ -10,16 +10,16 @@ class Settings(BaseSettings):
 
     debug: bool = False
 
-    telegram_admin_id: int | None = None
-    telegram_docker_access_ids: list[int] | None = None
+    telegram_admin_id: int
+    telegram_docker_access_ids: list[int]
 
-    telegram_bot_token: str | None = None
-    discord_bot_token: str | None = None
-    personal_github_token: str | None = None
+    telegram_bot_token: str
+    discord_bot_token: str
+    personal_github_token: str
 
-    personal_github_secret: str | None = None
+    personal_github_secret: str
 
-    webhook_url: str | None = None
+    webhook_url: str
 
     mongo_uri: str = "mongodb://localhost:27017/zebaro_core"
 
@@ -42,4 +42,4 @@ class Settings(BaseSettings):
         return model
 
 
-settings = Settings()
+settings = Settings()  # type: ignore

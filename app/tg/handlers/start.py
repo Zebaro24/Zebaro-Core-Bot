@@ -13,7 +13,9 @@ router = Router()
 async def start_command(message: Message):
     await message.answer_sticker("CAACAgIAAxkBAAFOAiBo1WrcGZNpGqb-KQABsW7hJDPN-NgAAocCAAJWnb0KQu10K0BX0JA2BA")
 
-    await message.bot.send_chat_action(message.chat.id, "typing")
+    bot = message.bot
+    if bot is not None:
+        await bot.send_chat_action(message.chat.id, "typing")
     await sleep(1)
 
     text = (

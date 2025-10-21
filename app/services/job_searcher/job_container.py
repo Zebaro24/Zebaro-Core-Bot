@@ -1,17 +1,18 @@
 from dataclasses import asdict, dataclass
+from datetime import datetime
 
 from app.db.client import jobs_collection
 
 
 @dataclass
 class Job:
-    platform_name: str = None
-    job_id: str = None
-    title: str = None
-    company: str = None
-    description: str = None
-    date: str = None
-    link: str = None
+    platform_name: str | None = None
+    job_id: str | None = None
+    title: str | None = None
+    company: str | None = None
+    description: str | None = None
+    date: str | datetime | None = None
+    link: str | None = None
 
     def print_job(self):
         print(f"Platform Name: {self.platform_name}")

@@ -18,7 +18,8 @@ ALLOWED_COMMANDS = {"find", "update_many", "insert_one"}
 
 @router.message(Command("mongo"))
 async def mongo_command(message: Message):
-    if message.text.strip() == "/mongo":
+    text = message.text or ""
+    if text.strip() == "/mongo":
         await message.answer(
             escape(
                 "Формат команды:\n"
@@ -31,7 +32,7 @@ async def mongo_command(message: Message):
         )
         return
 
-    text = message.text[len("/mongo") :].strip()
+    text = text[len("/mongo") :].strip()
     parts = text.split(maxsplit=2)  # collection, command, json
 
     if len(parts) < 2:
@@ -54,7 +55,7 @@ async def mongo_command(message: Message):
             query_json = parts[2] if len(parts) > 2 else "{}"
             query = json.loads(query_json)
             cursor = collection.find(query)
-            result = [doc async for doc in cursor]
+            result = str([doc async for doc in cursor])
 
         elif command == "update_many":
             if len(parts) < 3:
@@ -67,8 +68,8 @@ async def mongo_command(message: Message):
             except json.JSONDecodeError:
                 await message.answer("Неверный формат JSON для update_many")
                 return
-            res = await collection.update_many(query, update)
-            result = {"matched_count": res.matched_count, "modified_count": res.modified_count}
+            res_upd = await collection.update_many(query, update)
+            result = str({"matched_count": res_upd.matched_count, "modified_count": res_upd.modified_count})
 
         elif command == "insert_one":
             if len(parts) < 3:
@@ -79,8 +80,8 @@ async def mongo_command(message: Message):
             except json.JSONDecodeError:
                 await message.answer("Неверный JSON для insert_one")
                 return
-            res = await collection.insert_one(doc)
-            result = {"inserted_id": str(res.inserted_id)}
+            res_ins = await collection.insert_one(doc)
+            result = str({"inserted_id": str(res_ins.inserted_id)})
         else:
             await message.answer("Неверная команда")
             return
@@ -92,4 +93,4 @@ async def mongo_command(message: Message):
         await message.answer(f"Ошибка при выполнении команды: {e}")
         return
 
-    await message.answer(f"<pre>{escape(str(result))}</pre>")
+    await message.answer(f"<pre>{escape(result)}</pre>")

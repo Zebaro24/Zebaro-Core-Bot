@@ -61,7 +61,7 @@ class DockerManager:
         return self.client.info()["MemTotal"]
 
     def get_memory_used_text(self):
-        mem = 0
+        mem = 0.0
         for c in self.containers_dict.values():
             mem += c.get_memory_usage()
 

@@ -1,5 +1,5 @@
 from aiogram import Router
-from aiogram.types import BufferedInputFile, CallbackQuery
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from app.services.docker_service.manager import DockerManager
 from app.tg.keyboards.docker import (
@@ -20,6 +20,9 @@ router.callback_query.middleware(docker_middleware)
 async def manager_info_callback(
     query: CallbackQuery, callback_data: DockerManagerCallback, docker_manager: DockerManager
 ):
+    if not isinstance(query.message, Message):
+        await query.answer()
+        return
     if callback_data.action == "refresh":
         await query.message.edit_text("⏳ Загрузка...", reply_markup=None)
         docker_manager.update_projects()
@@ -32,6 +35,9 @@ async def manager_info_callback(
 async def project_info_callback(
     query: CallbackQuery, callback_data: DockerProjectCallback, docker_manager: DockerManager
 ):
+    if not isinstance(query.message, Message):
+        await query.answer()
+        return
     if not docker_manager.project_dict:
         await query.answer("⏳ Загрузка...")
         docker_manager.update_projects()
@@ -54,6 +60,9 @@ async def project_info_callback(
 async def container_info_callback(
     query: CallbackQuery, callback_data: DockerContainerCallback, docker_manager: DockerManager
 ):
+    if not isinstance(query.message, Message):
+        await query.answer()
+        return
     if not docker_manager.project_dict:
         await query.answer("⏳ Загрузка...")
         docker_manager.update_projects()

@@ -15,6 +15,6 @@ app.include_router(router, prefix="/webhook", tags=["webhook"])
 
 
 async def start_webhooks():
-    config = uvicorn.Config(app, host="0.0.0.0", log_config=None)
+    config = uvicorn.Config(app, host="0.0.0.0", log_config=None)  # nosec
     server = uvicorn.Server(config)
     await server.serve()

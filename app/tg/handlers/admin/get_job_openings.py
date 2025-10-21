@@ -13,6 +13,9 @@ router.message.middleware(AdminMiddleware())
 async def get_job_openings_command(message: Message):
     await message.answer("Check jobs...")
 
-    await message.bot.send_chat_action(message.chat.id, "typing")
+    if bot := message.bot:
+        await bot.send_chat_action(message.chat.id, "typing")
 
-    await job_notification(message.bot)
+        await job_notification(bot)
+    else:
+        await message.answer("Message bot not found.")

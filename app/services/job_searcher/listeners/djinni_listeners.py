@@ -23,15 +23,17 @@ class DjinniListeners(BaseListeners):
         return id_str.split("-")[-1]
 
     def get_date(self, element: Tag):
-        element = element.select_one(self.date)
-        if not element:
+        select_element = element.select_one(self.date)
+        if not select_element:
             raise Exception("No date found")
-        date_str = element.get("data-original-title")
+        date_str = select_element.get("data-original-title")
+        if not date_str or not isinstance(date_str, str):
+            raise Exception("No date found")
         dt = datetime.strptime(date_str, "%H:%M %d.%m.%Y")
         return dt
 
     def get_link(self, element: Tag):
-        element = element.select_one(self.link)
-        if not element:
+        select_element = element.select_one(self.link)
+        if not select_element:
             raise Exception("No link found")
-        return f"https://djinni.co{element.get('href')}"
+        return f"https://djinni.co{select_element.get('href')}"

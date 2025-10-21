@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime
+from typing import Any
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
@@ -9,17 +10,17 @@ logger = logging.getLogger("github.events")
 
 
 class GithubRepoEvent:
-    def __init__(self, full_repo_name, bot: Bot, tg_chat_id, thread_id=None):
+    def __init__(self, full_repo_name: str, bot: Bot, tg_chat_id: int, thread_id: int | None = None):
         self.full_repo_name = full_repo_name
         self.bot = bot
         self.tg_chat_id = tg_chat_id
         self.thread_id = thread_id
-        self._messages_cache = {}
+        self._messages_cache: dict[Any, int] = {}
 
     async def send_message(self, message):
         return await self.bot.send_message(self.tg_chat_id, message, message_thread_id=self.thread_id)
 
-    async def send_or_edit_message(self, key, text):
+    async def send_or_edit_message(self, key, text: str):
         message_id = self._messages_cache.get(key)
 
         if message_id:

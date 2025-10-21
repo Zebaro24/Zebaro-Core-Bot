@@ -1,8 +1,10 @@
 import html
 from datetime import datetime
 
+from app.services.job_searcher.job_container import Job
 
-def job_to_html(job):
+
+def job_to_html(job: Job) -> str:
     title = html.escape(job.title or "")
     platform = html.escape(job.platform_name or "")
     link = job.link or ""  # URL не экранируем

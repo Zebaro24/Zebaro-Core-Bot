@@ -1,4 +1,4 @@
-def format_duration(seconds: int):
+def format_duration(seconds: int) -> str | None:
     if seconds == 0:
         return None
     seconds = int(seconds)

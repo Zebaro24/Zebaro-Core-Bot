@@ -10,7 +10,7 @@ from app.utils.format_time import format_duration
 class DockerContainer:
     def __init__(self, container: Container):
         self.container = container
-        self.stats = None
+        self.stats: dict | None = None
 
     def get_name(self):
         return self.container.name
@@ -39,11 +39,11 @@ class DockerContainer:
         if not self.stats:
             self.update_stats()
 
-        if not self.stats["memory_stats"]:
+        if not self.stats or not self.stats["memory_stats"]:
             return 0
 
-        memory_usage = self.stats["memory_stats"]["usage"]
-        cache = self.stats["memory_stats"]["stats"].get("cache", 0)
+        memory_usage = float(self.stats["memory_stats"]["usage"])
+        cache = float(self.stats["memory_stats"]["stats"].get("cache", 0))
 
         return memory_usage - cache
 
@@ -51,7 +51,7 @@ class DockerContainer:
         if not self.stats:
             self.update_stats()
 
-        if not self.stats["memory_stats"]:
+        if not self.stats or not self.stats["memory_stats"]:
             return 0
 
         cpu_delta = (
@@ -63,14 +63,14 @@ class DockerContainer:
         cpu_count = len(per_cpu) if per_cpu else 1
 
         if system_delta > 0 and cpu_delta > 0:
-            cpu_percent = (cpu_delta / system_delta) * cpu_count * 100
+            cpu_percent = float(cpu_delta / system_delta) * cpu_count * 100
         else:
             cpu_percent = 0.0
 
         return cpu_percent
 
     def get_restarts(self) -> int:
-        return self.container.attrs["RestartCount"]
+        return int(self.container.attrs["RestartCount"])
 
     def get_uptime(self) -> int:
         if self.container.status != "running":

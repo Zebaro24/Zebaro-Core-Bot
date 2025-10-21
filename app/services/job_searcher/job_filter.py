@@ -18,6 +18,8 @@ class JobFilter:
 
     @staticmethod
     def filter_seniors(job: Job) -> bool:
+        if job.title is None:
+            return False
         if "senior" in job.title.lower():
             if "junior" not in job.title.lower() and "middle" not in job.title.lower():
                 return True
@@ -25,6 +27,8 @@ class JobFilter:
 
     @staticmethod
     def filter_with_title(job: Job) -> bool:
+        if job.title is None:
+            return False
         with_list = [
             "python",
             "full",
@@ -33,6 +37,8 @@ class JobFilter:
 
     @staticmethod
     def filter_without_title(job: Job) -> bool:
+        if job.title is None:
+            return False
         without_list = [
             "odoo",
             "викладач",
@@ -43,5 +49,7 @@ class JobFilter:
 
     @staticmethod
     def filter_without_company(job: Job) -> bool:
+        if job.company is None:
+            return False
         without_list = ["фоп", "school"]
         return any([without_str in job.company.lower() for without_str in without_list])

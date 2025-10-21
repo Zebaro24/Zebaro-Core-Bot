@@ -13,8 +13,8 @@ logger = logging.getLogger("github.manager")
 
 
 class GithubManager:
-    github_repo_webhooks = {}
-    github_repo_events = {}
+    github_repo_webhooks: dict[str, GithubRepoWebhook] = {}
+    github_repo_events: dict[str, GithubRepoEvent] = {}
 
     def __init__(self, bot: Bot, github_webhook_url: str):
         self.bot = bot

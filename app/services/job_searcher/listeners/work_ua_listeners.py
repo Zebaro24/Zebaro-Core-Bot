@@ -31,7 +31,7 @@ class WorkUAListeners(BaseListeners):
         if not datetime_element:
             return None
         datetime_str = datetime_element.get("datetime")
-        if not datetime_str:
+        if not datetime_str or not isinstance(datetime_str, str):
             raise Exception("No date found")
         dt = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
         return dt
