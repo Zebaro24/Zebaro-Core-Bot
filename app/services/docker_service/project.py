@@ -79,7 +79,7 @@ class DockerProject:
         if uptime_str := format_duration(self.get_uptime()):
             text += f" | ⏱️ Uptime: {uptime_str}"
         if ports := self.get_open_ports():
-            text += f"\n🌐 Open ports: {", ".join(ports)}"
+            text += f"\n🌐 Open ports: {', '.join(ports)}"
         return text
 
     def get_info(self):
