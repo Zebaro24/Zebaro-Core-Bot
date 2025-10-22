@@ -49,7 +49,7 @@ class DockerManager:
 
         text += self.get_memory_used_text()
         if ports := self.get_open_ports():
-            text += f"🌐 Open ports: {", ".join(ports)}\n"
+            text += f"🌐 Open ports: {', '.join(ports)}\n"
 
         return text
 
