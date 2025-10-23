@@ -32,6 +32,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-python-3.13-
 
+      - name: Add Poetry to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Install Poetry
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: pip install poetry
@@ -73,6 +76,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-python-3.13-
 
+      - name: Add Poetry to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Install Poetry
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: pip install poetry
@@ -108,6 +114,9 @@ jobs:
           key: ${{ runner.os }}-python-3.13-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
             ${{ runner.os }}-python-3.13-
+
+      - name: Add Poetry to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install Poetry
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -151,6 +160,9 @@ jobs:
           key: ${{ runner.os }}-python-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
             ${{ runner.os }}-python-${{ matrix.python-version }}-
+
+      - name: Add Poetry to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install Poetry
         if: steps.cache-deps.outputs.cache-hit != 'true'
