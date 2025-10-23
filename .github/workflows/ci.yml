@@ -35,7 +35,6 @@ jobs:
           poetry-version: '1.8.0'
 
       - name: Install dependencies
-        if: steps.cache-deps.outputs.cache-hit != 'true'
         run: poetry install --no-interaction
 
       - name: Check formatting
@@ -74,7 +73,6 @@ jobs:
           poetry-version: '1.8.0'
 
       - name: Install dependencies
-        if: steps.cache-deps.outputs.cache-hit != 'true'
         run: poetry install --no-interaction
 
       - name: Run MyPy
@@ -108,7 +106,6 @@ jobs:
           poetry-version: '1.8.0'
 
       - name: Install dependencies
-        if: steps.cache-deps.outputs.cache-hit != 'true'
         run: poetry install --no-interaction
 
       - name: Run Bandit
@@ -149,7 +146,6 @@ jobs:
           poetry-version: '1.8.0'
 
       - name: Install dependencies
-        if: steps.cache-deps.outputs.cache-hit != 'true'
         run: poetry install --no-interaction
 
       - name: Run tests with coverage
