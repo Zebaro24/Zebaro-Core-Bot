@@ -36,8 +36,9 @@ jobs:
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install Poetry
+        shell: bash
         run: |
-          if command -v poetry >/dev/null 2>&1; then
+          if [ -x "$HOME/.local/bin/poetry" ] || command -v poetry >/dev/null 2>&1; then
             echo "Poetry found in cache, skipping installation."
           else
             python -m pip install --user pipx
@@ -85,8 +86,9 @@ jobs:
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install Poetry
+        shell: bash
         run: |
-          if command -v poetry >/dev/null 2>&1; then
+          if [ -x "$HOME/.local/bin/poetry" ] || command -v poetry >/dev/null 2>&1; then
             echo "Poetry found in cache, skipping installation."
           else
             python -m pip install --user pipx
@@ -129,8 +131,9 @@ jobs:
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install Poetry
+        shell: bash
         run: |
-          if command -v poetry >/dev/null 2>&1; then
+          if [ -x "$HOME/.local/bin/poetry" ] || command -v poetry >/dev/null 2>&1; then
             echo "Poetry found in cache, skipping installation."
           else
             python -m pip install --user pipx
@@ -180,8 +183,9 @@ jobs:
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install Poetry
+        shell: bash
         run: |
-          if command -v poetry >/dev/null 2>&1; then
+          if [ -x "$HOME/.local/bin/poetry" ] || command -v poetry >/dev/null 2>&1; then
             echo "Poetry found in cache, skipping installation."
           else
             python -m pip install --user pipx
