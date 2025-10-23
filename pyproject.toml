@@ -33,7 +33,9 @@ mypy = "^1.18"
 
 # Testing
 pytest = "^8.4"
+pytest-mock = "^3.15.1"
 pytest-cov = "^7.0"
+pytest-asyncio = "^1.2.0"
 
 # Security
 bandit = "^1.8"
@@ -104,10 +106,6 @@ strict_equality = true
 show_error_codes = true
 disable_error_code = ["no-untyped-def", "import-untyped"]
 
-[[tool.mypy.overrides]]
-module = ["flask.*", "click.*", "pytest.*"]
-ignore_missing_imports = true
-
 # ----------------------------
 # Pytest configuration
 # ----------------------------
@@ -119,15 +117,15 @@ addopts = [
     "--color=yes",
     "--strict-markers",
     "--strict-config",
-    "--rootdir=.",
-    "--cov=app",
-    "--cov-report=term-missing",
-    "--cov-report=html",
-    "--cov-report=xml"
+    "--rootdir=."
 ]
 filterwarnings = [
     "error",
     "ignore::DeprecationWarning"
+]
+markers = [
+    "asyncio: mark test as asyncio",
+    "slow: mark test as slow"
 ]
 
 # ----------------------------
