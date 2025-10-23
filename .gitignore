@@ -1,22 +1,46 @@
-# Python cache
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+*$py.class
 
-# Virtual environment
-venv/
-.env
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
 .venv/
+venv/
+ENV/
 
-# IDE and editors
-.vscode/
+# PyTest
+.pytest_cache/
+
+# Coverage artifacts
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# IDEs and editors
 .idea/
+.vscode/
 
-# Logs and temporary files
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
 *.log
-*.sqlite3
-*.db
+
+# Local environment files
+.env
+.env.*
 
 # Dev version
 docker-compose.override.yml
