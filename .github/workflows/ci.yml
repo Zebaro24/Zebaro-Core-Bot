@@ -19,18 +19,31 @@ jobs:
           python-version: '3.13'
 
       - name: Cache dependencies
+        id: cache-deps
         uses: actions/cache@v3
         with:
           path: |
             ~/.cache/pip
             ~/.cache/pypoetry
+            ~/.local/pipx
+            ~/.local/bin
             .venv
           key: ${{ runner.os }}-python-3.13-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
             ${{ runner.os }}-python-3.13-
 
+      - name: Add Poetry to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Install Poetry
-        run: pip install poetry
+        run: |
+          if command -v poetry >/dev/null 2>&1; then
+            echo "Poetry found in cache, skipping installation."
+          else
+            python -m pip install --user pipx
+            python -m pipx ensurepath
+            python -m pipx install poetry
+          fi
 
       - name: Install dependencies
         run: poetry install --no-interaction
@@ -55,18 +68,31 @@ jobs:
           python-version: '3.13'
 
       - name: Cache dependencies
+        id: cache-deps
         uses: actions/cache@v3
         with:
           path: |
             ~/.cache/pip
             ~/.cache/pypoetry
+            ~/.local/pipx
+            ~/.local/bin
             .venv
           key: ${{ runner.os }}-python-3.13-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
             ${{ runner.os }}-python-3.13-
 
+      - name: Add Poetry to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Install Poetry
-        run: pip install poetry
+        run: |
+          if command -v poetry >/dev/null 2>&1; then
+            echo "Poetry found in cache, skipping installation."
+          else
+            python -m pip install --user pipx
+            python -m pipx ensurepath
+            python -m pipx install poetry
+          fi
 
       - name: Install dependencies
         run: poetry install --no-interaction
@@ -86,18 +112,31 @@ jobs:
           python-version: '3.13'
 
       - name: Cache dependencies
+        id: cache-deps
         uses: actions/cache@v3
         with:
           path: |
             ~/.cache/pip
             ~/.cache/pypoetry
+            ~/.local/pipx
+            ~/.local/bin
             .venv
           key: ${{ runner.os }}-python-3.13-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
             ${{ runner.os }}-python-3.13-
 
+      - name: Add Poetry to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Install Poetry
-        run: pip install poetry
+        run: |
+          if command -v poetry >/dev/null 2>&1; then
+            echo "Poetry found in cache, skipping installation."
+          else
+            python -m pip install --user pipx
+            python -m pipx ensurepath
+            python -m pipx install poetry
+          fi
 
       - name: Install dependencies
         run: poetry install --no-interaction
@@ -124,18 +163,31 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Cache dependencies
+        id: cache-deps
         uses: actions/cache@v3
         with:
           path: |
             ~/.cache/pip
             ~/.cache/pypoetry
+            ~/.local/pipx
+            ~/.local/bin
             .venv
           key: ${{ runner.os }}-python-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
             ${{ runner.os }}-python-${{ matrix.python-version }}-
 
+      - name: Add Poetry to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Install Poetry
-        run: pip install poetry
+        run: |
+          if command -v poetry >/dev/null 2>&1; then
+            echo "Poetry found in cache, skipping installation."
+          else
+            python -m pip install --user pipx
+            python -m pipx ensurepath
+            python -m pipx install poetry
+          fi
 
       - name: Install dependencies
         run: poetry install --no-interaction
