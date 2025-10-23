@@ -32,20 +32,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-python-3.13-
 
-      - name: Add Poetry to PATH
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-
       - name: Install Poetry
-        run: |
-          if type poetry >/dev/null 2>&1; then
-            echo "Poetry found in cache, skipping installation."
-          else
-            python -m pip install --user pipx
-            python -m pipx ensurepath
-            python -m pipx install poetry
-          fi
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: pip install poetry
 
       - name: Install dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
         run: poetry install --no-interaction
 
       - name: Check formatting
@@ -81,20 +73,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-python-3.13-
 
-      - name: Add Poetry to PATH
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-
       - name: Install Poetry
-        run: |
-          if type poetry >/dev/null 2>&1; then
-            echo "Poetry found in cache, skipping installation."
-          else
-            python -m pip install --user pipx
-            python -m pipx ensurepath
-            python -m pipx install poetry
-          fi
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: pip install poetry
 
       - name: Install dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
         run: poetry install --no-interaction
 
       - name: Run MyPy
@@ -125,20 +109,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-python-3.13-
 
-      - name: Add Poetry to PATH
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-
       - name: Install Poetry
-        run: |
-          if type poetry >/dev/null 2>&1; then
-            echo "Poetry found in cache, skipping installation."
-          else
-            python -m pip install --user pipx
-            python -m pipx ensurepath
-            python -m pipx install poetry
-          fi
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: pip install poetry
 
       - name: Install dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
         run: poetry install --no-interaction
 
       - name: Run Bandit
@@ -176,20 +152,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-python-${{ matrix.python-version }}-
 
-      - name: Add Poetry to PATH
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-
       - name: Install Poetry
-        run: |
-          if type poetry >/dev/null 2>&1; then
-            echo "Poetry found in cache, skipping installation."
-          else
-            python -m pip install --user pipx
-            python -m pipx ensurepath
-            python -m pipx install poetry
-          fi
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: pip install poetry
 
       - name: Install dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
         run: poetry install --no-interaction
 
       - name: Run tests with coverage
