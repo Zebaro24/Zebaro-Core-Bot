@@ -38,7 +38,7 @@ jobs:
       - name: Install Poetry
         shell: bash
         run: |
-          if [ -x "$HOME/.local/bin/poetry" ] || command -v poetry >/dev/null 2>&1; then
+          if poetry --version >/dev/null 2>&1; then
             echo "Poetry found in cache, skipping installation."
           else
             python -m pip install --user pipx
@@ -88,7 +88,7 @@ jobs:
       - name: Install Poetry
         shell: bash
         run: |
-          if [ -x "$HOME/.local/bin/poetry" ] || command -v poetry >/dev/null 2>&1; then
+          if poetry --version >/dev/null 2>&1; then
             echo "Poetry found in cache, skipping installation."
           else
             python -m pip install --user pipx
@@ -133,7 +133,7 @@ jobs:
       - name: Install Poetry
         shell: bash
         run: |
-          if [ -x "$HOME/.local/bin/poetry" ] || command -v poetry >/dev/null 2>&1; then
+          if poetry --version >/dev/null 2>&1; then
             echo "Poetry found in cache, skipping installation."
           else
             python -m pip install --user pipx
@@ -185,7 +185,7 @@ jobs:
       - name: Install Poetry
         shell: bash
         run: |
-          if [ -x "$HOME/.local/bin/poetry" ] || command -v poetry >/dev/null 2>&1; then
+          if poetry --version >/dev/null 2>&1; then
             echo "Poetry found in cache, skipping installation."
           else
             python -m pip install --user pipx
