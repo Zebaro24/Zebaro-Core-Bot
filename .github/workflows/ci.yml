@@ -18,26 +18,21 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Cache dependencies
+      - name: Cache Poetry dependencies
         id: cache-deps
         uses: actions/cache@v3
         with:
           path: |
-            ~/.cache/pip
             ~/.cache/pypoetry
-            ~/.local/pipx
-            ~/.local/bin
-            .venv
-          key: ${{ runner.os }}-python-3.13-${{ hashFiles('**/poetry.lock') }}
+            ~/.cache/pip
+          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
-            ${{ runner.os }}-python-3.13-
+            ${{ runner.os }}-poetry-
 
-      - name: Add Poetry to PATH
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Install Poetry
-        if: steps.cache-deps.outputs.cache-hit != 'true'
-        run: pip install poetry
+      - name: Set up Poetry
+        uses: abatilo/actions-poetry@v3
+        with:
+          poetry-version: '1.8.0'
 
       - name: Install dependencies
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -62,26 +57,21 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Cache dependencies
+      - name: Cache Poetry dependencies
         id: cache-deps
         uses: actions/cache@v3
         with:
           path: |
-            ~/.cache/pip
             ~/.cache/pypoetry
-            ~/.local/pipx
-            ~/.local/bin
-            .venv
-          key: ${{ runner.os }}-python-3.13-${{ hashFiles('**/poetry.lock') }}
+            ~/.cache/pip
+          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
-            ${{ runner.os }}-python-3.13-
+            ${{ runner.os }}-poetry-
 
-      - name: Add Poetry to PATH
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Install Poetry
-        if: steps.cache-deps.outputs.cache-hit != 'true'
-        run: pip install poetry
+      - name: Set up Poetry
+        uses: abatilo/actions-poetry@v3
+        with:
+          poetry-version: '1.8.0'
 
       - name: Install dependencies
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -101,26 +91,21 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Cache dependencies
+      - name: Cache Poetry dependencies
         id: cache-deps
         uses: actions/cache@v3
         with:
           path: |
-            ~/.cache/pip
             ~/.cache/pypoetry
-            ~/.local/pipx
-            ~/.local/bin
-            .venv
-          key: ${{ runner.os }}-python-3.13-${{ hashFiles('**/poetry.lock') }}
+            ~/.cache/pip
+          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
-            ${{ runner.os }}-python-3.13-
+            ${{ runner.os }}-poetry-
 
-      - name: Add Poetry to PATH
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Install Poetry
-        if: steps.cache-deps.outputs.cache-hit != 'true'
-        run: pip install poetry
+      - name: Set up Poetry
+        uses: abatilo/actions-poetry@v3
+        with:
+          poetry-version: '1.8.0'
 
       - name: Install dependencies
         if: steps.cache-deps.outputs.cache-hit != 'true'
@@ -147,26 +132,21 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Cache dependencies
+      - name: Cache Poetry dependencies
         id: cache-deps
         uses: actions/cache@v3
         with:
           path: |
-            ~/.cache/pip
             ~/.cache/pypoetry
-            ~/.local/pipx
-            ~/.local/bin
-            .venv
-          key: ${{ runner.os }}-python-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
+            ~/.cache/pip
+          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
-            ${{ runner.os }}-python-${{ matrix.python-version }}-
+            ${{ runner.os }}-poetry-
 
-      - name: Add Poetry to PATH
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Install Poetry
-        if: steps.cache-deps.outputs.cache-hit != 'true'
-        run: pip install poetry
+      - name: Set up Poetry
+        uses: abatilo/actions-poetry@v3
+        with:
+          poetry-version: '1.8.0'
 
       - name: Install dependencies
         if: steps.cache-deps.outputs.cache-hit != 'true'
