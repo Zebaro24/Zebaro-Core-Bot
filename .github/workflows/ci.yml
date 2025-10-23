@@ -36,7 +36,6 @@ jobs:
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install Poetry
-        shell: bash
         run: |
           if type poetry >/dev/null 2>&1; then
             echo "Poetry found in cache, skipping installation."
@@ -86,7 +85,6 @@ jobs:
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install Poetry
-        shell: bash
         run: |
           if type poetry >/dev/null 2>&1; then
             echo "Poetry found in cache, skipping installation."
@@ -131,7 +129,6 @@ jobs:
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install Poetry
-        shell: bash
         run: |
           if type poetry >/dev/null 2>&1; then
             echo "Poetry found in cache, skipping installation."
@@ -183,7 +180,6 @@ jobs:
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install Poetry
-        shell: bash
         run: |
           if type poetry >/dev/null 2>&1; then
             echo "Poetry found in cache, skipping installation."
