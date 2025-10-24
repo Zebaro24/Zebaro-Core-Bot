@@ -37,13 +37,9 @@ def github_manager(mock_bot, mocker):
 def test_verify_signature(github_manager):
     body = b"test payload"
     import hashlib
-
-    # создаём правильную подпись
     import hmac
 
-    from app.config import settings
-
-    mac = hmac.new(settings.personal_github_secret.encode(), msg=body, digestmod=hashlib.sha256)
+    mac = hmac.new(mock_settings.personal_github_secret.encode(), msg=body, digestmod=hashlib.sha256)
     signature = "sha256=" + mac.hexdigest()
 
     assert github_manager.verify_signature(body, signature) is True
