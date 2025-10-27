@@ -93,4 +93,4 @@ async def mongo_command(message: Message):
         await message.answer(f"Ошибка при выполнении команды: {e}")
         return
 
-    await message.answer(f"<pre>{escape(result)}</pre>")
+    await message.answer(f"<pre>{escape(result)[:4000]}</pre>")
