@@ -29,7 +29,7 @@ class DockerMiddleware(BaseMiddleware):
         if user is None or user.id not in access_ids:
             if isinstance(event, CallbackQuery):
                 await event.answer("⛔ У тебя нет доступа к контейнерам", show_alert=True)
-            else:
+            elif isinstance(event, Message):
                 await event.answer("⛔ У тебя нет доступа к контейнерам")
             return None
 
