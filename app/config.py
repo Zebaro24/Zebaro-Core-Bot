@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     telegram_admin_id: int
-    telegram_docker_access_ids: list[int]
+    telegram_docker_access_ids: list[int] | str
 
     telegram_bot_token: str
     discord_bot_token: str
