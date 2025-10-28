@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "zebaro-core-bot"
 version = "0.1.0"
-description = ""
+description = "🤖 Multi-platform automation bot with Telegram & Discord bots, FastAPI webhooks, Docker control, GitHub alerts, and job scraping."
 authors = ["Zebaro <denok100100@gmail.com>"]
 readme = "README.md"
 package-mode = false
