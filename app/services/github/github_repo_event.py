@@ -32,7 +32,7 @@ class GithubRepoEvent:
             except TelegramBadRequest as e:
                 logger.warning(f"Cannot edit message for key {key}: {e}")
 
-        sent = await self.bot.send_message(chat_id=self.tg_chat_id, text=text, message_thread_id=self.thread_id)
+        sent = await self.send_message(text)
         self._messages_cache[key] = sent.message_id
 
     async def handle(self, event_name, payload):
