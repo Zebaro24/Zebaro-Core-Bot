@@ -19,7 +19,8 @@ class GithubRepoEvent:
 
     async def send_message(self, message, notification=False):
         return await self.bot.send_message(
-            self.tg_chat_id, message,
+            self.tg_chat_id,
+            message,
             message_thread_id=self.thread_id,
             disable_web_page_preview=True,
             disable_notification=not notification,

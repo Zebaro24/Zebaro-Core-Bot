@@ -16,7 +16,9 @@ def github_event(mocker):
 async def test_send_message_calls_bot_send(mocker, github_event):
     send_message_mock = mocker.patch.object(github_event.bot, "send_message")
     await github_event.send_message("hello")
-    send_message_mock.assert_called_once_with(12345, "hello", message_thread_id=None, disable_web_page_preview=True)
+    send_message_mock.assert_called_once_with(
+        12345, "hello", message_thread_id=None, disable_web_page_preview=True, disable_notification=True
+    )
 
 
 @pytest.mark.asyncio
@@ -27,7 +29,9 @@ async def test_send_message_uses_thread_id(mocker, github_event):
 
     send_message_mock = mocker.patch.object(event_with_thread.bot, "send_message")
     await event_with_thread.send_message("hello")
-    send_message_mock.assert_called_once_with(12345, "hello", message_thread_id=777, disable_web_page_preview=True)
+    send_message_mock.assert_called_once_with(
+        12345, "hello", message_thread_id=777, disable_web_page_preview=True, disable_notification=True
+    )
 
 
 @pytest.mark.asyncio
