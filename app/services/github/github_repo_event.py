@@ -17,9 +17,12 @@ class GithubRepoEvent:
         self.thread_id = thread_id
         self._messages_cache: dict[Any, int] = {}
 
-    async def send_message(self, message):
+    async def send_message(self, message, notification=False):
         return await self.bot.send_message(
-            self.tg_chat_id, message, message_thread_id=self.thread_id, disable_web_page_preview=True
+            self.tg_chat_id, message,
+            message_thread_id=self.thread_id,
+            disable_web_page_preview=True,
+            disable_notification=not notification,
         )
 
     async def send_or_edit_message(self, key, text: str):
