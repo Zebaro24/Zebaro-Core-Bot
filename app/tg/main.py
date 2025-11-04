@@ -8,7 +8,7 @@ from app.config import settings
 from app.scheduler import scheduler
 from app.services.github.github_manager import GithubManager
 from app.tg.handlers import get_chat_id, start
-from app.tg.handlers.admin import check_server, get_job_openings, mongo
+from app.tg.handlers.admin import get_job_openings, mongo, server_speed, server_status
 from app.tg.handlers.callbacks import docker
 from app.tg.notification.job_notification import job_notification
 from app.webhooks.setup import get_url_webhook_github, get_url_webhook_telegram, setup_webhook_telegram
@@ -23,7 +23,8 @@ async def start_bot():
     dp.include_router(start.router)
     dp.include_router(get_chat_id.router)
 
-    dp.include_router(check_server.router)
+    dp.include_router(server_status.router)
+    dp.include_router(server_speed.router)
     dp.include_router(docker.router)
     dp.include_router(mongo.router)
 

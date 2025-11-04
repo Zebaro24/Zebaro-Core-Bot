@@ -14,22 +14,37 @@ async def start_command(message: Message):
     await message.answer_sticker("CAACAgIAAxkBAAFOAiBo1WrcGZNpGqb-KQABsW7hJDPN-NgAAocCAAJWnb0KQu10K0BX0JA2BA")
 
     bot = message.bot
-    if bot is not None:
+    if bot:
         await bot.send_chat_action(message.chat.id, "typing")
-    await sleep(1)
+        await sleep(1)
 
     text = (
-        "Привет, я твой персональный бот-ассистент! 🚀\n"
-        "Готов автоматизировать скучные дела, выдавать инфу и иногда шутить (иногда — лучше не проверять 😏).\n\n"
-        "Нажимай на кнопки ниже и давай начнём! ⚡"
+        "👋 Привет! Я твой персональный бот-ассистент!\n\n"
+        "⚡ Готов автоматизировать скучные задачи, выдавать инфу и иногда шутить 😏\n"
+        "🎯 Просто нажимай на кнопки и поехали!\n\n"
+        "💡 Подсказка: можно попробовать все команды, чтобы узнать, на что я способен!"
     )
     await message.answer(text)
 
+    if bot:
+        await bot.send_chat_action(message.chat.id, "upload_photo")
+        await sleep(0.5)
+
+    text_commands_all = "📌 <b>Доступные команды:</b>\n" "/get_chat_id - Узнать Chat ID и Thread ID 🆔\n"
+    await message.answer(text_commands_all, message_effect_id="5159385139981059251")
+
     if message.chat.id in settings.telegram_docker_access_ids:
-        text_commands = "/check_server - Проверить работающие контейнеры"
-        await message.answer(text_commands)
+        text_commands = (
+            "🚀 <b>Проекты:</b>\n"
+            "/server_status - Проверить работающие контейнеры 🖥️\n"
+            "/server_speed - Проверка скорости интернет-соединения 🌐⚡"
+        )
+        await message.answer(text_commands, message_effect_id="5104841245755180586")
 
     if message.chat.id == settings.telegram_admin_id:
-        text_commands = "/get_job_openings - Поиск новых вакансий\n"
-        text_commands += "/mongo - Обращение в MongoDB\n"
-        await message.answer(text_commands)
+        admin_commands = (
+            "🛠️ <b>Админские фишки:</b>\n"
+            "/get_job_openings - Поиск новых вакансий 💼\n"
+            "/mongo - Обращение к базе MongoDB 🗄️"
+        )
+        await message.answer(admin_commands, message_effect_id="5046509860389126442")

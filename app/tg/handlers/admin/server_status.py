@@ -10,9 +10,9 @@ router = Router()
 router.message.middleware(docker_middleware)
 
 
-@router.message(Command("check_server"))
-async def check_server_command(message: Message, docker_manager: DockerManager):
-    await message.answer("Check server...")
+@router.message(Command("server_status"))
+async def server_status_command(message: Message, docker_manager: DockerManager):
+    await message.answer("👀 Подключаюсь к проектам… Держись, щас всё проверим! ⚡")
 
     if bot := message.bot:
         await bot.send_chat_action(message.chat.id, "typing")
