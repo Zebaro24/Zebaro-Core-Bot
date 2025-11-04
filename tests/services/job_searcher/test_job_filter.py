@@ -9,7 +9,7 @@ from app.services.job_searcher.job_filter import JobFilter
     [
         ("Senior Python Dev", True),
         ("Junior Python Dev", False),
-        ("Middle Python Dev", False),
+        ("Middle Python Dev", True),
         ("Python Dev", False),
         (None, False),
     ],

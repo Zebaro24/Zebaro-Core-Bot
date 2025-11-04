@@ -20,8 +20,8 @@ class JobFilter:
     def filter_seniors(job: Job) -> bool:
         if job.title is None:
             return False
-        if "senior" in job.title.lower():
-            if "junior" not in job.title.lower() and "middle" not in job.title.lower():
+        if "senior" in job.title.lower() or "middle" in job.title.lower():
+            if "junior" not in job.title.lower():
                 return True
         return False
 
@@ -44,6 +44,7 @@ class JobFilter:
             "викладач",
             "тренер",
             "lead",
+            "qa",
         ]
         return any([without_str in job.title.lower() for without_str in without_list])
 
