@@ -31,7 +31,9 @@ class GithubRepoEvent:
 
         if message_id:
             try:
-                await self.bot.edit_message_text(chat_id=self.tg_chat_id, message_id=message_id, text=text)
+                await self.bot.edit_message_text(
+                    chat_id=self.tg_chat_id, message_id=message_id, text=text, disable_web_page_preview=True
+                )
                 return
             except TelegramBadRequest as e:
                 logger.warning(f"Cannot edit message for key {key}: {e}")

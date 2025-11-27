@@ -54,7 +54,9 @@ async def test_send_or_edit_message_edit_existing(mocker, github_event):
 
     await github_event.send_or_edit_message("key1", "new text")
 
-    edit_message_text_mock.assert_called_once_with(chat_id=12345, message_id=42, text="new text")
+    edit_message_text_mock.assert_called_once_with(
+        chat_id=12345, message_id=42, text="new text", disable_web_page_preview=True
+    )
     send_message_mock.assert_not_called()
 
 
