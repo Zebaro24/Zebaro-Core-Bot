@@ -1,0 +1,88 @@
+name: Create Branch and PR from Label
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  create-branch-and-pr:
+    if: github.event.label.name == 'in-progress'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Generate Branch Name
+        id: meta
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_ID: ${{ github.event.issue.number }}
+        run: |
+          # Process title: Lowercase -> Remove special chars -> Remove duplicate dashes
+          CLEAN_TITLE=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]/-/g' | tr -s '-' | sed 's/^-//;s/-$//')
+          
+          # Branch naming convention: feature/ID-description
+          BRANCH_NAME="feature/${ISSUE_ID}-${CLEAN_TITLE}"
+          
+          echo "Generated branch name: $BRANCH_NAME"
+          echo "branch_name=${BRANCH_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Check if branch exists
+        id: check_branch
+        env:
+          BRANCH_NAME: ${{ steps.meta.outputs.branch_name }}
+        run: |
+          # Check remote references to avoid errors if label is toggled
+          if git ls-remote --exit-code --heads origin "$BRANCH_NAME"; then
+            echo "Branch $BRANCH_NAME already exists."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Branch and PR
+        if: steps.check_branch.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH_NAME: ${{ steps.meta.outputs.branch_name }}
+          ISSUE_ID: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          USER_LOGIN: ${{ github.actor }}
+        run: |
+          # Create and switch to new branch
+          git checkout -b "$BRANCH_NAME"
+
+          # Create an empty initial commit to allow PR creation
+          # Using Conventional Commits 'chore' type
+          git commit --allow-empty -m "chore(issue): initialize branch for #$ISSUE_ID"
+          
+          # Push the new branch
+          git push -u origin "$BRANCH_NAME"
+
+          # Create Pull Request using GitHub CLI
+          # --assignee "@me" assigns the PR to the user who triggered the workflow
+          gh pr create \
+            --base main \
+            --head "$BRANCH_NAME" \
+            --title "feat: $ISSUE_TITLE" \
+            --body "Closes #$ISSUE_ID
+
+            ## Description
+            Automatically created from issue #$ISSUE_ID.
+            
+            ## Checklist
+            - [ ] Logic implemented
+            - [ ] Tests updated/added
+            - [ ] Linter check passed" \
+            --draft \
+            --assignee "$USER_LOGIN"
