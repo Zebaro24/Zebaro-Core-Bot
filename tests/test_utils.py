@@ -1,7 +1,7 @@
 import pytest
 
-from app.utils.format_memory import format_memory
-from app.utils.format_time import format_duration
+from src.utils.format_memory import format_memory
+from src.utils.format_time import format_duration
 
 
 @pytest.mark.parametrize(

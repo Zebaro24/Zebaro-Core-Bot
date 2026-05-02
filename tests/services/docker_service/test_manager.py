@@ -2,7 +2,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.docker_service.manager import DockerManager
+from src.interfaces.tg.formatters.docker import format_manager_info
+from src.services.docker.manager import DockerManager
 
 
 @pytest.fixture
@@ -24,7 +25,7 @@ def mock_docker_client():
 
 @pytest.fixture
 def docker_manager(mock_docker_client):
-    with patch("app.services.docker_service.manager.docker.from_env", return_value=mock_docker_client):
+    with patch("src.services.docker.manager.docker.from_env", return_value=mock_docker_client):
         dm = DockerManager()
     return dm
 
@@ -32,7 +33,7 @@ def docker_manager(mock_docker_client):
 def test_update_projects_creates_projects_and_containers(docker_manager):
     dm = docker_manager
 
-    with patch("app.services.docker_service.manager.DockerProject") as MockProject:
+    with patch("src.services.docker.manager.DockerProject") as MockProject:
         mock_project_a = MagicMock()
         mock_project_b = MagicMock()
         MockProject.side_effect = lambda name: {"Proja": mock_project_a, "Container2": mock_project_b}.get(
@@ -70,7 +71,7 @@ def test_get_memory_used_text(docker_manager):
     mock_c2 = MagicMock(get_memory_usage=MagicMock(return_value=256 * 1024 * 1024))
     dm.containers_dict = {"a": mock_c1, "b": mock_c2}
 
-    with patch("app.services.docker_service.manager.format_memory", side_effect=lambda x: f"{x/1024**3:.1f}G"):
+    with patch("src.services.docker.manager.format_memory", side_effect=lambda x: f"{x/1024**3:.1f}G"):
         dm.get_memory_total = MagicMock(return_value=1024**3)
         text = dm.get_memory_used_text()
 
@@ -78,7 +79,8 @@ def test_get_memory_used_text(docker_manager):
     assert "0.8G/1.0G" in text
 
 
-def test_get_projects_info(docker_manager):
+def test_format_manager_info(docker_manager):
+    """format_manager_info() should render all projects + memory + ports."""
     dm = docker_manager
     project1 = MagicMock()
     project1.get_short_info.return_value = "proj info"
@@ -87,12 +89,11 @@ def test_get_projects_info(docker_manager):
     dm.update_stats = MagicMock()
     dm.get_memory_used_text = MagicMock(return_value="RAM text\n")
 
-    text = dm.get_projects_info()
+    text = format_manager_info(dm)
     assert text.startswith("<b>🐳 Docker проекты:")
     assert "proj info" in text
     assert "RAM text" in text
     assert "8080" in text
-    dm.update_stats.assert_called_once()
 
 
 def test_update_stats(docker_manager):

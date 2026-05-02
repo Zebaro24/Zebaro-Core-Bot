@@ -20,4 +20,4 @@ COPY --from=build /usr/local/bin /usr/local/bin
 COPY --from=build /app /app
 
 EXPOSE 8000
-CMD ["python", "-m", "app.main"]
+CMD ["python", "-m", "src.main"]

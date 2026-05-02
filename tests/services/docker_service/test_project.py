@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.services.docker_service.project import DockerProject
+from src.services.docker.project import DockerProject
 
 
 @pytest.fixture

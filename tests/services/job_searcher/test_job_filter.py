@@ -1,7 +1,7 @@
 import pytest
 
-from app.services.job_searcher.job_container import Job, JobStorage
-from app.services.job_searcher.job_filter import JobFilter
+from src.services.job_searcher.container import Job, JobStorage
+from src.services.job_searcher.filter import JobFilter
 
 
 @pytest.mark.parametrize(
