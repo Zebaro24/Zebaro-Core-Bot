@@ -3,9 +3,9 @@ import logging
 
 from src.core.service_manager import ServiceManager
 from src.db import start_db
-from src.interfaces.ds import start_bot as start_ds
-from src.interfaces.tg import start_bot as start_tg
-from src.interfaces.webhooks import start_webhooks
+from src.interfaces.ds.main import start_bot as start_ds
+from src.interfaces.tg.main import start_bot as start_tg
+from src.interfaces.webhooks.main import start_webhooks
 from src.scheduler import start_scheduler
 
 
