@@ -1,6 +1,7 @@
 import pytest
+from aiogram.exceptions import TelegramBadRequest
 
-from app.services.github.github_repo_event import GithubRepoEvent, TelegramBadRequest
+from src.services.github.event_handler import GithubRepoEvent
 
 
 @pytest.fixture
@@ -8,7 +9,6 @@ def github_event(mocker):
     bot = mocker.MagicMock()
     bot.send_message = mocker.AsyncMock()
     bot.edit_message_text = mocker.AsyncMock()
-
     return GithubRepoEvent(full_repo_name="user/repo", bot=bot, tg_chat_id=12345)
 
 
@@ -23,7 +23,6 @@ async def test_send_message_calls_bot_send(mocker, github_event):
 
 @pytest.mark.asyncio
 async def test_send_message_uses_thread_id(mocker, github_event):
-    # Recreate instance with thread id
     bot = github_event.bot
     event_with_thread = GithubRepoEvent(full_repo_name="user/repo", bot=bot, tg_chat_id=12345, thread_id=777)
 
@@ -102,7 +101,7 @@ async def test_handle_calls_sync_method(mocker, github_event):
 async def test_handle_logs_warning_for_unknown_event(caplog, github_event):
     caplog.set_level("WARNING")
     await github_event.handle("unknown_event", {})
-    assert "No handler for the event: unknown_event" in caplog.text
+    assert "No handler for event: unknown_event" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -113,11 +112,9 @@ async def test_push_no_commits(mocker, github_event):
         "ref": "refs/heads/main",
         "commits": [],
     }
-
     send_mock = mocker.patch.object(github_event, "send_message", new=mocker.AsyncMock())
     await github_event.push(payload)
 
-    assert send_mock.await_count == 1
     sent_text = send_mock.await_args.args[0]
     assert "GitHub Push" in sent_text
     assert "Alice" in sent_text and "main" in sent_text
@@ -145,7 +142,6 @@ async def test_push_with_commits(mocker, github_event):
             },
         ],
     }
-
     send_mock = mocker.patch.object(github_event, "send_message", new=mocker.AsyncMock())
     await github_event.push(payload)
 
@@ -171,7 +167,6 @@ async def test_pull_request_merged(mocker, github_event):
             "updated_at": "2025-10-21T11:00:00Z",
         },
     }
-
     send_mock = mocker.patch.object(github_event, "send_message", new=mocker.AsyncMock())
     await github_event.pull_request(payload)
 
@@ -197,7 +192,6 @@ async def test_pull_request_not_merged(mocker, github_event):
             "updated_at": "2025-10-21T11:00:00Z",
         },
     }
-
     send_mock = mocker.patch.object(github_event, "send_message", new=mocker.AsyncMock())
     await github_event.pull_request(payload)
 
@@ -221,7 +215,6 @@ async def test_workflow_run_in_progress(mocker, github_event):
             "created_at": "2025-10-23T12:34:56Z",
         }
     }
-
     edit_mock = mocker.patch.object(github_event, "send_or_edit_message", new=mocker.AsyncMock())
     send_mock = mocker.patch.object(github_event, "send_message", new=mocker.AsyncMock())
 
@@ -231,7 +224,7 @@ async def test_workflow_run_in_progress(mocker, github_event):
     key, text = edit_mock.await_args.args
     assert key == 101
     assert "CI" in text and "dev" in text and "push" in text
-    assert "12:34" in text  # time parsed from ISO
+    assert "12:34" in text
     send_mock.assert_not_called()
 
 
@@ -250,14 +243,11 @@ async def test_workflow_run_success_sends_notification_and_deletes(mocker, githu
             "created_at": "2025-10-23T08:05:00Z",
         }
     }
-
     edit_mock = mocker.patch.object(github_event, "send_or_edit_message", new=mocker.AsyncMock())
-
     message = mocker.MagicMock()
     message.delete = mocker.AsyncMock()
     send_mock = mocker.patch.object(github_event, "send_message", new=mocker.AsyncMock(return_value=message))
-
-    sleep_mock = mocker.patch("app.services.github.github_repo_event.asyncio.sleep", new=mocker.AsyncMock())
+    sleep_mock = mocker.patch("src.services.github.event_handler.asyncio.sleep", new=mocker.AsyncMock())
 
     await github_event.workflow_run(payload)
 

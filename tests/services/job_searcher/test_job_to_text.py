@@ -2,8 +2,8 @@ from datetime import datetime
 
 import pytest
 
-from app.services.job_searcher.job_container import Job
-from app.services.job_searcher.job_to_text import job_to_html
+from src.services.job_searcher.container import Job
+from src.services.job_searcher.formatter import job_to_html
 
 
 @pytest.mark.parametrize(

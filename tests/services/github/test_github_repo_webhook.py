@@ -6,13 +6,14 @@ import pytest
 mock_settings = MagicMock()
 mock_settings.personal_github_token = "fake_token"
 mock_settings.personal_github_secret = "fake_secret"
-sys.modules["app.config"] = MagicMock(settings=mock_settings)
+sys.modules["src.config"] = MagicMock(settings=mock_settings)
 
-from app.services.github.github_repo_webhook import GithubRepoWebhook  # noqa: E402
+from src.services.github.webhook import GithubRepoWebhook  # noqa: E402
 
 
 @pytest.fixture
-def webhook_instance():
+def webhook_instance(mocker):
+    mocker.patch("src.services.github.webhook.settings", mock_settings)
     return GithubRepoWebhook(full_repo_name="user/repo", github_webhook_url="https://example.com/webhook")
 
 
@@ -53,10 +54,10 @@ def webhook_instance():
     ],
 )
 def test_enable_webhook(mocker, webhook_instance, existing_webhooks, expected_post_called, expected_patch_called):
-    mock_get = mocker.patch("app.services.github.github_repo_webhook.requests.get")
-    mock_post = mocker.patch("app.services.github.github_repo_webhook.requests.post")
-    mock_patch = mocker.patch("app.services.github.github_repo_webhook.requests.patch")
-    mock_delete = mocker.patch("app.services.github.github_repo_webhook.requests.delete")
+    mock_get = mocker.patch("src.services.github.webhook.requests.get")
+    mock_post = mocker.patch("src.services.github.webhook.requests.post")
+    mock_patch = mocker.patch("src.services.github.webhook.requests.patch")
+    mock_delete = mocker.patch("src.services.github.webhook.requests.delete")
 
     mock_get.return_value.json.return_value = existing_webhooks
     mock_post.return_value.status_code = 201
@@ -79,8 +80,8 @@ def test_enable_webhook(mocker, webhook_instance, existing_webhooks, expected_po
 
 
 def test_disable_webhook(mocker, webhook_instance):
-    mock_get = mocker.patch("app.services.github.github_repo_webhook.requests.get")
-    mock_delete = mocker.patch("app.services.github.github_repo_webhook.requests.delete")
+    mock_get = mocker.patch("src.services.github.webhook.requests.get")
+    mock_delete = mocker.patch("src.services.github.webhook.requests.delete")
 
     mock_get.return_value.json.return_value = [{"id": 123, "config": {"url": webhook_instance.github_webhook_url}}]
     mock_delete.return_value.status_code = 204

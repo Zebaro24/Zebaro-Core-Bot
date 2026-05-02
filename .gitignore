@@ -31,6 +31,9 @@ coverage.xml
 .idea/
 .vscode/
 
+# Claud Code
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -41,6 +44,9 @@ Thumbs.db
 # Local environment files
 .env
 .env.*
+
+# Runtime state (created by ServiceManager on first toggle)
+services.json
 
 # Dev version
 docker-compose.override.yml

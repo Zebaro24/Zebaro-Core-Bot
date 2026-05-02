@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.docker_service.container import DockerContainer
+from src.services.docker.container import DockerContainer
 
 
 @pytest.fixture
@@ -79,8 +79,8 @@ def test_get_open_ports(docker_container):
     assert ports == {"8080"}
 
 
-@patch("app.services.docker_service.container.format_duration")
-@patch("app.services.docker_service.container.format_memory")
+@patch("src.services.docker.container.format_duration")
+@patch("src.services.docker.container.format_memory")
 def test_get_short_info(mock_format_memory, mock_format_duration, docker_container):
     mock_format_memory.return_value = "0.99 MB"
     mock_format_duration.return_value = "5 min"

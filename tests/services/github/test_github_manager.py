@@ -9,13 +9,13 @@ mock_settings = MagicMock()
 mock_settings.personal_github_token = "fake_token"
 mock_settings.personal_github_secret = "fake_secret"
 
-fake_db_client: Any = types.ModuleType("app.db.client")
+fake_db_client: Any = types.ModuleType("src.db.client")
 fake_db_client.github_notification_collection = MagicMock()
 
-sys.modules["app.db.client"] = fake_db_client
-sys.modules["app.config"] = MagicMock(settings=mock_settings)
+sys.modules["src.db.client"] = fake_db_client
+sys.modules["src.config"] = MagicMock(settings=mock_settings)
 
-from app.services.github.github_manager import GithubManager  # noqa: E402
+from src.services.github.manager import GithubManager  # noqa: E402
 
 
 @pytest.fixture
@@ -28,9 +28,9 @@ def mock_bot(mocker):
 
 @pytest.fixture
 def github_manager(mock_bot, mocker):
-    mocker.patch("app.services.github.github_manager.GithubRepoWebhook", autospec=True)
-    mocker.patch("app.services.github.github_manager.GithubRepoEvent", autospec=True)
-
+    mocker.patch("src.services.github.manager.GithubRepoWebhook", autospec=True)
+    mocker.patch("src.services.github.manager.GithubRepoEvent", autospec=True)
+    mocker.patch("src.services.github.manager.settings", mock_settings)
     return GithubManager(bot=mock_bot, github_webhook_url="https://example.com/webhook")
 
 
@@ -51,24 +51,24 @@ async def test_handle_calls_event(mocker, github_manager):
     handle_mock: AsyncMock = mocker.AsyncMock()
     event = mocker.MagicMock()
     event.handle = handle_mock
-    GithubManager.github_repo_events["user/repo"] = event
+    github_manager.github_repo_events["user/repo"] = event
 
     payload = {"key": "value"}
-    await GithubManager.handle("user/repo", "push", payload)
+    await github_manager.handle("user/repo", "push", payload)
 
     handle_mock.assert_called_once_with("push", payload)
 
 
 @pytest.mark.asyncio
-async def test_handle_logs_warning_for_unknown_event(caplog):
+async def test_handle_logs_warning_for_unknown_event(caplog, github_manager):
     caplog.set_level("WARNING")
-    GithubManager.github_repo_events.clear()
-    await GithubManager.handle("unknown/repo", "push", {})
+    github_manager.github_repo_events.clear()
+    await github_manager.handle("unknown/repo", "push", {})
     assert "Event for unknown/repo not found" in caplog.text
 
 
 def test_create_handler_creates_webhook_and_event(mocker, github_manager):
-    module = sys.modules["app.services.github.github_manager"]
+    module = sys.modules["src.services.github.manager"]
     webhook_cls = mocker.patch.object(module, "GithubRepoWebhook")
     event_cls = mocker.patch.object(module, "GithubRepoEvent")
 
@@ -112,12 +112,11 @@ def test_get_event_returns_correct_object(github_manager):
 
 @pytest.mark.asyncio
 async def test_add_notification_to_db_inserts_if_not_exists(mocker):
-    mock_collection = mocker.patch("app.services.github.github_manager.github_notification_collection")
+    mock_collection = mocker.patch("src.services.github.manager.github_notification_collection")
     mock_collection.find_one = mocker.AsyncMock(return_value=None)
     mock_collection.insert_one = mocker.AsyncMock()
-    manager_cls = GithubManager
 
-    await manager_cls.add_notification_to_db("user/repo", 12345, thread_id=1)
+    await GithubManager.add_notification_to_db("user/repo", 12345, thread_id=1)
     mock_collection.insert_one.assert_called_once_with(
         {"full_repo_name": "user/repo", "tg_chat_id": 12345, "thread_id": 1}
     )
@@ -125,10 +124,9 @@ async def test_add_notification_to_db_inserts_if_not_exists(mocker):
 
 @pytest.mark.asyncio
 async def test_add_notification_to_db_does_not_insert_if_exists(mocker):
-    mock_collection = mocker.patch("app.services.github.github_manager.github_notification_collection")
+    mock_collection = mocker.patch("src.services.github.manager.github_notification_collection")
     mock_collection.find_one = mocker.AsyncMock(return_value={"full_repo_name": "user/repo"})
     mock_collection.insert_one = mocker.AsyncMock()
-    manager_cls = GithubManager
 
-    await manager_cls.add_notification_to_db("user/repo", 12345, thread_id=1)
+    await GithubManager.add_notification_to_db("user/repo", 12345, thread_id=1)
     mock_collection.insert_one.assert_not_called()
