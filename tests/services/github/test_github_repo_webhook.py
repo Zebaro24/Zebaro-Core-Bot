@@ -1,5 +1,5 @@
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -17,6 +17,18 @@ def webhook_instance(mocker):
     return GithubRepoWebhook(full_repo_name="user/repo", github_webhook_url="https://example.com/webhook")
 
 
+def _make_mock_client(get_response_json, post_status=201, patch_status=200, delete_status=204):
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(return_value=MagicMock(json=MagicMock(return_value=get_response_json)))
+    mock_client.post = AsyncMock(return_value=MagicMock(status_code=post_status, text=""))
+    mock_client.patch = AsyncMock(return_value=MagicMock(status_code=patch_status, text=""))
+    mock_client.delete = AsyncMock(return_value=MagicMock(status_code=delete_status, text=""))
+    return mock_client
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "existing_webhooks,expected_post_called,expected_patch_called",
     [
@@ -53,39 +65,31 @@ def webhook_instance(mocker):
         ),
     ],
 )
-def test_enable_webhook(mocker, webhook_instance, existing_webhooks, expected_post_called, expected_patch_called):
-    mock_get = mocker.patch("src.services.github.webhook.requests.get")
-    mock_post = mocker.patch("src.services.github.webhook.requests.post")
-    mock_patch = mocker.patch("src.services.github.webhook.requests.patch")
-    mock_delete = mocker.patch("src.services.github.webhook.requests.delete")
+async def test_enable_webhook(mocker, webhook_instance, existing_webhooks, expected_post_called, expected_patch_called):
+    mock_client = _make_mock_client(existing_webhooks)
+    mocker.patch("src.services.github.webhook.httpx.AsyncClient", return_value=mock_client)
 
-    mock_get.return_value.json.return_value = existing_webhooks
-    mock_post.return_value.status_code = 201
-    mock_patch.return_value.status_code = 200
-    mock_delete.return_value.status_code = 204
-
-    webhook_instance.enable_webhook()
+    await webhook_instance.enable_webhook()
 
     if expected_post_called:
-        mock_post.assert_called_once()
+        mock_client.post.assert_called_once()
     else:
-        mock_post.assert_not_called()
+        mock_client.post.assert_not_called()
 
     if expected_patch_called:
-        mock_patch.assert_called_once()
+        mock_client.patch.assert_called_once()
     else:
-        mock_patch.assert_not_called()
+        mock_client.patch.assert_not_called()
 
-    mock_delete.assert_not_called()
+    mock_client.delete.assert_not_called()
 
 
-def test_disable_webhook(mocker, webhook_instance):
-    mock_get = mocker.patch("src.services.github.webhook.requests.get")
-    mock_delete = mocker.patch("src.services.github.webhook.requests.delete")
+@pytest.mark.asyncio
+async def test_disable_webhook(mocker, webhook_instance):
+    existing = [{"id": 123, "config": {"url": webhook_instance.github_webhook_url}}]
+    mock_client = _make_mock_client(existing)
+    mocker.patch("src.services.github.webhook.httpx.AsyncClient", return_value=mock_client)
 
-    mock_get.return_value.json.return_value = [{"id": 123, "config": {"url": webhook_instance.github_webhook_url}}]
-    mock_delete.return_value.status_code = 204
+    await webhook_instance.disable_webhook()
 
-    webhook_instance.disable_webhook()
-
-    mock_delete.assert_called_once()
+    mock_client.delete.assert_called_once()

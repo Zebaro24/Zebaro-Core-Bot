@@ -10,6 +10,11 @@ def format_speedtest_results(manager: SpeedTestManager) -> str:
     text = "<b>📡 SpeedTest Report</b>\n"
     text += "━━━━━━━━━━━━━━━━━━━━━━━\n"
 
+    if manager.error:
+        text += f"❌ <b>Ошибка:</b> <code>{manager.error}</code>\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━\n"
+        return text
+
     if "server" in manager.results:
         server = manager.results["server"]
         text += f"🌍 <b>Server:</b> {server.get('sponsor', 'Unknown')}\n"

@@ -13,16 +13,16 @@ package-mode = false
 python = ">=3.11,<3.15"
 
 # --- Telegram ---
-aiogram = "^3.26"
+aiogram = "^3.27"
 
 # --- Discord ---
 discord-py = "^2.7"
 
 # --- Config / Settings ---
-pydantic-settings = "^2.13"
+pydantic-settings = "^2.14"
 
 # --- Database ---
-pymongo = "^4.16"
+pymongo = "^4.17"
 
 # --- Task scheduling ---
 apscheduler = "^3.11"
@@ -33,9 +33,10 @@ playwright-stealth = "^2.0"
 beautifulsoup4 = "^4.14.3"
 
 # --- HTTP / Webhooks ---
-uvicorn = "^0.41"
-fastapi = "^0.135"
+uvicorn = "^0.46"
+fastapi = "^0.136"
 requests = "^2.32"
+httpx = "^0.28"
 
 # --- Docker management ---
 docker = "^7.1"
@@ -56,12 +57,12 @@ flake8-bugbear = "^25.11"
 flake8-pyproject = "^1.2"
 
 # --- Type checking ---
-mypy = "^1.18"
+mypy = "^1.20"
 
 # --- Testing ---
 pytest = "^9.0"
 pytest-mock = "^3.15"
-pytest-cov = "^7.0"
+pytest-cov = "^7.1"
 pytest-asyncio = "^1.2"
 
 # --- Security scanning ---

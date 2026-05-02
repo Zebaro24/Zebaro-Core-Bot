@@ -37,9 +37,9 @@ class GithubManager:
             return
         await self.github_repo_events[full_repo_name].handle(event, payload)
 
-    def create_handler(self, full_repo_name: str, tg_chat_id: int, thread_id: int | None = None) -> None:
+    async def create_handler(self, full_repo_name: str, tg_chat_id: int, thread_id: int | None = None) -> None:
         webhook = GithubRepoWebhook(full_repo_name, self.github_webhook_url)
-        webhook.enable_webhook()
+        await webhook.enable_webhook()
 
         event_handler = GithubRepoEvent(full_repo_name, self.bot, tg_chat_id, thread_id)
 
@@ -47,18 +47,18 @@ class GithubManager:
         self.github_repo_events[full_repo_name] = event_handler
         logger.info("Handler created for %s (chat_id=%s)", full_repo_name, tg_chat_id)
 
-    def delete_handler(self, full_repo_name: str) -> None:
+    async def delete_handler(self, full_repo_name: str) -> None:
         if full_repo_name not in self.github_repo_webhooks:
             logger.warning("Webhook for %s not found", full_repo_name)
             return
-        self.github_repo_webhooks[full_repo_name].disable_webhook()
+        await self.github_repo_webhooks[full_repo_name].disable_webhook()
         del self.github_repo_webhooks[full_repo_name]
         del self.github_repo_events[full_repo_name]
         logger.info("Handler deleted for %s", full_repo_name)
 
-    def delete_all_handlers(self) -> None:
+    async def delete_all_handlers(self) -> None:
         for full_repo_name in list(self.github_repo_webhooks.keys()):
-            self.delete_handler(full_repo_name)
+            await self.delete_handler(full_repo_name)
         logger.info("All handlers deleted")
 
     def get_webhook(self, full_repo_name: str) -> GithubRepoWebhook | None:
@@ -77,7 +77,7 @@ class GithubManager:
         try:
             records = await github_notification_collection.find().to_list(length=None)
             for rec in records:
-                self.create_handler(
+                await self.create_handler(
                     full_repo_name=rec["full_repo_name"],
                     tg_chat_id=rec["tg_chat_id"],
                     thread_id=rec.get("thread_id"),
