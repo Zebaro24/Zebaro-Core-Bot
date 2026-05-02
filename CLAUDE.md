@@ -60,6 +60,5 @@ poetry run pytest
 ## Known TODOs
 
 - `dou.py` / `jooble.py`: hardcoded year in date parsing
-- `services/github/webhook.py`: uses sync `requests`, should be `httpx`
 - `ds/commands/help.py`: help command needs content
 - `event_handler.py`: `workflow_run` both branches do the same thing — review intent

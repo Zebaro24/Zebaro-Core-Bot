@@ -39,11 +39,11 @@ jobs:
 
       - name: Check formatting
         run: |
-          poetry run black --check app tests
-          poetry run isort --check-only app tests
+          poetry run black --check src tests
+          poetry run isort --check-only src tests
 
       - name: Run linting
-        run: poetry run flake8 app tests
+        run: poetry run flake8 src tests
 
   type-check:
     name: Type Checking
@@ -76,7 +76,7 @@ jobs:
         run: poetry install --no-interaction
 
       - name: Run MyPy
-        run: poetry run mypy app
+        run: poetry run mypy src
 
   security:
     name: Security Audit
@@ -109,7 +109,7 @@ jobs:
         run: poetry install --no-interaction
 
       - name: Run Bandit
-        run: poetry run bandit -r app
+        run: poetry run bandit -r src
 
       - name: Run Safety
         run:
@@ -149,7 +149,7 @@ jobs:
         run: poetry install --no-interaction
 
       - name: Run tests with coverage
-        run: poetry run pytest --cov=app --cov-report=xml --cov-report=term-missing
+        run: poetry run pytest --cov=src --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

@@ -76,5 +76,5 @@ async def start_bot() -> None:
         # Clean up GitHub handlers if service was enabled
         github_service = sm.all_services.get("github")
         if github_service and hasattr(github_service, "_manager") and github_service._manager:
-            github_service._manager.delete_all_handlers()
+            await github_service._manager.delete_all_handlers()
         await bot.session.close()

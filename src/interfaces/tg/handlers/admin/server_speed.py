@@ -19,6 +19,10 @@ async def server_speed_command(message: Message) -> None:
     manager = SpeedTestManager()
     msg = await message.answer(format_speedtest_results(manager))
 
+    if not await manager.initialize():
+        await msg.edit_text(format_speedtest_results(manager))
+        return
+
     await manager.prepare()
     await msg.edit_text(format_speedtest_results(manager))
 

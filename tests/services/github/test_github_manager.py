@@ -28,7 +28,9 @@ def mock_bot(mocker):
 
 @pytest.fixture
 def github_manager(mock_bot, mocker):
-    mocker.patch("src.services.github.manager.GithubRepoWebhook", autospec=True)
+    webhook_cls = mocker.patch("src.services.github.manager.GithubRepoWebhook", autospec=True)
+    webhook_cls.return_value.enable_webhook = AsyncMock()
+    webhook_cls.return_value.disable_webhook = AsyncMock()
     mocker.patch("src.services.github.manager.GithubRepoEvent", autospec=True)
     mocker.patch("src.services.github.manager.settings", mock_settings)
     return GithubManager(bot=mock_bot, github_webhook_url="https://example.com/webhook")
@@ -67,45 +69,51 @@ async def test_handle_logs_warning_for_unknown_event(caplog, github_manager):
     assert "Event for unknown/repo not found" in caplog.text
 
 
-def test_create_handler_creates_webhook_and_event(mocker, github_manager):
+@pytest.mark.asyncio
+async def test_create_handler_creates_webhook_and_event(mocker, github_manager):
     module = sys.modules["src.services.github.manager"]
     webhook_cls = mocker.patch.object(module, "GithubRepoWebhook")
+    webhook_cls.return_value.enable_webhook = AsyncMock()
     event_cls = mocker.patch.object(module, "GithubRepoEvent")
 
-    github_manager.create_handler("user/repo", tg_chat_id=12345)
+    await github_manager.create_handler("user/repo", tg_chat_id=12345)
 
     webhook_cls.assert_called_once_with("user/repo", github_manager.github_webhook_url)
     webhook_cls.return_value.enable_webhook.assert_called_once()
     event_cls.assert_called_once_with("user/repo", github_manager.bot, 12345, None)
 
 
-def test_delete_handler_disables_and_removes(mocker, github_manager):
-    github_manager.create_handler("user/repo", tg_chat_id=12345)
+@pytest.mark.asyncio
+async def test_delete_handler_disables_and_removes(mocker, github_manager):
+    await github_manager.create_handler("user/repo", tg_chat_id=12345)
 
     webhook_mock = github_manager.github_repo_webhooks["user/repo"]
-    delete_handler_mock = mocker.patch.object(webhook_mock, "disable_webhook")
+    webhook_mock.disable_webhook = AsyncMock()
 
-    github_manager.delete_handler("user/repo")
+    await github_manager.delete_handler("user/repo")
 
-    delete_handler_mock.assert_called_once()
+    webhook_mock.disable_webhook.assert_called_once()
     assert "user/repo" not in github_manager.github_repo_webhooks
     assert "user/repo" not in github_manager.github_repo_events
 
 
-def test_delete_handler_logs_warning_for_unknown(caplog, github_manager):
+@pytest.mark.asyncio
+async def test_delete_handler_logs_warning_for_unknown(caplog, github_manager):
     caplog.set_level("WARNING")
-    github_manager.delete_handler("unknown/repo")
+    await github_manager.delete_handler("unknown/repo")
     assert "Webhook for unknown/repo not found" in caplog.text
 
 
-def test_get_webhook_returns_correct_object(github_manager):
-    github_manager.create_handler("user/repo", tg_chat_id=12345)
+@pytest.mark.asyncio
+async def test_get_webhook_returns_correct_object(github_manager):
+    await github_manager.create_handler("user/repo", tg_chat_id=12345)
     webhook = github_manager.get_webhook("user/repo")
     assert webhook is github_manager.github_repo_webhooks["user/repo"]
 
 
-def test_get_event_returns_correct_object(github_manager):
-    github_manager.create_handler("user/repo", tg_chat_id=12345)
+@pytest.mark.asyncio
+async def test_get_event_returns_correct_object(github_manager):
+    await github_manager.create_handler("user/repo", tg_chat_id=12345)
     event = github_manager.get_event("user/repo")
     assert event is github_manager.github_repo_events["user/repo"]
 

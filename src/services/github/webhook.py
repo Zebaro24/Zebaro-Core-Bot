@@ -1,11 +1,8 @@
 import logging
 
-import requests
+import httpx
 
 from src.config import settings
-
-# TODO: Replace synchronous `requests` with `httpx` (async) to avoid blocking
-#       the event loop when enable_webhook / disable_webhook is called.
 
 logger = logging.getLogger("github.webhook")
 
@@ -19,19 +16,21 @@ class GithubRepoWebhook:
         self.secret = settings.personal_github_secret
         self.hook_id: str | None = None
 
-    def _get_existing_hook(self) -> dict | None:
-        hooks = requests.get(
-            f"https://api.github.com/repos/{self.full_repo_name}/hooks",
-            headers=self.headers,
-            timeout=5,
-        ).json()
+    async def _get_existing_hook(self) -> dict | None:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"https://api.github.com/repos/{self.full_repo_name}/hooks",
+                headers=self.headers,
+                timeout=5,
+            )
+        hooks = resp.json()
         for hook in hooks:
             if hook.get("config", {}).get("url") == self.github_webhook_url:
                 return dict(hook)
         return None
 
-    def enable_webhook(self) -> None:
-        existing_hook = self._get_existing_hook()
+    async def enable_webhook(self) -> None:
+        existing_hook = await self._get_existing_hook()
 
         if existing_hook:
             config = existing_hook.get("config", {})
@@ -42,21 +41,22 @@ class GithubRepoWebhook:
             )
             if needs_update:
                 logger.info("Updating webhook for %s", self.full_repo_name)
-                r = requests.patch(
-                    f"https://api.github.com/repos/{self.full_repo_name}/hooks/{existing_hook['id']}",
-                    headers=self.headers,
-                    json={
-                        "config": {
-                            "url": self.github_webhook_url,
-                            "content_type": "json",
-                            "secret": self.secret,
-                            "insecure_ssl": "0",
+                async with httpx.AsyncClient() as client:
+                    r = await client.patch(
+                        f"https://api.github.com/repos/{self.full_repo_name}/hooks/{existing_hook['id']}",
+                        headers=self.headers,
+                        json={
+                            "config": {
+                                "url": self.github_webhook_url,
+                                "content_type": "json",
+                                "secret": self.secret,
+                                "insecure_ssl": "0",
+                            },
+                            "events": self.events,
+                            "active": True,
                         },
-                        "events": self.events,
-                        "active": True,
-                    },
-                    timeout=5,
-                )
+                        timeout=5,
+                    )
                 if r.status_code in (200, 201):
                     logger.info("Webhook updated for %s", self.full_repo_name)
                 else:
@@ -65,37 +65,39 @@ class GithubRepoWebhook:
                 logger.info("Webhook already up-to-date for %s", self.full_repo_name)
             return
 
-        r = requests.post(
-            f"https://api.github.com/repos/{self.full_repo_name}/hooks",
-            json={
-                "name": "web",
-                "active": True,
-                "events": self.events,
-                "config": {
-                    "url": self.github_webhook_url,
-                    "content_type": "json",
-                    "secret": self.secret,
-                    "insecure_ssl": "0",
+        async with httpx.AsyncClient() as client:
+            r = await client.post(
+                f"https://api.github.com/repos/{self.full_repo_name}/hooks",
+                json={
+                    "name": "web",
+                    "active": True,
+                    "events": self.events,
+                    "config": {
+                        "url": self.github_webhook_url,
+                        "content_type": "json",
+                        "secret": self.secret,
+                        "insecure_ssl": "0",
+                    },
                 },
-            },
-            headers=self.headers,
-            timeout=5,
-        )
+                headers=self.headers,
+                timeout=5,
+            )
         if r.status_code in (200, 201):
             logger.info("Webhook created for %s", self.full_repo_name)
         else:
             logger.error("Failed to create webhook for %s: %s", self.full_repo_name, r.text)
 
-    def disable_webhook(self) -> None:
-        existing_hook = self._get_existing_hook()
+    async def disable_webhook(self) -> None:
+        existing_hook = await self._get_existing_hook()
         if not existing_hook:
             logger.warning("No webhook found to disable for %s", self.full_repo_name)
             return
-        r = requests.delete(
-            f"https://api.github.com/repos/{self.full_repo_name}/hooks/{existing_hook['id']}",
-            headers=self.headers,
-            timeout=5,
-        )
+        async with httpx.AsyncClient() as client:
+            r = await client.delete(
+                f"https://api.github.com/repos/{self.full_repo_name}/hooks/{existing_hook['id']}",
+                headers=self.headers,
+                timeout=5,
+            )
         if r.status_code == 204:
             logger.info("Webhook deleted for %s", self.full_repo_name)
         else:
