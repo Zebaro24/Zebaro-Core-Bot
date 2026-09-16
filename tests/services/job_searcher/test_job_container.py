@@ -56,19 +56,46 @@ def test_log_jobs(caplog):
 
 
 @pytest.mark.asyncio
-async def test_save_jobs_to_db(mocker):
+async def test_save_jobs_to_db_returns_ids_in_order(mocker):
     storage = JobStorage()
-    job = Job(title="Python Dev")
-    storage.add_job(job)
+    job1 = Job(title="Python Dev")
+    job2 = Job(title="AI Engineer")
+    storage.add_job(job1)
+    storage.add_job(job2)
 
     patched = mocker.patch("src.services.job_searcher.container.jobs_collection", mock_jobs_collection)
     mock_jobs_collection.insert_many.reset_mock()
-    await storage.save_jobs_to_db()
+    mock_jobs_collection.insert_many.return_value = MagicMock(inserted_ids=["id1", "id2"])
+
+    ids = await storage.save_jobs_to_db()
 
     mock_jobs_collection.insert_many.assert_awaited_once()
     inserted_docs = mock_jobs_collection.insert_many.call_args[0][0]
     assert inserted_docs[0]["title"] == "Python Dev"
+    assert ids == ["id1", "id2"]
     _ = patched  # used for patching side-effect
+
+
+@pytest.mark.asyncio
+async def test_save_jobs_to_db_no_jobs_returns_empty_list():
+    storage = JobStorage()
+    assert await storage.save_jobs_to_db() == []
+
+
+@pytest.mark.asyncio
+async def test_save_jobs_to_db_db_failure_returns_none_placeholders(mocker):
+    storage = JobStorage()
+    job = Job(title="Python Dev")
+    storage.add_job(job)
+
+    failing_collection = MagicMock()
+    failing_collection.insert_many = AsyncMock(side_effect=Exception("no db"))
+    patched = mocker.patch("src.services.job_searcher.container.jobs_collection", failing_collection)
+
+    ids = await storage.save_jobs_to_db()
+
+    assert ids == [None]
+    _ = patched
 
 
 @pytest.mark.asyncio

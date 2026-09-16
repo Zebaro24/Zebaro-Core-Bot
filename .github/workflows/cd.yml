@@ -92,6 +92,7 @@ jobs:
             export PERSONAL_GITHUB_SECRET=${{ secrets.PERSONAL_GITHUB_SECRET }}
             export WEBHOOK_URL=${{ vars.WEBHOOK_URL }}
             export SERVER_PORT=${{ vars.SERVER_PORT }}
+            export JOB_STATS_API_TOKEN=${{ secrets.JOB_STATS_API_TOKEN }}
             
             docker compose -p zebaro-core up -d --pull always
             docker image prune -f

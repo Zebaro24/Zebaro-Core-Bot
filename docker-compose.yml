@@ -39,6 +39,7 @@ services:
       - PERSONAL_GITHUB_TOKEN
       - PERSONAL_GITHUB_SECRET
       - WEBHOOK_URL
+      - JOB_STATS_API_TOKEN
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./services.json:/app/services.json

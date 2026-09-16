@@ -7,11 +7,14 @@ from playwright_stealth import Stealth
 
 from src.config import settings
 from src.services.job_searcher.container import Job, JobStorage
+from src.services.job_searcher.listeners.bazait import BazaITListeners
 from src.services.job_searcher.listeners.djinni import DjinniListeners
 from src.services.job_searcher.listeners.dou import DouListeners
+from src.services.job_searcher.listeners.happymonday import HappyMondayListeners
 from src.services.job_searcher.listeners.jooble import JoobleListeners
 from src.services.job_searcher.listeners.no_fluff_jobs import NoFluffJobsListeners
 from src.services.job_searcher.listeners.robota_ua import RobotaUAListeners
+from src.services.job_searcher.listeners.wellfound import WellfoundListeners
 from src.services.job_searcher.listeners.work_ua import WorkUAListeners
 
 logger = logging.getLogger("job_searcher.parser")
@@ -23,6 +26,9 @@ _LISTENERS = {
     "ua.jooble.org": JoobleListeners(),
     "djinni.co": DjinniListeners(),
     "jobs.dou.ua": DouListeners(),
+    "happymonday.ua": HappyMondayListeners(),
+    "app.bazait.com": BazaITListeners(),
+    "wellfound.com": WellfoundListeners(),
 }
 
 

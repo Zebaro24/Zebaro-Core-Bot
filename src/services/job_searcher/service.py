@@ -7,7 +7,7 @@ from src.core.base_service import BaseService
 
 logger = logging.getLogger("services.job_searcher")
 
-_JOB_IDS = ["job_notification_12", "job_notification_14", "job_notification_16"]
+_JOB_IDS = ["job_notification_12", "job_notification_14", "job_notification_16", "job_weekly_digest"]
 
 
 class JobSearcherService(BaseService):

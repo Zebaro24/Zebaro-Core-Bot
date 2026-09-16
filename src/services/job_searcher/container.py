@@ -1,5 +1,5 @@
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 
 from src.db.client import jobs_collection
@@ -21,6 +21,15 @@ class Job:
     date: str | datetime | None = None
     link: str | None = None
 
+    found_at: datetime = field(default_factory=datetime.utcnow)
+    moderation: str | None = None  # "sent" | "review" | "rejected_by_filter"
+    relevance_score: int = 0
+    user_status: str = "pending"  # "pending" | "applied" | "not_interested"
+    status_updated_at: datetime | None = None
+    similar_to: str | None = None  # mongo _id похожей вакансии на другой площадке
+    similar_to_platform: str | None = None  # платформа этой похожей вакансии (для бейджа в Telegram)
+    click_count: int = 0
+
     def __str__(self) -> str:
         return f"<{self.platform_name} - {self.title} - {self.company}>"
 
@@ -36,16 +45,18 @@ class JobStorage:
         self.jobs.remove(job)
         logger.debug("Removed job: %s", job)
 
-    async def save_jobs_to_db(self) -> None:
+    async def save_jobs_to_db(self) -> list[str | None]:
         if not self.jobs:
             logger.info("No new jobs to save")
-            return
+            return []
         try:
             docs = [asdict(job) for job in self.jobs]
-            await jobs_collection.insert_many(docs)
+            result = await jobs_collection.insert_many(docs)
             logger.info("Saved %d jobs to DB", len(docs))
+            return [str(_id) for _id in result.inserted_ids]
         except Exception as e:
             logger.warning("Failed to save jobs to DB (running without DB): %s", e)
+            return [None] * len(self.jobs)
 
     async def remove_jobs_already_in_db(self) -> None:
         before = len(self.jobs)

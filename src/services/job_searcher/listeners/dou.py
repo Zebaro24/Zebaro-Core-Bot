@@ -2,10 +2,7 @@ from datetime import datetime
 
 from bs4 import Tag
 
-from src.services.job_searcher.listeners.base import BaseListeners
-
-# TODO: Year is hardcoded to 2025 in get_date(). Should use current year
-#       (datetime.now().year) to avoid breakage in future years.
+from src.services.job_searcher.listeners.base import BaseListeners, resolve_year
 
 _MONTHS = {
     "січня": 1,
@@ -45,7 +42,8 @@ class DouListeners(BaseListeners):
         if not isinstance(date_str, str):
             raise ValueError("No date string found in Dou element")
         day, month_word = date_str.split()
-        return datetime(2025, _MONTHS[month_word], int(day))  # TODO: hardcoded year
+        month = _MONTHS[month_word]
+        return datetime(resolve_year(month), month, int(day))
 
     def get_link(self, element: Tag) -> str:
         el = element.select_one(self.link)

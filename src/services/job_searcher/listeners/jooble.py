@@ -1,11 +1,9 @@
+import re
 from datetime import datetime
 
 from bs4 import Tag
 
-from src.services.job_searcher.listeners.base import BaseListeners
-
-# TODO: Year is hardcoded to "2025" via string split. Should derive year
-#       dynamically from the current date.
+from src.services.job_searcher.listeners.base import BaseListeners, resolve_year
 
 _MONTHS = {
     "січня": 1,
@@ -51,9 +49,10 @@ class JoobleListeners(BaseListeners):
         raw = super().get_date(element)
         if not isinstance(raw, str) or not raw[0].isdigit():
             return None
-        date_str = raw.split("2025")[0].strip() + " 2025"  # TODO: hardcoded year
-        day, month_word, year = date_str.split()
-        return datetime(int(year), _MONTHS[month_word], int(day))
+        date_str = re.sub(r"\d{4}", "", raw).strip()
+        day, month_word = date_str.split()[:2]
+        month = _MONTHS[month_word]
+        return datetime(resolve_year(month), month, int(day))
 
     def get_link(self, element: Tag) -> str:
         el = element.select_one(self.link)

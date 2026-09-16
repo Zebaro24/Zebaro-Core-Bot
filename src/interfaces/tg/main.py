@@ -11,8 +11,9 @@ from src.infrastructure.playwright import PlaywrightInfra
 from src.interfaces.ds.service import DiscordService
 from src.interfaces.tg.handlers import get_chat_id, start
 from src.interfaces.tg.handlers.admin import get_job_openings, mongo, server_speed, server_status, services
-from src.interfaces.tg.handlers.callbacks import docker
+from src.interfaces.tg.handlers.callbacks import docker, job
 from src.interfaces.tg.notification.job_notification import job_notification
+from src.interfaces.tg.notification.job_stats_notification import job_stats_notification
 from src.interfaces.webhooks.setup import get_url_webhook_github, get_url_webhook_telegram, setup_telegram_webhook
 from src.scheduler import scheduler
 from src.services.github.service import GithubService
@@ -34,6 +35,7 @@ async def start_bot() -> None:
     dp.include_router(server_status.router)
     dp.include_router(server_speed.router)
     dp.include_router(docker.router)
+    dp.include_router(job.router)
     dp.include_router(mongo.router)
     dp.include_router(get_job_openings.router)
     dp.include_router(services.router)
@@ -42,6 +44,7 @@ async def start_bot() -> None:
     scheduler.add_job(job_notification, "cron", hour=12, args=[bot], id="job_notification_12")
     scheduler.add_job(job_notification, "cron", hour=14, args=[bot], id="job_notification_14")
     scheduler.add_job(job_notification, "cron", hour=16, args=[bot], id="job_notification_16")
+    scheduler.add_job(job_stats_notification, "cron", day_of_week="fri", hour=18, args=[bot], id="job_weekly_digest")
 
     # Register infrastructure and services with ServiceManager
     sm = ServiceManager.get_instance()

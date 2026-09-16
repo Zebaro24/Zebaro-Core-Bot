@@ -3,6 +3,13 @@ from datetime import datetime
 from bs4.element import Tag
 
 
+def resolve_year(month: int) -> int:
+    now = datetime.now()
+    if month > now.month:
+        return now.year - 1
+    return now.year
+
+
 class BaseListeners:
     platform_name: str | None = None
     all_jobs: str | None = None
