@@ -62,6 +62,24 @@ async def test_get_weekly_stats_totals_and_by_platform(mocker):
 
 
 @pytest.mark.asyncio
+async def test_get_weekly_stats_counts_why_vacancies_were_not_sent(mocker):
+    docs = [
+        {**_job_doc(moderation="rejected_by_filter"), "filter_reason": "senior"},
+        {**_job_doc(moderation="rejected_by_filter"), "filter_reason": "senior"},
+        {**_job_doc(moderation="rejected_by_filter"), "filter_reason": "no stack match"},
+        _job_doc(moderation="rejected_by_filter"),  # stored before reasons existed
+        _job_doc(moderation="sent"),
+    ]
+    mocker.patch("src.services.job_searcher.stats.jobs_collection", mock_jobs_collection)
+    mock_jobs_collection.find.return_value = _async_cursor(docs)
+
+    stats = await get_weekly_stats(days=7)
+
+    assert stats["by_reason"] == {"senior": 2, "no stack match": 1}
+    assert list(stats["by_reason"]) == ["senior", "no stack match"]
+
+
+@pytest.mark.asyncio
 async def test_get_weekly_stats_response_rate_and_avg_hours(mocker):
     found_at = datetime.utcnow() - timedelta(hours=10)
     status_updated_at = datetime.utcnow()

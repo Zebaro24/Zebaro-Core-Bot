@@ -1,123 +1,113 @@
 import pytest
 
 from src.services.job_searcher.container import Job, JobStorage
-from src.services.job_searcher.filter import JobFilter
+from src.services.job_searcher.filter import JobFilter, evaluate, title_reject_reason
 
 
 @pytest.mark.parametrize(
-    "title,company,expected_moderation,expected_score",
+    "title,company,reason",
     [
-        ("QA Engineer Python", "TechCorp", "rejected_by_filter", 0),
-        ("AI Training Data Labeling", "TechCorp", "rejected_by_filter", 0),
-        ("Python Developer", "ФОП Іванов", "rejected_by_filter", 0),
-        ("Python Developer", "School ABC", "rejected_by_filter", 0),
+        ("Senior Python Developer", "TechCorp", "senior"),
+        ("Sr. Full Stack Engineer (Python / React)", "TechCorp", "senior"),
+        ("Senior AI Engineer", "TechCorp", "senior"),  # AI no longer rescues a senior title
+        ("Team Lead Python", "TechCorp", "lead"),
+        ("Lead Python Developer (Database)", "Nova Digital", "lead"),
+        ("Head of Engineering", "TechCorp", "lead"),
+        ("Solution Architect", "TechCorp", "lead"),
+        ("Junior Python Developer", "TechCorp", "junior"),
+        ("Trainee Frontend (React)", "TechCorp", "junior"),
+        ("QA Engineer Python", "TechCorp", "not a developer role"),
+        ("AI Training Data Labeling", "TechCorp", "not a developer role"),
+        ("Product Manager", "TechCorp", "not a developer role"),
+        ("Python Developer", "ФОП Іванов", "company"),
+        ("Python Developer", "School ABC", "company"),
     ],
 )
-def test_classify_job_hard_reject(title, company, expected_moderation, expected_score):
-    job = Job(title=title, company=company)
-    moderation, score = JobFilter.classify_job(job)
-    assert moderation == expected_moderation
-    assert score == expected_score
+def test_title_rejects(title, company, reason):
+    assert title_reject_reason(title, company) == reason
+    verdict = evaluate(Job(title=title, company=company, description="Python FastAPI React Next.js"))
+    assert verdict.moderation == "rejected_by_filter"
+    assert verdict.reason == reason
 
 
-def test_classify_job_frontend_only_rejected():
-    job = Job(title="Frontend Developer (React)")
-    moderation, _ = JobFilter.classify_job(job)
-    assert moderation == "rejected_by_filter"
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Middle/Senior Python Developer",  # still hires a middle
+        "Junior/Middle Python Developer",
+        "Middle Python Developer",
+        "Python Developer",
+        "Software Engineer",
+    ],
+)
+def test_titles_that_stay(title):
+    assert title_reject_reason(title, "TechCorp") is None
 
 
-def test_classify_job_frontend_with_backend_signal_not_auto_rejected():
-    job = Job(title="Fullstack Frontend Developer")
-    moderation, score = JobFilter.classify_job(job)
-    assert moderation == "sent"
-    assert score == 6
+@pytest.mark.parametrize(
+    "title,description,moderation,stack",
+    [
+        # 🔥 your stack: backend core AND frontend core
+        ("Full Stack Developer", "Python, FastAPI, React, Next.js", "sent", ["Python", "FastAPI", "React", "Next.js"]),
+        ("Software Engineer", "We use Python and React", "sent", ["Python", "React"]),
+        ("Full Stack Developer (Python / React / AWS)", "", "sent", ["Python", "React"]),
+        ("Engineer", "FastAPI backend, Next.js frontend", "sent", ["FastAPI", "Next.js"]),
+        # 👀 partial: one side of the stack, or two bonus technologies
+        ("Python Developer", "Django, PostgreSQL", "review", ["Python"]),
+        ("Frontend Developer", "React and TypeScript", "review", ["React"]),
+        ("AI Engineer", "LLM agents with LangChain on AWS", "review", []),
+        # nothing matches
+        ("DevOps Engineer", "Kubernetes, Terraform, CI/CD", "rejected_by_filter", []),
+        ("Java Developer", "Spring Boot", "rejected_by_filter", []),
+    ],
+)
+def test_tiers(title, description, moderation, stack):
+    verdict = evaluate(Job(title=title, company="TechCorp", description=description))
+    assert verdict.moderation == moderation
+    assert verdict.stack == stack
 
 
-def test_classify_job_junior_without_middle_rejected():
-    job = Job(title="Junior Python Developer")
-    moderation, _ = JobFilter.classify_job(job)
-    assert moderation == "rejected_by_filter"
+def test_react_native_is_not_react():
+    verdict = evaluate(Job(title="Mobile Developer", description="React Native, Python backend"))
+    assert "React" not in verdict.stack
+    assert verdict.moderation == "review"
 
 
-def test_classify_job_junior_middle_not_rejected_by_junior_rule():
-    job = Job(title="Junior/Middle Python Developer")
-    moderation, score = JobFilter.classify_job(job)
-    assert moderation == "sent"
-    assert score > 0
+def test_word_boundaries_avoid_substring_matches():
+    # "ai" must not match inside "email", "sr" inside "srv", "python" is fine before a digit.
+    assert title_reject_reason("Platform Engineer (srv)", None) is None
+    verdict = evaluate(Job(title="Engineer", description="send an email; we use python3 and reactjs"))
+    assert verdict.stack == ["Python", "React"]
 
 
-def test_classify_job_senior_without_ai_rejected():
-    job = Job(title="Senior Python Developer")
-    moderation, _ = JobFilter.classify_job(job)
-    assert moderation == "rejected_by_filter"
+def test_score_orders_more_stack_and_title_hits_first():
+    all_four = evaluate(Job(title="Full Stack", description="python fastapi react next.js"))
+    two = evaluate(Job(title="Full Stack", description="python react"))
+    in_title = evaluate(Job(title="Python React Developer", description=""))
+    assert all_four.score > two.score
+    assert in_title.score > two.score
 
 
-def test_classify_job_word_boundary_avoids_false_positive_substring():
-    # "ai" не должен матчить внутри "Container" — регрессия на баг с наивным substring-поиском.
-    job = Job(title="Senior Container Platform Engineer")
-    moderation, score = JobFilter.classify_job(job)
-    assert moderation == "rejected_by_filter"
-    assert score == 0
+def test_prefilter_marks_rejected_and_returns_the_rest():
+    storage = JobStorage()
+    for job in [Job(title="Senior Python Dev"), Job(title="Python Developer"), Job(title="QA Engineer")]:
+        storage.add_job(job)
+
+    survivors = JobFilter(storage).prefilter_all()
+
+    assert [job.title for job in survivors] == ["Python Developer"]
+    assert storage.jobs[0].moderation == "rejected_by_filter"
+    assert storage.jobs[0].filter_reason == "senior"
 
 
-def test_classify_job_word_boundary_still_matches_standalone_ai():
-    job = Job(title="Senior AI/ML Engineer")
-    moderation, score = JobFilter.classify_job(job)
-    assert moderation != "rejected_by_filter"
-    assert score > 0
-
-
-def test_classify_job_senior_with_ai_signal_goes_to_scoring():
-    job = Job(title="Senior AI Engineer")
-    moderation, score = JobFilter.classify_job(job)
-    assert moderation == "review"
-    assert score == 4
-
-
-def test_classify_job_middle_title_not_hard_rejected():
-    # Bug fix: старый фильтр резал любой тайтл с "middle", что противоречит профилю пользователя.
-    job = Job(title="Middle Python Developer")
-    moderation, score = JobFilter.classify_job(job)
-    assert moderation == "sent"
-    assert score > 0
-
-
-def test_classify_job_ai_native_title_not_requiring_python():
-    # Bug fix: старый фильтр требовал "python"/"full" в тайтле.
-    job = Job(title="Product Engineer (AI-first)")
-    moderation, score = JobFilter.classify_job(job)
-    assert moderation in ("sent", "review")
-    assert score > 0
-
-
-def test_classify_job_high_score_sent():
-    job = Job(title="Python Fullstack Engineer")
-    moderation, score = JobFilter.classify_job(job)
-    assert moderation == "sent"
-    assert score == 12
-
-
-def test_classify_job_no_signals_rejected_by_score():
-    job = Job(title="DevOps Engineer", description="Kubernetes, Terraform, CI/CD")
-    moderation, score = JobFilter.classify_job(job)
-    assert moderation == "rejected_by_filter"
-    assert score == 0
-
-
-def test_classify_job_description_contributes_to_score():
-    job = Job(title="Software Engineer", description="We use Python and FastAPI every day")
-    moderation, score = JobFilter.classify_job(job)
-    assert score == 5  # python(3) + fastapi(2), weight x1 from description
-    assert moderation == "sent"
-
-
-def test_classify_all_keeps_all_jobs_and_sets_fields():
+def test_classify_all_sets_fields_and_orders_best_first():
     storage = JobStorage()
     jobs = [
-        Job(title="Senior Python Dev", company="TechCorp"),
-        Job(title="Python Fullstack Engineer", company="TechCorp"),
-        Job(title="DevOps Engineer", company="TechCorp"),
-        Job(title=None, company="TechCorp"),
+        Job(title="DevOps Engineer", description="Terraform"),
+        Job(title="Python Developer", description="Django"),
+        Job(title="Full Stack", description="Python FastAPI React"),
+        Job(title="Senior Python Dev"),
+        Job(title=None),
     ]
     for job in jobs:
         storage.add_job(job)
@@ -125,6 +115,15 @@ def test_classify_all_keeps_all_jobs_and_sets_fields():
     JobFilter(storage).classify_all()
 
     assert len(storage.jobs) == len(jobs)
-    for job in storage.jobs:
-        assert job.moderation in ("sent", "review", "rejected_by_filter")
-        assert isinstance(job.relevance_score, int)
+    assert [job.moderation for job in storage.jobs][:2] == ["sent", "review"]
+    top = storage.jobs[0]
+    assert top.matched_stack == ["Python", "FastAPI", "React"]
+    assert top.filter_reason is None
+    assert {job.filter_reason for job in storage.jobs[2:]} == {"no stack match", "senior"}
+
+
+def test_classify_job_keeps_the_tuple_interface():
+    assert JobFilter.classify_job(Job(title="Python React Developer")) == (
+        "sent",
+        30,
+    )  # 2 core x10 + 2 core in title x5

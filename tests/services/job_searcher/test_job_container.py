@@ -31,6 +31,16 @@ def test_job_str():
     assert str(job) == "<TestPlatform - Python Dev - TestCo>"
 
 
+def test_job_from_doc_ignores_mongo_only_keys_and_tolerates_old_documents():
+    job = Job.from_doc(
+        {"_id": "507f1f77bcf86cd799439011", "title": "Python Dev", "moderation": "sent", "user_status": "applied"}
+    )
+
+    assert job.title == "Python Dev"
+    assert job.user_status == "applied"
+    assert job.matched_stack == []  # documents stored before the field existed
+
+
 def test_add_and_remove_job():
     storage = JobStorage()
     job = Job(title="Python Dev")

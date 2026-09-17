@@ -18,6 +18,8 @@ async def get_weekly_stats(days: int = 7) -> dict[str, Any]:
     totals = {"found": len(docs), "sent": 0, "review": 0, "rejected_by_filter": 0}
     by_platform: dict[str, dict[str, int]] = {}
     by_status = {"applied": 0, "not_interested": 0, "pending": 0}
+    # Why vacancies were not sent — what to look at when tuning the filter.
+    by_reason: dict[str, int] = {}
     action_hours: list[float] = []
 
     for doc in docs:
@@ -32,6 +34,9 @@ async def get_weekly_stats(days: int = 7) -> dict[str, Any]:
             platform_stats["sent"] += 1
 
         if moderation == "rejected_by_filter":
+            reason = doc.get("filter_reason")
+            if reason:
+                by_reason[reason] = by_reason.get(reason, 0) + 1
             continue
 
         user_status = doc.get("user_status") or "pending"
@@ -56,6 +61,7 @@ async def get_weekly_stats(days: int = 7) -> dict[str, Any]:
         "totals": totals,
         "by_platform": [{"platform": platform, **stats} for platform, stats in sorted(by_platform.items())],
         "by_status": by_status,
+        "by_reason": dict(sorted(by_reason.items(), key=lambda item: -item[1])),
         "response_rate": response_rate,
         "avg_hours_to_action": avg_hours_to_action,
     }

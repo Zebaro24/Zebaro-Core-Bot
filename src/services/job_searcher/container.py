@@ -1,5 +1,5 @@
 import logging
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 
 from src.db.client import jobs_collection
@@ -29,9 +29,18 @@ class Job:
     similar_to: str | None = None  # mongo _id похожей вакансии на другой площадке
     similar_to_platform: str | None = None  # платформа этой похожей вакансии (для бейджа в Telegram)
     click_count: int = 0
+    matched_stack: list[str] = field(default_factory=list)  # core stack found: "Python", "React", ...
+    matched_bonus: list[str] = field(default_factory=list)  # nice-to-have found: "TypeScript", "LLM", ...
+    filter_reason: str | None = None  # why it was not sent: "senior", "junior", "no stack match", ...
 
     def __str__(self) -> str:
         return f"<{self.platform_name} - {self.title} - {self.company}>"
+
+    @classmethod
+    def from_doc(cls, doc: dict) -> "Job":
+        """A Job back from its MongoDB document; unknown keys (like `_id`) are ignored."""
+        names = {f.name for f in fields(cls)}
+        return cls(**{key: value for key, value in doc.items() if key in names})
 
 
 class JobStorage:
