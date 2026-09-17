@@ -1,7 +1,15 @@
+from datetime import datetime, timedelta
+
 import pytest
 
 from src.services.job_searcher.container import Job, JobStorage
-from src.services.job_searcher.filter import JobFilter, evaluate, title_reject_reason
+from src.services.job_searcher.filter import (
+    MAX_AGE_DAYS,
+    JobFilter,
+    evaluate,
+    required_years,
+    title_reject_reason,
+)
 
 
 @pytest.mark.parametrize(
@@ -127,3 +135,51 @@ def test_classify_job_keeps_the_tuple_interface():
         "sent",
         30,
     )  # 2 core x10 + 2 core in title x5
+
+
+@pytest.mark.parametrize(
+    "location,rejected",
+    [
+        ("Remote only • India", True),
+        ("In office • Bangalore", True),
+        ("Remote only • Everywhere", False),
+        ("Onsite or remote • Warsaw+1", False),
+        (None, False),
+    ],
+)
+def test_another_continent_is_not_a_remote_job_here(location, rejected):
+    job = Job(title="Python Developer", location=location, description="Python FastAPI React")
+    verdict = evaluate(job)
+
+    assert (verdict.reason == "location") is rejected
+
+
+def test_months_old_postings_are_dropped():
+    old = Job(title="Python Developer", date=datetime.now() - timedelta(days=MAX_AGE_DAYS + 1))
+    fresh = Job(title="Python Developer", date=datetime.now() - timedelta(days=3), description="Python React")
+
+    assert evaluate(old).reason == "stale"
+    assert evaluate(fresh).reason is None
+    # A listener that could not parse the site's date gives a string — never guessed at.
+    assert evaluate(Job(title="Python Developer", date="вчора", description="Python React")).reason is None
+
+
+@pytest.mark.parametrize(
+    "description,years",
+    [
+        ("Досвід роботи з Python від 5 років", 5),
+        ("5+ years of experience with FastAPI", 5),
+        ("Experience: 3-5 years with React", 3),
+        ("We are on the market for 10 years of experience", None),  # not asked of you
+        ("Опыт коммерческой разработки не менее 5 лет", 5),
+        ("Python, FastAPI, React", None),
+    ],
+)
+def test_required_years_reads_only_experience_lines(description, years):
+    assert required_years(description) == years
+
+
+def test_five_years_of_experience_is_a_senior_position_whatever_the_title_says():
+    job = Job(title="Python Developer", description="Python FastAPI React\n5+ years of experience required")
+
+    assert evaluate(job).reason == "senior"

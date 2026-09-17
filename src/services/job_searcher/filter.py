@@ -2,11 +2,13 @@
 
 Two passes, because the full description costs a page load:
 
-1. `prefilter_all` — title and company only. Seniority that does not fit (senior, lead,
-   junior...) and roles that are not development at all (QA, recruiter...) are rejected
-   here, and their vacancy pages are never opened.
-2. `classify_all` — after the parser fetched full descriptions. Looks for the core stack
-   in the title and the whole description and puts the vacancy into a tier.
+1. `prefilter_all` — the list card only: title, company, location and date. Seniority that
+   does not fit (senior, lead, junior...), roles that are not development at all (QA,
+   recruiter...), another continent and months-old postings are rejected here, and their
+   vacancy pages are never opened.
+2. `classify_all` — after the parser fetched full descriptions. Rejects what asks for five
+   years of experience whatever the title said, then looks for the core stack in the title
+   and the whole description and puts the vacancy into a tier.
 
 Tiers (stored in `Job.moderation`, the values stats and the API already use):
   "sent"                🔥 your stack: a backend core (Python / FastAPI) AND a frontend
@@ -21,6 +23,7 @@ technology in the title counts extra, bonus technologies break ties.
 import logging
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from src.services.job_searcher.container import Job, JobStorage
 
@@ -64,6 +67,31 @@ WRONG_ROLE_WORDS = (
     "sales", "marketing", "project manager", "product manager", "designer", "дизайнер",
 )  # fmt: skip
 WRONG_COMPANY_WORDS = ("фоп", "school")
+
+# Wellfound and the other international boards list vacancies hiring on another continent —
+# "Remote only • India" is a job for someone living there, not a remote job for Europe.
+FAR_LOCATION_WORDS = (
+    "india", "bangalore", "bengaluru", "hyderabad", "mumbai", "delhi", "noida", "gurgaon",
+    "chennai", "pune", "kolkata", "ahmedabad", "pakistan", "lahore", "karachi", "bangladesh",
+    "dhaka", "nigeria", "lagos", "kenya", "nairobi", "philippines", "manila", "indonesia",
+    "jakarta", "vietnam", "hanoi",
+)  # fmt: skip
+
+# A vacancy still hanging on the board months later is either filled or never was real.
+MAX_AGE_DAYS = 60
+
+# Years of experience that make it a senior position whatever the title says.
+SENIOR_YEARS = 5
+# Only a figure asked *of the candidate* counts, so it has to carry a "+", a range or a word
+# of minimum. "Our team has 5 years of experience" is not a requirement for five years.
+_YEAR_WORDS = r"(?:years?|yrs?|років|роки|рік|лет|года|год)"
+_MIN_WORDS = r"(?:at least|minimum|min\.?|starting from|від|от|не мен\w+|щонайменш\w*|мінімум|минимум)"
+_YEARS_PATTERNS = (
+    re.compile(rf"(\d{{1,2}})\s*\+\s*{_YEAR_WORDS}"),  # "5+ years"
+    re.compile(rf"(\d{{1,2}})\s*[-–—]\s*\d{{1,2}}\s*{_YEAR_WORDS}"),  # "3-5 years" — the bar is 3
+    re.compile(rf"{_MIN_WORDS}\s+(\d{{1,2}})\s*\+?\s*{_YEAR_WORDS}"),  # "від 5 років"
+)
+_EXPERIENCE_WORDS = ("experience", "досвід", "опыт", "exp.")
 
 SENT = "sent"
 REVIEW = "review"
@@ -123,10 +151,47 @@ def title_reject_reason(title: str | None, company: str | None) -> str | None:
     return None
 
 
-def evaluate(job: Job) -> Verdict:
+def _is_stale(date: str | datetime | None) -> bool:
+    # Listeners that could not parse the site's date return its raw string — no way to tell.
+    return isinstance(date, datetime) and (datetime.now() - date).days > MAX_AGE_DAYS
+
+
+def required_years(description: str | None) -> int | None:
+    """The lowest number of years the vacancy asks for, or None if it does not say.
+
+    Only lines that talk about experience count, and only figures written as a requirement
+    ("5+ years", "3-5 years", "від 5 років") — a description mentioning "10 years on the
+    market" is not asking for ten years of work. The lowest figure is the entry bar.
+    """
+    years: list[int] = []
+    for line in (description or "").lower().split("\n"):
+        if not any(word in line for word in _EXPERIENCE_WORDS):
+            continue
+        for pattern in _YEARS_PATTERNS:
+            years += [int(match) for match in pattern.findall(line)]
+    return min(years) if years else None
+
+
+def reject_before_opening(job: Job) -> str | None:
+    """Everything that can be decided from the list card, before the page costs a load."""
     reason = title_reject_reason(job.title, job.company)
     if reason:
+        return reason
+    if _contains_any((job.location or "").lower(), FAR_LOCATION_WORDS):
+        return "location"
+    if _is_stale(job.date):
+        return "stale"
+    return None
+
+
+def evaluate(job: Job) -> Verdict:
+    reason = reject_before_opening(job)
+    if reason:
         return Verdict(REJECTED, reason=reason)
+
+    # The title said middle, the description asks for five years: still a senior position.
+    if (years := required_years(job.description)) and years >= SENIOR_YEARS:
+        return Verdict(REJECTED, reason="senior")
 
     title = (job.title or "").lower()
     text = f"{title}\n{(job.description or '').lower()}"
@@ -151,7 +216,7 @@ class JobFilter:
         """Reject by title and company. Returns the vacancies worth opening."""
         survivors = []
         for job in self.job_storage.jobs:
-            reason = title_reject_reason(job.title, job.company)
+            reason = reject_before_opening(job)
             if reason:
                 job.moderation, job.relevance_score, job.filter_reason = REJECTED, 0, reason
             else:
