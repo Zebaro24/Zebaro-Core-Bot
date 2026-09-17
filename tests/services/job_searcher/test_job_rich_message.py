@@ -39,16 +39,35 @@ def test_description_keeps_paragraphs_lists_and_headings():
     body = description_to_rich_html(DESCRIPTION)
 
     assert "<p>We build a data product.</p>" in body
-    assert "<p><b>Requirements</b></p>" in body
+    assert "<h4>Requirements</h4>" in body
     assert "<ul><li>3+ years with Python</li><li>FastAPI and &lt;React&gt;</li></ul>" in body
-    assert "<p><b>What we offer:</b></p>" in body
+    assert "<h4>What we offer:</h4>" in body
     assert "<p>Remote work.<br>Flexible hours.</p>" in body
+
+
+def test_hand_written_bullets_and_numbers_become_lists():
+    body = description_to_rich_html("Що треба:\n\n- Python\n— FastAPI\n* React\n\nЯк наймаємо:\n\n1. Дзвінок\n2) Тест")
+
+    assert "<ul><li>Python</li><li>FastAPI</li><li>React</li></ul>" in body
+    assert "<ol><li>Дзвінок</li><li>Тест</li></ol>" in body
+
+
+def test_a_run_of_short_lines_is_shown_as_a_list_not_a_wall():
+    # The stack the site wrote with <br> instead of <ul> — three lines or more, all short.
+    body = description_to_rich_html("Python, FastAPI.\nБази даних: PostgreSQL.\nДеплой: Docker.")
+
+    assert body == "<ul><li>Python, FastAPI.</li><li>Бази даних: PostgreSQL.</li><li>Деплой: Docker.</li></ul>"
+
+
+def test_two_lines_stay_a_paragraph():
+    body = description_to_rich_html("Remote work.\nFlexible hours.")
+    assert body == "<p>Remote work.<br>Flexible hours.</p>"
 
 
 def test_description_is_truncated_on_a_line_boundary():
     body = description_to_rich_html("line one\n" * 50, limit=100)
-    assert body.endswith("…</p>")
-    assert len(body) < 200
+    assert body.endswith("…</li></ul>")
+    assert len(body) < 400
 
 
 def test_your_stack_message_says_why_and_folds_the_description():
@@ -56,8 +75,8 @@ def test_your_stack_message_says_why_and_folds_the_description():
 
     assert text.startswith("<h3>🔥 Full Stack Developer</h3>")
     assert "<p><b>Acme</b> · Dou · 17.09.2026</p>" in text
-    assert "🔥 <b>Твой стек</b>: Python, FastAPI, React · ещё TypeScript" in text
-    assert "<p>We build a data product. Requirements 3+ years with Python" in text
+    assert "🔥 <b>Твой стек</b>: <mark>Python</mark> <mark>FastAPI</mark> <mark>React</mark> · ещё TypeScript" in text
+    assert "<hr/><blockquote>We build a data product. Requirements 3+ years with Python" in text
     assert "<details><summary>📄 Описание полностью</summary><p>We build" in text
     assert "<details open>" not in text
     assert text.endswith("<footer>оценка 45</footer>")
@@ -66,9 +85,14 @@ def test_your_stack_message_says_why_and_folds_the_description():
 def test_partial_match_uses_the_same_layout_without_the_old_label():
     text = job_to_rich_html(_job(moderation="review", matched_stack=["Python"], matched_bonus=[]))
 
-    assert "👀 <b>Частично совпадает</b>: Python" in text
+    assert "👀 <b>Частично совпадает</b>: <mark>Python</mark>" in text
     assert "проверь сам" not in text
     assert "<details><summary>📄 Описание полностью</summary><p>We build" in text
+
+
+def test_location_stands_next_to_the_company():
+    text = job_to_rich_html(_job(location="Remote only • Everywhere"))
+    assert "<p><b>Acme</b> · Dou · Remote only • Everywhere · 17.09.2026</p>" in text
 
 
 def test_missing_description_points_to_the_button():
@@ -86,13 +110,21 @@ def test_status_goes_right_under_the_company_line():
 
 def test_everything_user_provided_is_escaped():
     text = job_to_rich_html(
-        _job(title="<script>", company="A&B", date="<i>вчора</i>", similar_to="x", similar_to_platform="<b>")
+        _job(
+            title="<script>",
+            company="A&B",
+            date="<i>вчора</i>",
+            location="<b>Kyiv</b>",
+            similar_to="x",
+            similar_to_platform="<b>",
+        )
     )
 
     assert "<script>" not in text
     assert "&lt;i&gt;вчора&lt;/i&gt;" in text
     assert "&lt;script&gt;" in text
     assert "A&amp;B" in text
+    assert "&lt;b&gt;Kyiv&lt;/b&gt;" in text
     assert "уже было на &lt;b&gt;" in text
 
 
