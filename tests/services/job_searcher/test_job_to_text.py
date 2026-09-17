@@ -43,7 +43,7 @@ from src.services.job_searcher.container import Job
         ),
         (
             Job(title="AI Engineer", platform_name="Djinni", company="TestCo", moderation="review"),
-            ["❓ (проверь сам) AI Engineer - Djinni"],
+            ["👀 AI Engineer - Djinni"],
         ),
     ],
 )

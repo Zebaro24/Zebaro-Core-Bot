@@ -1,8 +1,70 @@
 import html
 from typing import Any
 
+_REASONS = {
+    "senior": "senior",
+    "lead": "lead / head / architect",
+    "junior": "junior / стажёр",
+    "not a developer role": "не разработка (QA, менеджеры, дизайн…)",
+    "company": "ФОП / школа",
+    "no stack match": "стек не совпал",
+}
+
+
+def format_weekly_digest_rich(stats: dict[str, Any]) -> str:
+    """The Friday digest as a rich message: tables instead of lines of "label: number"."""
+    totals = stats["totals"]
+    by_status = stats["by_status"]
+
+    parts = [
+        f"<h2>📊 Вакансии за {stats['period_days']} дней</h2>",
+        "<table bordered striped compact>"
+        "<tr><th>Найдено</th><th>🔥 Твой стек</th><th>👀 Частично</th><th>Мимо</th></tr>"
+        f"<tr><td align=\"center\">{totals['found']}</td><td align=\"center\">{totals['sent']}</td>"
+        f"<td align=\"center\">{totals['review']}</td><td align=\"center\">{totals['rejected_by_filter']}</td></tr>"
+        "</table>",
+        "<h4>Что ты с ними сделал</h4>",
+        "<ul>"
+        f"<li>✅ Откликнулся — <b>{by_status['applied']}</b></li>"
+        f"<li>❌ Не интересует — <b>{by_status['not_interested']}</b></li>"
+        f"<li>⏳ Без реакции — <b>{by_status['pending']}</b></li>"
+        "</ul>",
+    ]
+
+    facts = []
+    if stats["response_rate"] is not None:
+        facts.append(f"откликаешься на <b>{stats['response_rate']:.0%}</b> присланного")
+    if stats["avg_hours_to_action"] is not None:
+        facts.append(f"реагируешь в среднем за <b>{stats['avg_hours_to_action']:.1f} ч</b>")
+    if facts:
+        sentence = ", ".join(facts)
+        parts.append(f"<p>{sentence[0].upper()}{sentence[1:]}</p>")
+
+    if stats["by_platform"]:
+        rows = "".join(
+            f"<tr><td>{html.escape(p['platform'])}</td><td align=\"center\">{p['found']}</td>"
+            f"<td align=\"center\">{p['sent']}</td><td align=\"center\">{p['applied']}</td>"
+            f"<td align=\"center\">{p['not_interested']}</td></tr>"
+            for p in stats["by_platform"]
+        )
+        parts.append(
+            "<h4>По площадкам</h4><table bordered striped compact>"
+            "<tr><th>Площадка</th><th>Найдено</th><th>🔥</th><th>✅</th><th>❌</th></tr>" + rows + "</table>"
+        )
+
+    by_reason = stats.get("by_reason") or {}
+    if by_reason:
+        items = "".join(
+            f"<li>{html.escape(_REASONS.get(reason, reason))} — <b>{count}</b></li>"
+            for reason, count in by_reason.items()
+        )
+        parts.append(f"<h4>Почему не прислал</h4><ul>{items}</ul>")
+
+    return "".join(parts)
+
 
 def format_weekly_digest(stats: dict[str, Any]) -> str:
+    """Plain HTML fallback for when Telegram refuses the rich message."""
     totals = stats["totals"]
     by_status = stats["by_status"]
 
@@ -10,7 +72,7 @@ def format_weekly_digest(stats: dict[str, Any]) -> str:
     text += (
         f"Найдено: <b>{totals['found']}</b>\n"
         f"🔥 Отправлено: <b>{totals['sent']}</b>\n"
-        f"❓ На проверку: <b>{totals['review']}</b>\n"
+        f"👀 Частично: <b>{totals['review']}</b>\n"
         f"Отфильтровано: <b>{totals['rejected_by_filter']}</b>\n\n"
         f"✅ Откликнулся: <b>{by_status['applied']}</b>\n"
         f"❌ Не интересует: <b>{by_status['not_interested']}</b>\n"

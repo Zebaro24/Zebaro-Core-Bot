@@ -13,6 +13,7 @@ sys.modules["src.db.client"] = MagicMock(jobs_collection=MagicMock(), start_db=A
 
 from src.interfaces.tg.notification import job_notification as notification  # noqa: E402
 from src.interfaces.tg.notification.job_notification import _get_reply_markup  # noqa: E402
+from src.services.job_searcher.container import Job  # noqa: E402
 
 
 def test_get_reply_markup_uses_action_kb_when_job_id_present():
@@ -42,25 +43,54 @@ def test_get_reply_markup_returns_none_when_nothing_available():
     assert _get_reply_markup(None, None) is None
 
 
+def _job(moderation="sent"):
+    return Job(title="Full Stack Developer", platform_name="Dou", company="Acme", moderation=moderation)
+
+
+@pytest.mark.asyncio
+async def test_send_job_sends_a_rich_message_and_rings_only_for_your_stack():
+    bot = MagicMock()
+    bot.send_rich_message = AsyncMock()
+
+    assert await notification._send_job(bot, _job("sent"), None) is True
+    assert await notification._send_job(bot, _job("review"), None) is True
+
+    first, second = bot.send_rich_message.await_args_list
+    assert "<h3>🔥 Full Stack Developer</h3>" in first.kwargs["rich_message"].html
+    assert first.kwargs["disable_notification"] is False
+    assert second.kwargs["disable_notification"] is True
+
+
+@pytest.mark.asyncio
+async def test_send_job_falls_back_to_plain_html_when_rich_is_refused():
+    bot = MagicMock()
+    bot.send_rich_message = AsyncMock(side_effect=TelegramBadRequest(method=MagicMock(), message="bad rich markup"))
+    bot.send_message = AsyncMock()
+
+    assert await notification._send_job(bot, _job(), None) is True
+    assert "Full Stack Developer - Dou" in bot.send_message.await_args.kwargs["text"]
+
+
 @pytest.mark.asyncio
 async def test_send_job_waits_out_flood_control_and_retries(mocker):
     sleep = mocker.patch("src.interfaces.tg.notification.job_notification.asyncio.sleep", new=AsyncMock())
     bot = MagicMock()
-    bot.send_message = AsyncMock(
+    bot.send_rich_message = AsyncMock(
         side_effect=[TelegramRetryAfter(method=MagicMock(), message="Too Many Requests", retry_after=3), None]
     )
 
-    assert await notification._send_job(bot, "text", None) is True
-    assert bot.send_message.await_count == 2
+    assert await notification._send_job(bot, _job(), None) is True
+    assert bot.send_rich_message.await_count == 2
     sleep.assert_awaited_once_with(3)
 
 
 @pytest.mark.asyncio
-async def test_send_job_skips_a_vacancy_telegram_rejects():
+async def test_send_job_skips_a_vacancy_telegram_rejects_twice():
     bot = MagicMock()
+    bot.send_rich_message = AsyncMock(side_effect=TelegramBadRequest(method=MagicMock(), message="bad rich markup"))
     bot.send_message = AsyncMock(side_effect=TelegramBadRequest(method=MagicMock(), message="can't parse entities"))
 
-    assert await notification._send_job(bot, "text", None) is False
+    assert await notification._send_job(bot, _job(), None) is False
 
 
 @pytest.mark.asyncio
