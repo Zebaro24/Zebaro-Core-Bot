@@ -1,0 +1,27 @@
+# Line endings, decided here instead of by whoever cloned the repo.
+#
+# CD builds the Docker image from this tree and runs it on Linux; a script or a compose
+# file checked out with CRLF fails there with messages that say nothing about line endings.
+
+# Default: normalise to LF in the repository, let Git decide the working copy.
+* text=auto eol=lf
+
+# Windows-only, must keep CRLF or cmd.exe mis-parses labels and goto.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Must be LF — these run inside Linux containers or on the server.
+*.sh        text eol=lf
+*.py        text eol=lf
+Dockerfile  text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+
+# Binary — never touched, never diffed as text.
+*.png binary
+*.jpg binary
+*.ico binary
+
+# Generated: collapsed in diffs and excluded from language statistics.
+poetry.lock linguist-generated=true -diff
