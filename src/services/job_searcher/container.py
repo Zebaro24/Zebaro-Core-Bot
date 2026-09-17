@@ -18,6 +18,7 @@ class Job:
     title: str | None = None
     company: str | None = None
     description: str | None = None
+    location: str | None = None  # as the site writes it: "Remote only • Everywhere", "Київ"
     date: str | datetime | None = None
     link: str | None = None
 

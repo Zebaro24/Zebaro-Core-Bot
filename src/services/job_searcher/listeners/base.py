@@ -20,6 +20,7 @@ class BaseListeners:
     title: str | None = None
     company: str | None = None
     description: str | None = None
+    location: str | None = None
     date: str | None = None
     link: str | None = None
 
@@ -68,6 +69,11 @@ class BaseListeners:
         if not self.description:
             return None
         return self._get_one_by_selector(element, self.description)
+
+    def get_location(self, element: Tag) -> str | None:
+        if not self.location:
+            return None
+        return self._get_one_by_selector(element, self.location)
 
     def get_list_wait_selector(self) -> str | None:
         return self.wait_for or self.all_jobs

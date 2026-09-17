@@ -5,6 +5,11 @@ from bs4 import Tag
 
 from src.services.job_searcher.listeners.base import BaseListeners
 
+# The location span usually opens with how the job is done; the salary and the years of
+# experience sit in spans of the very same class, so they are told apart by their own marks.
+_LOCATION_PREFIXES = ("Remote", "Onsite", "In office")
+_NOT_A_LOCATION = ("year", "equity", "$", "€", "£", "₹", "%")
+
 
 def _parse_relative_date(text: str) -> datetime | None:
     match = re.search(r"(\d+)\s+(\w+)\s+ago", text.lower())
@@ -36,6 +41,9 @@ class WellfoundListeners(BaseListeners):
     title = 'a[href^="/jobs/"]'
     company = "pass"
     description = "pass"  # not in the list
+    # The same span class carries the salary, the location and the years of experience;
+    # get_location picks the one that is a place (see _LOCATION_HINTS).
+    location = "span.pl-1.text-xs"
     date = "span.text-xs.lowercase.text-dark-a"
     link = 'a[href^="/jobs/"]'
 
@@ -55,6 +63,15 @@ class WellfoundListeners(BaseListeners):
             return None
         h2 = card.select_one("h2")
         return h2.get_text(strip=True) if h2 else None
+
+    def get_location(self, element: Tag) -> str | None:
+        # "Remote only • Everywhere", "Onsite or remote • Warsaw+1", "In office • London".
+        spans = [span.get_text(strip=True) for span in element.select(self.location or "")]
+        for text in spans:
+            if text.startswith(_LOCATION_PREFIXES):
+                return text
+        # Some cards name the city alone ("San Francisco+9").
+        return next((text for text in spans if text and not any(m in text for m in _NOT_A_LOCATION)), None)
 
     def get_date(self, element: Tag) -> datetime | None:
         date_el = element.select_one(self.date)
