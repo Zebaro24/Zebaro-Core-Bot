@@ -50,7 +50,8 @@ def test_rich_digest_uses_tables_and_explains_rejections():
     assert "<li>✅ Откликнулся — <b>1</b></li>" in text
     assert "<p>Откликаешься на <b>50%</b> присланного, реагируешь в среднем за <b>12.3 ч</b></p>" in text
     assert "<tr><td>Djinni</td>" in text
-    assert "<li>senior — <b>12</b></li><li>стек не совпал — <b>3</b></li>" in text
+    assert "<li>senior (в заголовке или 5+ лет опыта) — <b>12</b></li>" in text
+    assert "<li>стек не совпал — <b>3</b></li>" in text
 
 
 def test_rich_digest_escapes_platform_and_skips_empty_sections():
@@ -65,3 +66,17 @@ def test_rich_digest_escapes_platform_and_skips_empty_sections():
     assert "&lt;script&gt;" in text
     assert "Откликаешься" not in text
     assert "Почему не прислал" not in text
+
+
+def test_rich_digest_shows_what_the_owner_answers_to():
+    text = format_weekly_digest_rich(_stats(stack_applied={"Python": 3, "React": 2}, stack_rejected={"Django": 4}))
+
+    assert "<h4>На что ты откликаешься</h4>" in text
+    assert "<li>✅ Python <b>3</b>, React <b>2</b></li>" in text
+    assert "<li>❌ Django <b>4</b></li>" in text
+
+
+def test_rich_digest_warns_about_sources_that_gave_nothing():
+    text = format_weekly_digest_rich(_stats(silent_sources=["HappyMonday", "Work.ua"]))
+
+    assert "Ничего не дали за период: <b>HappyMonday, Work.ua</b>" in text

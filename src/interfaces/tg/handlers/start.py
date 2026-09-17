@@ -50,6 +50,7 @@ async def start_command(message: Message) -> None:
         await message.answer(
             "🛠️ <b>Админские фишки:</b>\n"
             "/get_job_openings - Поиск новых вакансий 💼\n"
+            "/job_stats - Статистика поиска, можно с периодом: /job_stats 30 📊\n"
             "/mongo - Обращение к базе MongoDB 🗄️\n"
             "/services - Управление сервисами и инфрой ⚙️",
             message_effect_id="5046509860389126442",

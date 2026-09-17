@@ -10,7 +10,14 @@ from src.infrastructure.mongodb import MongoDBInfra
 from src.infrastructure.playwright import PlaywrightInfra
 from src.interfaces.ds.service import DiscordService
 from src.interfaces.tg.handlers import get_chat_id, start
-from src.interfaces.tg.handlers.admin import get_job_openings, mongo, server_speed, server_status, services
+from src.interfaces.tg.handlers.admin import (
+    get_job_openings,
+    job_stats,
+    mongo,
+    server_speed,
+    server_status,
+    services,
+)
 from src.interfaces.tg.handlers.callbacks import docker, job
 from src.interfaces.tg.notification.job_notification import job_notification
 from src.interfaces.tg.notification.job_stats_notification import job_stats_notification
@@ -38,6 +45,7 @@ async def start_bot() -> None:
     dp.include_router(job.router)
     dp.include_router(mongo.router)
     dp.include_router(get_job_openings.router)
+    dp.include_router(job_stats.router)
     dp.include_router(services.router)
 
     # Scheduler jobs (added with IDs so they can be paused/resumed)

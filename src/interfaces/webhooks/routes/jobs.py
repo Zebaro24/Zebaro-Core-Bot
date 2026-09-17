@@ -4,7 +4,7 @@ from typing import Any
 
 from bson import ObjectId
 from bson.errors import InvalidId
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 
 from src.config import settings
@@ -14,6 +14,9 @@ from src.services.job_searcher.stats import get_pending_review_jobs, get_weekly_
 logger = logging.getLogger("webhooks.jobs")
 
 router = APIRouter()
+
+# Module level: flake8-bugbear (B008) rejects a call in an argument default.
+_DAYS_QUERY = Query(7, ge=1, le=180)
 
 
 def _check_token(request: Request) -> None:
@@ -25,9 +28,9 @@ def _check_token(request: Request) -> None:
 
 
 @router.get("/stats/weekly")
-async def weekly_stats(request: Request) -> dict[str, Any]:
+async def weekly_stats(request: Request, days: int = _DAYS_QUERY) -> dict[str, Any]:
     _check_token(request)
-    return await get_weekly_stats()
+    return await get_weekly_stats(days)
 
 
 @router.get("/review")

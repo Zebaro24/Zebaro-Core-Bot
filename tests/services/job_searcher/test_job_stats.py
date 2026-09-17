@@ -57,8 +57,10 @@ async def test_get_weekly_stats_totals_and_by_platform(mocker):
     assert stats["by_status"] == {"applied": 1, "not_interested": 1, "pending": 1}
 
     by_platform = {p["platform"]: {k: v for k, v in p.items() if k != "platform"} for p in stats["by_platform"]}
-    assert by_platform["Djinni"] == {"found": 2, "sent": 1, "applied": 1, "not_interested": 0}
-    assert by_platform["Work.ua"] == {"found": 2, "sent": 1, "applied": 0, "not_interested": 1}
+    djinni = {"found": 2, "sent": 1, "review": 1, "applied": 1, "not_interested": 0, "clicks": 0}
+    work_ua = {"found": 2, "sent": 1, "review": 0, "applied": 0, "not_interested": 1, "clicks": 0}
+    assert by_platform["Djinni"] == djinni
+    assert by_platform["Work.ua"] == work_ua
 
 
 @pytest.mark.asyncio
