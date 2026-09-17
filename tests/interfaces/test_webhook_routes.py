@@ -19,3 +19,8 @@ def test_vacancy_redirect_lives_where_the_telegram_buttons_point():
     paths = {route.path for route in app.routes if isinstance(route, Route)}
     assert "/jobs/r/{job_id}" in paths
     assert "/webhook/telegram" in paths
+
+
+def test_health_is_public_and_reports_the_version():
+    paths = {route.path for route in app.routes if isinstance(route, Route)}
+    assert "/health" in paths

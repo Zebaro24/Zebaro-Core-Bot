@@ -27,6 +27,12 @@ app.include_router(router, prefix="/webhook", tags=["webhook"])
 app.include_router(jobs_router, prefix="/jobs", tags=["jobs"])
 
 
+@app.get("/health", tags=["health"])
+async def health() -> dict[str, str]:
+    """Liveness for `scripts/prod.bat health` and post-deploy checks: the web server answers."""
+    return {"status": "ok", "version": settings.version}
+
+
 async def start_webhooks() -> None:
     logger.info("Starting webhook server on :8000")
     config = uvicorn.Config(app, host="0.0.0.0", log_config=None)  # nosec
