@@ -1,4 +1,5 @@
 import logging
+from html import escape
 
 from aiogram import Router
 from aiogram.filters import Command
@@ -31,4 +32,10 @@ async def get_job_openings_command(message: Message) -> None:
         return
 
     await message.bot.send_chat_action(message.chat.id, "typing")
-    await job_notification(message.bot)
+    try:
+        await job_notification(message.bot)
+    except Exception as e:
+        logger.exception("Manual job search failed")
+        # Первая строка без баннеров Playwright, полный трейс — в логах
+        reason = str(e).splitlines()[0] if str(e) else type(e).__name__
+        await message.answer(f"💀 Поиск вакансий упал: {escape(reason)}")

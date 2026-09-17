@@ -25,7 +25,7 @@ class JobSearcherService(BaseService):
             if job:
                 try:
                     job.resume()
-                    logger.info("Resumed scheduler job: %s", job_id)
+                    logger.info("Resumed scheduler job: %s (next run: %s)", job_id, job.next_run_time)
                 except Exception as e:
                     logger.warning("Could not resume job %s: %s", job_id, e)
 

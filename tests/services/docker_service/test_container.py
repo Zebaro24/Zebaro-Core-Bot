@@ -110,7 +110,8 @@ def test_start_stop_restart(docker_container):
     docker_container.container.restart.assert_called_once()  # noqa
 
 
-def test_get_short_log(docker_container):
-    log_text = docker_container.get_short_log()
+def test_get_log(docker_container):
+    log_text = docker_container.get_log(tail=5000)
     assert "test log line 1" in log_text
     assert isinstance(log_text, str)
+    docker_container.container.logs.assert_called_with(tail=5000)  # noqa

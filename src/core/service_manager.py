@@ -3,13 +3,17 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from src.config import settings
+
 if TYPE_CHECKING:
     from src.core.base_infrastructure import BaseInfrastructure
     from src.core.base_service import BaseService
 
 logger = logging.getLogger("core.service_manager")
 
-_STATE_FILE = Path("services.json")
+
+def _state_file() -> Path:
+    return Path(settings.services_state_file)
 
 
 class ServiceManager:
@@ -39,18 +43,19 @@ class ServiceManager:
     # ── State persistence ────────────────────────────────────────────────────
 
     def load_state(self) -> None:
-        if _STATE_FILE.exists():
+        state_file = _state_file()
+        if state_file.exists():
             try:
-                data = json.loads(_STATE_FILE.read_text(encoding="utf-8"))
+                data = json.loads(state_file.read_text(encoding="utf-8"))
                 self._state["infrastructure"].update(data.get("infrastructure", {}))
                 self._state["services"].update(data.get("services", {}))
-                logger.info("State loaded from %s", _STATE_FILE)
+                logger.info("State loaded from %s", state_file)
             except Exception as e:
                 logger.warning("Failed to load state file, using defaults: %s", e)
 
     def save_state(self) -> None:
         try:
-            _STATE_FILE.write_text(
+            _state_file().write_text(
                 json.dumps(self._state, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )

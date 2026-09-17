@@ -103,8 +103,8 @@ class DockerContainer:
         text += f"\n<b>Logs:</b>\n<pre>{logs_escaped}</pre>"
         return text
 
-    def get_short_log(self) -> str:
-        return str(self.container.logs(tail=20).decode())
+    def get_log(self, tail: int) -> str:
+        return str(self.container.logs(tail=tail).decode(errors="replace"))
 
     def start(self) -> None:
         logger.info("Starting container %s", self.get_name())

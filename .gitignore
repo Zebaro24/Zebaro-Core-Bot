@@ -47,6 +47,7 @@ Thumbs.db
 
 # Runtime state (created by ServiceManager on first toggle)
 services.json
+state/
 
 # Dev version
 docker-compose.override.yml

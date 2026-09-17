@@ -17,10 +17,13 @@ services:
       start_period: 20s
 
   zebaro-core-playwright:
-    image: mcr.microsoft.com/playwright:v1.58.0-noble
+    # Версия должна совпадать с Python-пакетом playwright из poetry.lock (major.minor),
+    # иначе клиент получает 428 "Playwright version mismatch". Проверяется тестом
+    # tests/test_playwright_version.py.
+    image: mcr.microsoft.com/playwright:v1.59.0-noble
     container_name: zebaro-core-playwright
     restart: "no"
-    command: npx playwright@1.58.0 run-server --port 9222
+    command: npx playwright@1.59.0 run-server --port 9222
     expose:
       - "9222"
 
@@ -40,8 +43,12 @@ services:
       - PERSONAL_GITHUB_SECRET
       - WEBHOOK_URL
       - JOB_STATS_API_TOKEN
+      - TZ=Europe/Berlin
+      - SERVICES_STATE_FILE=/app/state/services.json
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./services.json:/app/services.json
+      # Монтируем папку, а не сам файл: если services.json на хосте ещё нет,
+      # Docker создаёт на его месте директорию и состояние перестаёт сохраняться.
+      - ./state:/app/state
     ports:
       - "${SERVER_PORT:-8000}:8000"

@@ -39,7 +39,7 @@ src/
 - **HTML formatting**: always in `interfaces/tg/formatters/`, never in services.
 - **GithubManager**: instance-level dicts (`github_repo_webhooks`, `github_repo_events`) — NOT class-level.
 - **app.state**: `bot`/`dp` set via `webhooks/setup.py`; `github_manager` set by `GithubService.on_enable()`.
-- **ServiceManager**: singleton with cascade logic — disabling infra disables dependent services; disabling all consumers disables the infra. State saved to `services.json` (gitignored, runtime file).
+- **ServiceManager**: singleton with cascade logic — disabling infra disables dependent services; disabling all consumers disables the infra. State saved to `services.json` (gitignored, runtime file; path from `SERVICES_STATE_FILE`, in Docker — `state/services.json`, because a bind-mounted missing file turns into a directory).
 - **Discord toggle** requires bot restart (`needs_restart = True`).
 - **DB/Playwright resilience**: all operations wrapped in try/except with graceful fallback.
 

@@ -10,6 +10,12 @@ class Settings(BaseSettings):
 
     debug: bool = False
 
+    # Читается из стандартной переменной TZ: в Docker она же задаёт время в логах,
+    # а здесь — часовой пояс cron-задач шедулера (иначе в контейнере это UTC).
+    tz: str = "Europe/Berlin"
+
+    services_state_file: str = "services.json"
+
     telegram_admin_id: int
     telegram_docker_access_ids: list[int] | str
 

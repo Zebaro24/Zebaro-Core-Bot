@@ -28,5 +28,10 @@ async def telegram_webhook(request: Request) -> Response:
     except Exception:
         raise HTTPException(status_code=422, detail="Invalid update payload")
 
-    await dp.feed_update(bot, update)
+    try:
+        await dp.feed_update(bot, update)
+    except Exception:
+        # Отвечаем 200 даже при падении хендлера: на 5xx Telegram повторяет тот же апдейт
+        # по кругу, и упавшая команда перезапускается снова и снова.
+        logger.exception("Unhandled error while processing update id=%s", update.update_id)
     return Response(status_code=200)

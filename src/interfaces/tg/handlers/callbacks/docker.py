@@ -17,6 +17,8 @@ from src.services.docker.manager import DockerManager
 
 logger = logging.getLogger("tg.handlers.callbacks.docker")
 
+LOG_FILE_TAIL = 5000
+
 router = Router()
 router.callback_query.middleware(docker_middleware)
 
@@ -125,7 +127,7 @@ async def container_info_callback(
 
     elif action == "log_file":
         file = BufferedInputFile(
-            container.get_short_log().encode("utf-8"),
+            container.get_log(tail=LOG_FILE_TAIL).encode("utf-8"),
             filename=f"{container.get_name()}_logs.txt",
         )
         await query.message.reply_document(file)
