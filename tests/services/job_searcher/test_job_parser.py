@@ -31,7 +31,6 @@ async def test_parse_urls_adds_jobs(mocker):
     mock_context.new_page = AsyncMock(return_value=mock_page)
 
     mock_browser = AsyncMock()
-    mock_browser.contexts = [mock_context]
     mock_browser.new_context = AsyncMock(return_value=mock_context)
     mock_browser.close = AsyncMock()
 
@@ -85,7 +84,7 @@ def _mock_browser(mocker, pages: dict[str, str]):
     mock_context = AsyncMock()
     mock_context.new_page = AsyncMock(return_value=mock_page)
     mock_browser = AsyncMock()
-    mock_browser.contexts = [mock_context]
+    mock_browser.new_context = AsyncMock(return_value=mock_context)
     mock_pw = AsyncMock()
     mock_pw.__aenter__.return_value = mock_pw
     mock_pw.chromium.connect = AsyncMock(return_value=mock_browser)

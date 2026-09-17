@@ -2,7 +2,7 @@ import logging
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
-from playwright.async_api import Page, TimeoutError, async_playwright
+from playwright.async_api import Browser, Page, TimeoutError, async_playwright
 from playwright_stealth import Stealth
 
 from src.config import settings
@@ -20,6 +20,24 @@ from src.services.job_searcher.listeners.work_ua import WorkUAListeners
 
 logger = logging.getLogger("job_searcher.parser")
 
+
+def platform_names() -> set[str]:
+    """Names of the platforms the current searches cover, as they are stored on a Job."""
+    from src.services.job_searcher.urls import urls
+
+    names = set()
+    for url in urls:
+        listeners = _LISTENERS.get(urlparse(url).netloc)
+        if listeners and listeners.platform_name:
+            names.add(listeners.platform_name)
+    return names
+
+
+def _is_challenge(content: str) -> bool:
+    head = content[:4000].lower()
+    return any(marker in head for marker in _CHALLENGE_MARKERS)
+
+
 _LISTENERS: dict[str, BaseListeners] = {
     "www.work.ua": WorkUAListeners(),
     "robota.ua": RobotaUAListeners(),
@@ -34,9 +52,37 @@ _LISTENERS: dict[str, BaseListeners] = {
 
 _PAGE_TIMEOUT_MS = 10_000
 _RENDER_TIMEOUT_MS = 8_000
+# A bot-check interstitial reloads itself after a few seconds; this is the second chance
+# the list gets before the source is written off as blocked.
+_CHALLENGE_WAIT_MS = 6_000
 # Upper bound of vacancy pages opened in one run: the very first run after adding a source
 # can see a hundred new vacancies, and each page costs a couple of seconds.
 MAX_DETAIL_PAGES = 60
+
+# The remote Playwright server runs "chromium headless shell", whose own user agent says
+# HeadlessChrome and whose context has no locale or timezone. Work.ua and Jooble sit behind
+# a Cloudflare challenge, and that is exactly the fingerprint it looks at, so every page is
+# opened from a context that looks like the browser a person in Kyiv would use.
+_CONTEXT_OPTIONS = {
+    "user_agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
+    ),
+    "locale": "uk-UA",
+    "timezone_id": "Europe/Kyiv",
+    "viewport": {"width": 1440, "height": 900},
+    "extra_http_headers": {"Accept-Language": "uk-UA,uk;q=0.9,ru;q=0.8,en-US;q=0.7,en;q=0.6"},
+}
+
+# Text a bot check leaves on the page instead of the vacancies.
+_CHALLENGE_MARKERS = (
+    "just a moment",
+    "один момент",
+    "checking your browser",
+    "challenge-platform",
+    "cf-challenge",
+    "enable javascript and cookies",
+)
 
 
 class JobParser:
@@ -46,16 +92,42 @@ class JobParser:
 
     @staticmethod
     async def _get_page_content(page: Page, url: str, wait_selector: str | None = None) -> str:
+        status = None
         try:
-            await page.goto(url, wait_until="load", timeout=_PAGE_TIMEOUT_MS)
+            response = await page.goto(url, wait_until="load", timeout=_PAGE_TIMEOUT_MS)
+            status = response.status if response else None
         except TimeoutError:
             logger.error("Timeout for %s — continuing with current page state", url)
+
         if wait_selector:
             try:
                 await page.wait_for_selector(wait_selector, timeout=_RENDER_TIMEOUT_MS)
             except TimeoutError:
-                logger.warning("%s did not appear on %s — nothing rendered, or the page is blocked", wait_selector, url)
+                # Either the site renders nothing for us, or it shows a bot check that
+                # reloads itself — worth one more wait before giving the source up.
+                if _is_challenge(await page.content()):
+                    logger.warning("Bot check on %s (HTTP %s), waiting it out", url, status)
+                    await page.wait_for_timeout(_CHALLENGE_WAIT_MS)
+                    try:
+                        await page.wait_for_selector(wait_selector, timeout=_RENDER_TIMEOUT_MS)
+                    except TimeoutError:
+                        logger.error("%s is blocked by a bot check (HTTP %s) — no vacancies", url, status)
+                else:
+                    logger.warning(
+                        "%s did not appear on %s (HTTP %s, title %r) — nothing rendered",
+                        wait_selector,
+                        url,
+                        status,
+                        await page.title(),
+                    )
         return str(await page.content())
+
+    @staticmethod
+    async def _new_page(browser: Browser) -> Page:
+        context = await browser.new_context(**_CONTEXT_OPTIONS)  # type: ignore[arg-type]
+        page = await context.new_page()
+        await Stealth().apply_stealth_async(page)
+        return page
 
     @staticmethod
     async def _playwright_available() -> bool:
@@ -73,9 +145,7 @@ class JobParser:
         logger.info("Starting parse for %d URLs", len(self.urls))
         async with async_playwright() as pw:
             browser = await pw.chromium.connect(settings.playwright_ws_endpoint)
-            context = browser.contexts[0] if browser.contexts else await browser.new_context()
-            page = await context.new_page()
-            await Stealth().apply_stealth_async(page)
+            page = await self._new_page(browser)
 
             for url_text in self.urls:
                 logger.info("Parsing: %s", url_text)
@@ -93,13 +163,19 @@ class JobParser:
                         title=listeners.get_title(job_elem),
                         company=listeners.get_company(job_elem),
                         description=listeners.get_description(job_elem),
+                        location=listeners.get_location(job_elem),
                         date=listeners.get_date(job_elem),
                         link=listeners.get_link(job_elem),
                     )
                     self.job_storage.add_job(job)
                     count += 1
 
-                logger.info("Found %d jobs on %s", count, netloc)
+                if count:
+                    logger.info("Found %d jobs on %s", count, netloc)
+                else:
+                    # A source that suddenly gives nothing is a broken selector or a block,
+                    # and silence in the logs is how it stayed unnoticed for weeks.
+                    logger.warning("Found 0 jobs on %s (page title %r)", netloc, await page.title())
 
             await browser.close()
 
@@ -127,9 +203,7 @@ class JobParser:
         fetched = 0
         async with async_playwright() as pw:
             browser = await pw.chromium.connect(settings.playwright_ws_endpoint)
-            context = browser.contexts[0] if browser.contexts else await browser.new_context()
-            page = await context.new_page()
-            await Stealth().apply_stealth_async(page)
+            page = await self._new_page(browser)
 
             for job in targets:
                 listeners = self.get_listeners_by_platform(job.platform_name)
