@@ -35,9 +35,12 @@ class WellfoundListeners(BaseListeners):
     job_id = "pass"
     title = 'a[href^="/jobs/"]'
     company = "pass"
-    description = "pass"  # полное описание доступно только авторизованным пользователям
+    description = "pass"  # not in the list
     date = "span.text-xs.lowercase.text-dark-a"
     link = 'a[href^="/jobs/"]'
+
+    # The vacancy page shows the whole description without a login (checked 17.09.2026).
+    detail_description = "#job-description"
 
     def get_job_id(self, element: Tag) -> str | None:
         el = element.select_one(self.title)

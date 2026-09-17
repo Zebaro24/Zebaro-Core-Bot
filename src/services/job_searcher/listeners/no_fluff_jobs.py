@@ -14,6 +14,9 @@ class NoFluffJobsListeners(BaseListeners):
     date = "pass"
     link = "pass"
 
+    detail_description = "#posting-requirements, #posting-description, #posting-tasks"
+    detail_noise = ("Оригинальный текст", "Показать оригинал", "Оригінальний текст", "Показати оригінал")
+
     def get_job_id(self, element: Tag) -> str | None:
         val = element.get("id")
         return str(val) if val is not None else None

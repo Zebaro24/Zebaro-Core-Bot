@@ -16,6 +16,8 @@ class WorkUAListeners(BaseListeners):
     date = "div > time"
     link = "pass"
 
+    detail_description = "#job-description"
+
     def get_job_id(self, element: Tag) -> str:
         el = element.select_one("div > h2 > a")
         if not el or not el.get("href"):

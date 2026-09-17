@@ -14,6 +14,8 @@ class RobotaUAListeners(BaseListeners):
     date = "div.santa-typo-secondary.santa-text-black-500"
     link = "a"
 
+    detail_description = "#description-wrap"
+
     def get_job_id(self, element: Tag) -> str:
         el = element.select_one(self.job_id)
         if not el:

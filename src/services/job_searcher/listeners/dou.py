@@ -31,6 +31,8 @@ class DouListeners(BaseListeners):
     date = "div.date"
     link = "a.vt"
 
+    detail_description = ".b-typo.vacancy-section"
+
     def get_job_id(self, element: Tag) -> str:
         el = element.select_one(self.job_id)
         if not el:

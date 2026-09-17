@@ -45,6 +45,9 @@ coverage.xml
 # Type checker cache
 .mypy_cache/
 
+# Browser automation snapshots and logs (Playwright MCP)
+.playwright-mcp/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.services.job_searcher.container import JobStorage
+from src.services.job_searcher.container import Job, JobStorage
 from src.services.job_searcher.parser import _LISTENERS, JobParser
 
 
@@ -63,3 +63,57 @@ async def test_parse_urls_adds_jobs(mocker):
     assert job.title == "Python Dev"
     assert job.company == "TestCo"
     assert job.platform_name == "TestPlatform"
+    # The list is taken only after its cards rendered.
+    mock_page.wait_for_selector.assert_awaited_once()
+
+
+def _mock_browser(mocker, pages: dict[str, str]):
+    mock_sm = mocker.MagicMock()
+    mock_sm.check_infra_health = mocker.AsyncMock(return_value=True)
+    mocker.patch("src.core.service_manager.ServiceManager.get_instance", return_value=mock_sm)
+
+    current: dict[str, str] = {}
+
+    async def goto(url, **_kwargs):
+        if url not in pages:
+            raise RuntimeError("net::ERR_CONNECTION_RESET")
+        current["url"] = url
+
+    mock_page = AsyncMock()
+    mock_page.goto = AsyncMock(side_effect=goto)
+    mock_page.content = AsyncMock(side_effect=lambda: pages[current["url"]])
+    mock_context = AsyncMock()
+    mock_context.new_page = AsyncMock(return_value=mock_page)
+    mock_browser = AsyncMock()
+    mock_browser.contexts = [mock_context]
+    mock_pw = AsyncMock()
+    mock_pw.__aenter__.return_value = mock_pw
+    mock_pw.chromium.connect = AsyncMock(return_value=mock_browser)
+    mocker.patch("src.services.job_searcher.parser.async_playwright", return_value=mock_pw)
+    mocker.patch("src.services.job_searcher.parser.Stealth").return_value.apply_stealth_async = AsyncMock()
+    return mock_page
+
+
+@pytest.mark.asyncio
+async def test_fetch_descriptions_replaces_snippets_with_the_full_text(mocker):
+    page = _mock_browser(
+        mocker,
+        {
+            "https://jobs.dou.ua/v/1/": (
+                '<div class="b-typo vacancy-section"><p>Full text</p><ul><li>Python</li></ul></div>'
+            ),
+            "https://jobs.dou.ua/v/3/": '<div class="b-typo vacancy-section"><p>x</p></div>',
+        },
+    )
+    full = Job(platform_name="Dou", link="https://jobs.dou.ua/v/1/", description="Short")
+    broken = Job(platform_name="Dou", link="https://jobs.dou.ua/v/2/", description="Kept")
+    shorter = Job(platform_name="Dou", link="https://jobs.dou.ua/v/3/", description="Longer snippet")
+    no_details = Job(platform_name="Jooble", link="https://ua.jooble.org/desc/1", description="Only this")
+
+    await JobParser([], JobStorage()).fetch_descriptions([full, broken, shorter, no_details])
+
+    assert full.description == "Full text\n\n• Python"
+    assert broken.description == "Kept"  # one failing page does not stop the batch
+    assert shorter.description == "Longer snippet"  # never replaced with less
+    assert no_details.description == "Only this"
+    assert page.goto.await_count == 3  # no detail selector for Jooble: never opened

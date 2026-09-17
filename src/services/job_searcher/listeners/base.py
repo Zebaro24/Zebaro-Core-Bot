@@ -2,6 +2,8 @@ from datetime import datetime
 
 from bs4.element import Tag
 
+from src.services.job_searcher.text import drop_lines, element_text
+
 
 def resolve_year(month: int) -> int:
     now = datetime.now()
@@ -20,6 +22,16 @@ class BaseListeners:
     description: str | None = None
     date: str | None = None
     link: str | None = None
+
+    # Waited for after the list page loads (defaults to `all_jobs`). Robota.ua and No Fluff Jobs
+    # render the cards with JavaScript after the `load` event, so the page taken at `load` had
+    # zero vacancies on it.
+    wait_for: str | None = None
+    # Full description on the vacancy's own page. Several comma-separated selectors are joined
+    # in page order. None: the site shows no more than the list does (or only after a login).
+    detail_description: str | None = None
+    # Site chrome that sits inside the description block and must not reach the message.
+    detail_noise: tuple[str, ...] = ()
 
     @staticmethod
     def _get_one_by_selector(element: Tag, selector_text: str) -> str | None:
@@ -56,6 +68,18 @@ class BaseListeners:
         if not self.description:
             return None
         return self._get_one_by_selector(element, self.description)
+
+    def get_list_wait_selector(self) -> str | None:
+        return self.wait_for or self.all_jobs
+
+    def get_detail_description(self, page: Tag) -> str | None:
+        if not self.detail_description:
+            return None
+        parts = [element_text(el) for el in page.select(self.detail_description)]
+        text = "\n\n".join(part for part in parts if part)
+        if self.detail_noise:
+            text = drop_lines(text, list(self.detail_noise))
+        return text or None
 
     def get_date(self, element: Tag) -> str | datetime | None:
         if not self.date:

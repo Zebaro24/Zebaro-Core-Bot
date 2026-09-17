@@ -16,6 +16,8 @@ class BazaITListeners(BaseListeners):
     date = ".company-job__date"
     link = "pass"
 
+    detail_description = ".info-item"
+
     def get_job_id(self, element: Tag) -> str | None:
         href = element.get("href")
         if not href:

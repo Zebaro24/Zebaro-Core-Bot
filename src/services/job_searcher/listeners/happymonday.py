@@ -37,6 +37,9 @@ class HappyMondayListeners(BaseListeners):
     date = ".job_timing"
     link = ".job_card__title a"
 
+    detail_description = ".single-vacancy__text"
+    detail_noise = ("увійдіть або зареєструйтесь", "Бажаєте податися", "Хочете податися")
+
     def get_job_id(self, element: Tag) -> str | None:
         val = element.get("data-post-id")
         return str(val) if val is not None else None
