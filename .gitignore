@@ -31,8 +31,19 @@ coverage.xml
 .idea/
 .vscode/
 
-# Claud Code
-.claude/
+# Claude Code: the shared setup (settings.json, hooks, skills, agents, docs) is versioned;
+# personal overrides, one-shot push approvals and worktrees are not
+.claude/settings.local.json
+.claude/.approve-*
+.claude/worktrees/
+
+# Personal desk: findings that are not tasks yet, drafts, secrets
+/_ideas/
+/_temp/
+/_secrets/
+
+# Type checker cache
+.mypy_cache/
 
 # OS
 .DS_Store
@@ -44,6 +55,7 @@ Thumbs.db
 # Local environment files
 .env
 .env.*
+!.env.example
 
 # Runtime state (created by ServiceManager on first toggle)
 services.json
