@@ -91,10 +91,11 @@ def job_to_rich_html(job: Job, status: str | None = None) -> str:
     emoji, label = _TIERS.get(job.moderation or "", ("💼", ""))
     parts = [f"<h3>{emoji} {html.escape(job.title or 'Без названия')}</h3>"]
 
+    date = _date(job)
     meta = [
         f"<b>{html.escape(job.company)}</b>" if job.company else None,
         html.escape(job.platform_name or ""),
-        _date(job),
+        html.escape(date) if date else None,  # some listeners return the site's raw date string
     ]
     parts.append("<p>" + " · ".join(item for item in meta if item) + "</p>")
 

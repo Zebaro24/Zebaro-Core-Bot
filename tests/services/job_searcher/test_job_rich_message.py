@@ -85,9 +85,12 @@ def test_status_goes_right_under_the_company_line():
 
 
 def test_everything_user_provided_is_escaped():
-    text = job_to_rich_html(_job(title="<script>", company="A&B", similar_to="x", similar_to_platform="<b>"))
+    text = job_to_rich_html(
+        _job(title="<script>", company="A&B", date="<i>вчора</i>", similar_to="x", similar_to_platform="<b>")
+    )
 
     assert "<script>" not in text
+    assert "&lt;i&gt;вчора&lt;/i&gt;" in text
     assert "&lt;script&gt;" in text
     assert "A&amp;B" in text
     assert "уже было на &lt;b&gt;" in text
