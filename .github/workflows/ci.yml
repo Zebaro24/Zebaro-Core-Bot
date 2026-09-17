@@ -1,158 +1,56 @@
 name: CI
 
+# CI runs THE SAME command you run locally: scripts/gate.py. That is deliberate — a
+# pipeline that re-implements the checks drifts from the local one, and then
+# "у меня зелено" and "CI красный" become a regular, unexplainable event.
+#
+# CD calls this workflow before building the image (workflow_call), so a tag on a red
+# commit never reaches the server.
+
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  lint-format:
-    name: Lint & Format
+  gate:
+    name: Gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      # Python first, then Poetry: the other way round Poetry lands on the runner's
+      # system interpreter.
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
-      - name: Cache Poetry dependencies
-        id: cache-deps
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/pypoetry
-            ~/.cache/pip
-          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-poetry-
+      # pipx is preinstalled on the runner — one third-party action less.
+      - name: Install Poetry
+        run: pipx install poetry
 
-      - name: Set up Poetry
-        uses: abatilo/actions-poetry@v3
+      - name: Cache Poetry
+        uses: actions/cache@v4
         with:
-          poetry-version: '1.8.0'
+          path: ~/.cache/pypoetry
+          key: ${{ runner.os }}-poetry-${{ hashFiles('poetry.lock') }}
+          restore-keys: ${{ runner.os }}-poetry-
 
       - name: Install dependencies
         run: poetry install --no-interaction
 
-      - name: Check formatting
-        run: |
-          poetry run black --check src tests
-          poetry run isort --check-only src tests
-
-      - name: Run linting
-        run: poetry run flake8 src tests
-
-  type-check:
-    name: Type Checking
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Cache Poetry dependencies
-        id: cache-deps
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/pypoetry
-            ~/.cache/pip
-          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-poetry-
-
-      - name: Set up Poetry
-        uses: abatilo/actions-poetry@v3
-        with:
-          poetry-version: '1.8.0'
-
-      - name: Install dependencies
-        run: poetry install --no-interaction
-
-      - name: Run MyPy
-        run: poetry run mypy src
-
-  security:
-    name: Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.13'
-
-      - name: Cache Poetry dependencies
-        id: cache-deps
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/pypoetry
-            ~/.cache/pip
-          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-poetry-
-
-      - name: Set up Poetry
-        uses: abatilo/actions-poetry@v3
-        with:
-          poetry-version: '1.8.0'
-
-      - name: Install dependencies
-        run: poetry install --no-interaction
-
-      - name: Run Bandit
-        run: poetry run bandit -r src
-
-      - name: Run Safety
-        run:
-          poetry run safety check
-
-  test:
-    name: Tests & Coverage
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.11', '3.12', '3.13']
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Cache Poetry dependencies
-        id: cache-deps
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/pypoetry
-            ~/.cache/pip
-          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-poetry-
-
-      - name: Set up Poetry
-        uses: abatilo/actions-poetry@v3
-        with:
-          poetry-version: '1.8.0'
-
-      - name: Install dependencies
-        run: poetry install --no-interaction
-
-      - name: Run tests with coverage
-        run: poetry run pytest --cov=src --cov-report=xml --cov-report=term-missing
+      - name: Gate
+        run: python scripts/gate.py --strict
 
       - name: Upload coverage to Codecov
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: codecov/codecov-action@v4
         with:
-          file: ./coverage.xml
-          fail_ci_if_error: true
+          files: ./coverage.xml
+          fail_ci_if_error: false

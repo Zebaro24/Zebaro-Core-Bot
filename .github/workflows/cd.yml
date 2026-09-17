@@ -6,14 +6,20 @@ on:
       - 'v*'
 
 jobs:
+  # The same gate as CI and as `python scripts/gate.py --strict` locally. A tag pushed on
+  # a red commit stops here instead of reaching the server.
+  gate:
+    uses: ./.github/workflows/ci.yml
+
   build-and-push:
+    needs: gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
 
       # Set version from tag
       - name: Set version
@@ -60,7 +66,7 @@ jobs:
       name: prod
     steps:
       - name: Checkout only docker-compose.yml
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
         with:
           sparse-checkout: docker-compose.yml
           fetch-depth: 1
