@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from src.config import settings
 from src.interfaces.webhooks.routes.endpoints import router
+from src.interfaces.webhooks.routes.jobs import router as jobs_router
 
 logger = logging.getLogger("webhooks.main")
 
@@ -22,6 +23,8 @@ app.state.dp = None
 app.state.github_manager = None
 
 app.include_router(router, prefix="/webhook", tags=["webhook"])
+# Not under /webhook: the vacancy buttons already sent to Telegram link to {webhook_url}/jobs/r/<id>.
+app.include_router(jobs_router, prefix="/jobs", tags=["jobs"])
 
 
 async def start_webhooks() -> None:
