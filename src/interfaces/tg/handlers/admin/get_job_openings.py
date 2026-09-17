@@ -6,7 +6,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from src.interfaces.tg.middlewares.admin import AdminMiddleware
-from src.interfaces.tg.notification.job_notification import job_notification
+from src.interfaces.tg.notification.job_notification import is_job_search_running, job_notification
 
 logger = logging.getLogger("tg.handlers.admin.get_job_openings")
 
@@ -23,6 +23,10 @@ async def get_job_openings_command(message: Message) -> None:
         await message.answer("❌ Сервис Job Searcher выключен")
         return
 
+    if is_job_search_running():
+        await message.answer("⏳ Поиск вакансий уже идёт, дождись результатов")
+        return
+
     logger.info("Manual job search triggered by admin")
     await message.answer("Check jobs...")
 
@@ -33,9 +37,13 @@ async def get_job_openings_command(message: Message) -> None:
 
     await message.bot.send_chat_action(message.chat.id, "typing")
     try:
-        await job_notification(message.bot)
+        sent = await job_notification(message.bot)
     except Exception as e:
         logger.exception("Manual job search failed")
         # Первая строка без баннеров Playwright, полный трейс — в логах
         reason = str(e).splitlines()[0] if str(e) else type(e).__name__
         await message.answer(f"💀 Поиск вакансий упал: {escape(reason)}")
+        return
+
+    if not sent:
+        await message.answer("🤷 Новых подходящих вакансий нет")
