@@ -21,6 +21,8 @@ def test_get_reply_markup_uses_action_kb_when_job_id_present():
         button.callback_data for row in markup.inline_keyboard for button in row if button.callback_data
     ]
     assert len(callback_actions) == 2
+    styles = {button.text: button.style for row in markup.inline_keyboard for button in row}
+    assert styles == {"🔗 Вакансия": "primary", "✅ Откликнулся": "success", "❌ Не интересует": "danger"}
 
 
 def test_get_reply_markup_falls_back_to_raw_link_when_job_id_missing():
