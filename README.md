@@ -21,7 +21,7 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 - Admin utilities: chat ID, server health, MongoDB stats
 - Docker control: list/start/stop/restart containers and projects
 - Service manager: enable/disable services and infrastructure at runtime via `/services`
-- Job notifications: scheduled digests from multiple sources
+- Job notifications: scheduled digests from multiple sources, stats on demand via `/job_stats`
 
 **Discord Bot (discord.py)**
 - Commands and events with activity presence
