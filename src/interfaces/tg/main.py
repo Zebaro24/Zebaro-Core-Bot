@@ -24,7 +24,12 @@ from src.interfaces.tg.notification.job_stats_notification import job_stats_noti
 from src.interfaces.webhooks.setup import get_url_webhook_github, get_url_webhook_telegram, setup_telegram_webhook
 from src.scheduler import scheduler
 from src.services.github.service import GithubService
-from src.services.job_searcher.service import JobSearcherService
+from src.services.job_searcher.service import (
+    SEARCH_HOURS,
+    WEEKLY_DIGEST_ID,
+    JobSearcherService,
+    search_job_id,
+)
 
 logger = logging.getLogger("tg.main")
 
@@ -49,10 +54,9 @@ async def start_bot() -> None:
     dp.include_router(services.router)
 
     # Scheduler jobs (added with IDs so they can be paused/resumed)
-    scheduler.add_job(job_notification, "cron", hour=12, args=[bot], id="job_notification_12")
-    scheduler.add_job(job_notification, "cron", hour=14, args=[bot], id="job_notification_14")
-    scheduler.add_job(job_notification, "cron", hour=16, args=[bot], id="job_notification_16")
-    scheduler.add_job(job_stats_notification, "cron", day_of_week="fri", hour=18, args=[bot], id="job_weekly_digest")
+    for hour in SEARCH_HOURS:
+        scheduler.add_job(job_notification, "cron", hour=hour, args=[bot], id=search_job_id(hour))
+    scheduler.add_job(job_stats_notification, "cron", day_of_week="fri", hour=18, args=[bot], id=WEEKLY_DIGEST_ID)
 
     # Register infrastructure and services with ServiceManager
     sm = ServiceManager.get_instance()

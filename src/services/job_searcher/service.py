@@ -7,7 +7,17 @@ from src.core.base_service import BaseService
 
 logger = logging.getLogger("services.job_searcher")
 
-_JOB_IDS = ["job_notification_12", "job_notification_14", "job_notification_16", "job_weekly_digest"]
+# Local hours (TZ) of the scheduled searches. The morning one catches what was posted
+# overnight before it is an hour old and already has a queue of replies.
+SEARCH_HOURS = (10, 12, 14, 16)
+WEEKLY_DIGEST_ID = "job_weekly_digest"
+
+
+def search_job_id(hour: int) -> str:
+    return f"job_notification_{hour}"
+
+
+_JOB_IDS = [*(search_job_id(hour) for hour in SEARCH_HOURS), WEEKLY_DIGEST_ID]
 
 
 class JobSearcherService(BaseService):
