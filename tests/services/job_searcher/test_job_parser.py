@@ -176,3 +176,12 @@ def test_browser_endpoint_asks_for_the_full_chromium(mocker):
 
     assert endpoint.startswith("ws://pw:9222?launch-options=")
     assert json.loads(unquote(endpoint.split("launch-options=")[1])) == {"channel": "chromium", "headless": True}
+
+
+def test_every_search_url_has_listeners():
+    # An unregistered host raises before any page is opened and would cost the whole run.
+    from urllib.parse import urlparse
+
+    from src.services.job_searcher.urls import urls
+
+    assert [url for url in urls if urlparse(url).netloc not in _LISTENERS] == []

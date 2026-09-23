@@ -182,11 +182,19 @@ class JobParser:
                 else:
                     # A source that suddenly gives nothing is a broken selector or a block,
                     # and silence in the logs is how it stayed unnoticed for weeks.
-                    logger.warning("Found 0 jobs on %s (page title %r)", netloc, await page.title())
+                    logger.warning("Found 0 jobs on %s (page title %r)", netloc, await self._title(page))
 
             await browser.close()
 
         logger.info("Parse complete. Total: %d jobs", len(self.job_storage.jobs))
+
+    @staticmethod
+    async def _title(page: Page) -> str | None:
+        # Only for the log line: a page mid-navigation or crashed must not end the run.
+        try:
+            return await page.title()
+        except Exception:
+            return None
 
     @staticmethod
     def _parse_list(listeners: BaseListeners, soup: BeautifulSoup) -> list[Job]:
