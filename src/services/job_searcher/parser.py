@@ -151,13 +151,34 @@ class JobParser:
                 logger.info("Parsing: %s", url_text)
                 netloc = urlparse(url_text).netloc
                 listeners = self.get_listeners(netloc)
+                try:
+                    html_content = await self._get_page_content(page, url_text, listeners.get_list_wait_selector())
+                except Exception:
+                    # A page that fails to load must not cost every other source its vacancies.
+                    logger.exception("Could not open %s, moving on to the next search", url_text)
+                    continue
 
-                html_content = await self._get_page_content(page, url_text, listeners.get_list_wait_selector())
-                soup = BeautifulSoup(html_content, "html.parser")
+                jobs = self._parse_list(listeners, BeautifulSoup(html_content, "html.parser"))
+                repeated = sum(not self.job_storage.add_job(job) for job in jobs)
 
-                count = repeated = 0
-                for job_elem in listeners.get_all_jobs(soup):
-                    job = Job(
+                if jobs:
+                    logger.info("Found %d jobs on %s (%d already found by another search)", len(jobs), netloc, repeated)
+                else:
+                    # A source that suddenly gives nothing is a broken selector or a block,
+                    # and silence in the logs is how it stayed unnoticed for weeks.
+                    logger.warning("Found 0 jobs on %s (page title %r)", netloc, await page.title())
+
+            await browser.close()
+
+        logger.info("Parse complete. Total: %d jobs", len(self.job_storage.jobs))
+
+    @staticmethod
+    def _parse_list(listeners: BaseListeners, soup: BeautifulSoup) -> list[Job]:
+        jobs = []
+        for job_elem in listeners.get_all_jobs(soup):
+            try:
+                jobs.append(
+                    Job(
                         platform_name=listeners.platform_name,
                         job_id=listeners.get_job_id(job_elem),
                         title=listeners.get_title(job_elem),
@@ -167,20 +188,12 @@ class JobParser:
                         date=listeners.get_date(job_elem),
                         link=listeners.get_link(job_elem),
                     )
-                    count += 1
-                    if not self.job_storage.add_job(job):
-                        repeated += 1
-
-                if count:
-                    logger.info("Found %d jobs on %s (%d already found by another search)", count, netloc, repeated)
-                else:
-                    # A source that suddenly gives nothing is a broken selector or a block,
-                    # and silence in the logs is how it stayed unnoticed for weeks.
-                    logger.warning("Found 0 jobs on %s (page title %r)", netloc, await page.title())
-
-            await browser.close()
-
-        logger.info("Parse complete. Total: %d jobs", len(self.job_storage.jobs))
+                )
+            except Exception as e:
+                # One odd card (an ad, a half-rendered tooltip) used to raise out of the whole
+                # run — and then no vacancy from any site arrived.
+                logger.warning("Skipped a %s card that did not parse: %s", listeners.platform_name, e)
+        return jobs
 
     async def fetch_descriptions(self, jobs: list[Job]) -> None:
         """Replace list snippets with the full description from each vacancy's own page.

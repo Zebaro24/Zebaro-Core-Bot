@@ -116,3 +116,21 @@ async def test_fetch_descriptions_replaces_snippets_with_the_full_text(mocker):
     assert shorter.description == "Longer snippet"  # never replaced with less
     assert no_details.description == "Only this"
     assert page.goto.await_count == 3  # no detail selector for Jooble: never opened
+
+
+def test_a_card_that_does_not_parse_is_skipped_not_fatal():
+    listener = MagicMock()
+    listener.platform_name = "TestPlatform"
+    listener.get_all_jobs.return_value = ["bad", "good"]
+    listener.get_title.return_value = "Python Dev"
+
+    def job_id(elem: str) -> str:
+        if elem == "bad":
+            raise ValueError("an ad card has no id")
+        return "1"
+
+    listener.get_job_id.side_effect = job_id
+
+    jobs = JobParser._parse_list(listener, MagicMock())
+
+    assert [job.job_id for job in jobs] == ["1"]

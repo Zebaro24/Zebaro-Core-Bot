@@ -32,14 +32,20 @@ class DjinniListeners(BaseListeners):
             return element_text(full) or None
         return self._get_one_by_selector(element, self.truncated_description)
 
-    def get_date(self, element: Tag) -> datetime:
+    def get_date(self, element: Tag) -> datetime | None:
         select_element = element.select_one(self.date)
         if not select_element:
-            raise ValueError("No date element found in Djinni job")
-        date_str = select_element.get("data-bs-original-title")
-        if not date_str or not isinstance(date_str, str):
-            raise ValueError("No date string found in Djinni element")
-        return datetime.strptime(date_str, "%H:%M %d.%m.%Y")
+            return None
+        # Bootstrap moves "title" to "data-bs-original-title" when it sets the tooltip up; a page
+        # captured before its scripts ran still has the plain attribute. A missing date only
+        # costs the staleness check, so it is not worth losing the vacancy over.
+        date_str = select_element.get("data-bs-original-title") or select_element.get("title")
+        if not isinstance(date_str, str):
+            return None
+        try:
+            return datetime.strptime(date_str.strip(), "%H:%M %d.%m.%Y")
+        except ValueError:
+            return None
 
     def get_link(self, element: Tag) -> str:
         select_element = element.select_one(self.link)

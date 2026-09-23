@@ -38,3 +38,24 @@ def test_dou_hot_vacancy_links_to_the_plain_page():
     listeners = DouListeners()
     assert listeners.get_link(element) == "https://jobs.dou.ua/companies/vira-games/vacancies/374084/"
     assert listeners.get_job_id(element) == "374084"
+
+
+@pytest.mark.parametrize(
+    "attrs,expected",
+    [
+        ('data-bs-original-title="23:24 22.09.2026"', datetime(2026, 9, 22, 23, 24)),
+        ('title="23:24 22.09.2026"', datetime(2026, 9, 22, 23, 24)),  # before Bootstrap ran
+        ("", None),
+        ('title="вчора"', None),
+    ],
+)
+def test_djinni_date_survives_a_page_captured_before_its_scripts(attrs, expected):
+    from bs4 import BeautifulSoup
+
+    from src.services.job_searcher.listeners.djinni import DjinniListeners
+
+    element = BeautifulSoup(
+        f'<div class="job-item"><span class="text-nowrap" data-bs-toggle="tooltip" {attrs}>1d</span></div>',
+        "html.parser",
+    )
+    assert DjinniListeners().get_date(element) == expected
