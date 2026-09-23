@@ -1,9 +1,11 @@
+import json
 from unittest.mock import AsyncMock, MagicMock
+from urllib.parse import unquote
 
 import pytest
 
 from src.services.job_searcher.container import Job, JobStorage
-from src.services.job_searcher.parser import _LISTENERS, JobParser
+from src.services.job_searcher.parser import _LISTENERS, JobParser, _is_challenge, browser_endpoint
 
 
 @pytest.mark.asyncio
@@ -134,3 +136,43 @@ def test_a_card_that_does_not_parse_is_skipped_not_fatal():
     jobs = JobParser._parse_list(listener, MagicMock())
 
     assert [job.job_id for job in jobs] == ["1"]
+
+
+@pytest.mark.asyncio
+async def test_a_site_whose_vacancy_pages_are_blocked_is_not_opened_again(mocker):
+    challenge = "<html><head><style>" + "x" * 5000 + "</style><title>Трохи зачекайте…</title></head></html>"
+    page = _mock_browser(
+        mocker,
+        {
+            "https://www.work.ua/jobs/1": challenge,
+            "https://www.work.ua/jobs/2": challenge,
+            "https://jobs.dou.ua/v/1/": '<div class="b-typo vacancy-section"><p>Full text</p></div>',
+        },
+    )
+    page.title = AsyncMock(return_value="Трохи зачекайте…")
+    first = Job(platform_name="Work.ua", link="https://www.work.ua/jobs/1", description="Snippet 1")
+    second = Job(platform_name="Work.ua", link="https://www.work.ua/jobs/2", description="Snippet 2")
+    dou = Job(platform_name="Dou", link="https://jobs.dou.ua/v/1/", description="Short")
+
+    await JobParser([], JobStorage()).fetch_descriptions([first, second, dou])
+
+    assert first.description == "Snippet 1"
+    assert second.description == "Snippet 2"
+    assert dou.description == "Full text"  # other sites are not affected
+    opened = [call.args[0] for call in page.goto.await_args_list]
+    assert "https://www.work.ua/jobs/2" not in opened
+
+
+def test_cloudflare_page_is_recognised_by_its_title_past_the_stylesheet():
+    content = "<html><head><style>" + "x" * 5000 + "</style><title>Трохи зачекайте…</title>"
+    assert _is_challenge("Трохи зачекайте…", content)
+    assert not _is_challenge("Робота: python developer", "<html>vacancies</html>")
+
+
+def test_browser_endpoint_asks_for_the_full_chromium(mocker):
+    mocker.patch("src.services.job_searcher.parser.settings").playwright_ws_endpoint = "ws://pw:9222"
+
+    endpoint = browser_endpoint()
+
+    assert endpoint.startswith("ws://pw:9222?launch-options=")
+    assert json.loads(unquote(endpoint.split("launch-options=")[1])) == {"channel": "chromium", "headless": True}

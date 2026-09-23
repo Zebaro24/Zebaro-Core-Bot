@@ -1,5 +1,6 @@
+import json
 import logging
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from bs4 import BeautifulSoup
 from playwright.async_api import Browser, Page, TimeoutError, async_playwright
@@ -33,8 +34,10 @@ def platform_names() -> set[str]:
     return names
 
 
-def _is_challenge(content: str) -> bool:
-    head = content[:4000].lower()
+def _is_challenge(title: str, content: str) -> bool:
+    # The title first: Cloudflare puts a long inline stylesheet before it, so on Work.ua's
+    # vacancy pages "Трохи зачекайте…" sat past any fixed slice of the HTML and went unseen.
+    head = f"{title}\n{content[:4000]}".lower()
     return any(marker in head for marker in _CHALLENGE_MARKERS)
 
 
@@ -59,9 +62,21 @@ _CHALLENGE_WAIT_MS = 6_000
 # can see a hundred new vacancies, and each page costs a couple of seconds.
 MAX_DETAIL_PAGES = 60
 
-# The remote Playwright server runs "chromium headless shell", whose own user agent says
-# HeadlessChrome and whose context has no locale or timezone. Work.ua and Jooble sit behind
-# a Cloudflare challenge, and that is exactly the fingerprint it looks at, so every page is
+# Which browser the Playwright server launches for us. Its default is "chromium headless
+# shell" — a stripped build that Cloudflare recognises: Work.ua, Robota.ua and HappyMonday
+# answered it with a "Трохи зачекайте…" page on every run. The full Chromium in its new
+# headless mode, from the same image, got through all three in a live check (23.09.2026).
+_LAUNCH_OPTIONS = {"channel": "chromium", "headless": True}
+
+
+def browser_endpoint() -> str:
+    """The Playwright server address with the launch options it passes to the browser."""
+    separator = "&" if "?" in settings.playwright_ws_endpoint else "?"
+    return f"{settings.playwright_ws_endpoint}{separator}launch-options={quote(json.dumps(_LAUNCH_OPTIONS))}"
+
+
+# A headless browser's own user agent says HeadlessChrome and its context has no locale or
+# timezone. The Cloudflare-guarded boards look exactly at that fingerprint, so every page is
 # opened from a context that looks like the browser a person in Kyiv would use.
 _CONTEXT_OPTIONS = {
     "user_agent": (
@@ -77,6 +92,7 @@ _CONTEXT_OPTIONS = {
 # Text a bot check leaves on the page instead of the vacancies.
 _CHALLENGE_MARKERS = (
     "just a moment",
+    "трохи зачекайте",  # Cloudflare's page in Ukrainian — what Work.ua and Robota.ua show
     "один момент",
     "checking your browser",
     "challenge-platform",
@@ -105,7 +121,7 @@ class JobParser:
             except TimeoutError:
                 # Either the site renders nothing for us, or it shows a bot check that
                 # reloads itself — worth one more wait before giving the source up.
-                if _is_challenge(await page.content()):
+                if _is_challenge(await page.title(), await page.content()):
                     logger.warning("Bot check on %s (HTTP %s), waiting it out", url, status)
                     await page.wait_for_timeout(_CHALLENGE_WAIT_MS)
                     try:
@@ -144,7 +160,7 @@ class JobParser:
 
         logger.info("Starting parse for %d URLs", len(self.urls))
         async with async_playwright() as pw:
-            browser = await pw.chromium.connect(settings.playwright_ws_endpoint)
+            browser = await pw.chromium.connect(browser_endpoint())
             page = await self._new_page(browser)
 
             for url_text in self.urls:
@@ -215,17 +231,28 @@ class JobParser:
 
         logger.info("Fetching full descriptions for %d vacancies", len(targets))
         fetched = 0
+        # Work.ua lets the list through but guards every vacancy page with a check no headless
+        # browser passes (checked 23.09.2026). Each blocked page costs ~20 s of waiting, so
+        # after the first one the rest of that site keeps its list snippet.
+        blocked: set[str | None] = set()
         async with async_playwright() as pw:
-            browser = await pw.chromium.connect(settings.playwright_ws_endpoint)
+            browser = await pw.chromium.connect(browser_endpoint())
             page = await self._new_page(browser)
 
             for job in targets:
                 listeners = self.get_listeners_by_platform(job.platform_name)
-                if listeners is None or not job.link:
+                if listeners is None or not job.link or job.platform_name in blocked:
                     continue
                 try:
                     html_content = await self._get_page_content(page, job.link, listeners.detail_description)
                     description = listeners.get_detail_description(BeautifulSoup(html_content, "html.parser"))
+                    if not description and _is_challenge(await page.title(), html_content):
+                        blocked.add(job.platform_name)
+                        logger.warning(
+                            "%s vacancy pages are behind a bot check — its vacancies keep the list snippet",
+                            job.platform_name,
+                        )
+                        continue
                 except Exception as e:
                     # One broken page must not cost the rest of the batch its descriptions.
                     logger.warning("Could not read the vacancy page %s: %s", job.link, e)

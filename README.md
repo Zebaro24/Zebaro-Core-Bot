@@ -34,8 +34,8 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 - Telegram updates are answered at once and handled in the background
 
 **Job Search & Scraping**
-- Headless browsing via Playwright Stealth (remote browser server)
-- Sources: Work.ua, Robota.ua, NoFluffJobs, Djinni, DOU, HappyMonday, BazaIT, Wellfound (Jooble is behind a bot challenge)
+- Headless browsing via Playwright Stealth (remote browser server, full Chromium in new headless mode)
+- Sources: Work.ua, Robota.ua, NoFluffJobs, Djinni, DOU, HappyMonday, BazaIT, Wellfound (Jooble is behind a bot challenge; Work.ua vacancy pages too, so Work.ua vacancies carry the list snippet)
 - Relevance scoring, apply / not-interested buttons, cross-site duplicate marks, weekly digest
 
 **Infrastructure management**
