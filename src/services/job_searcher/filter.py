@@ -4,7 +4,8 @@ Two passes, because the full description costs a page load:
 
 1. `prefilter_all` — the list card only: title, company, location and date. Seniority that
    does not fit (senior, lead, internships...), roles that are not development at all (QA,
-   recruiter...), another continent and months-old postings are rejected here, and their
+   recruiter...), a title built on another main stack (Java, .NET, PHP, Angular...), an office
+   or another continent and months-old postings are rejected here, and their
    vacancy pages are never opened.
 2. `classify_all` — after the parser fetched full descriptions. Rejects what asks for five
    years of experience whatever the title said, then looks for the core stack in the title
@@ -57,7 +58,7 @@ BONUS_STACK: dict[str, tuple[str, ...]] = {
 SENIOR_WORDS = ("senior", "sr", "сеньйор", "сеньор")
 LEAD_WORDS = (
     "lead", "team lead", "tech lead", "head", "principal", "staff", "architect", "director",
-    "cto", "vp", "тімлід", "тимлид", "лід", "керівник",
+    "cto", "vp", "тімлід", "тимлид", "лід", "керівник", "leader",
 )  # fmt: skip
 # Juniors are welcome: a strong junior with two years of work is the owner's level. An
 # internship is not — it is a course with a stipend, not a job.
@@ -67,7 +68,17 @@ MIDDLE_WORDS = ("middle", "mid", "мідл", "мидл")
 WRONG_ROLE_WORDS = (
     "qa", "aqa", "tester", "test engineer", "ai training", "data labeling", "розмітка",
     "викладач", "тренер", "mentor", "ментор", "odoo", "1c", "1с", "recruiter", "рекрутер",
-    "sales", "marketing", "project manager", "product manager", "designer", "дизайнер",
+    "sales", "marketing", "manager", "менеджер", "designer", "дизайнер", "business analyst",
+    "systems analyst", "advocate", "consultant", "content", "writer", "copywriter", "motion",
+    "video", "security",
+)  # fmt: skip
+# A title that names another main stack. The owner answered none of these in a week of
+# decisions (0 of ~25 by 23.09.2026) even with React beside it: "React and C#", "Python &
+# Angular". Node.js is not here — "Node + React" full-stack positions he does take.
+OTHER_STACK_WORDS = (
+    "java", "kotlin", "c#", ".net", "php", "laravel", "angular", "vue", "vue.js",
+    "react native", "flutter", "android", "ios", "mobile developer", "ruby", "rails", "golang",
+    "wordpress", "webflow",
 )  # fmt: skip
 WRONG_COMPANY_WORDS = ("фоп", "school")
 
@@ -77,8 +88,13 @@ FAR_LOCATION_WORDS = (
     "india", "bangalore", "bengaluru", "hyderabad", "mumbai", "delhi", "noida", "gurgaon",
     "chennai", "pune", "kolkata", "ahmedabad", "pakistan", "lahore", "karachi", "bangladesh",
     "dhaka", "nigeria", "lagos", "kenya", "nairobi", "philippines", "manila", "indonesia",
-    "jakarta", "vietnam", "hanoi",
+    "jakarta", "vietnam", "hanoi", "argentina", "brazil", "mexico", "colombia", "chile",
+    "latam", "latin america", "south america", "south africa", "united states", "usa", "canada",
 )  # fmt: skip
+# Only Wellfound fills the location. A remote job says so ("Remote • Europe", "Onsite or
+# remote • London"); a bare "Dublin" or "In office • London" means an office — all of those
+# were turned down.
+REMOTE_WORDS = ("remote", "віддалено", "дистанційно", "удаленно", "relocation", "релокація")
 
 # A vacancy still hanging on the board months later is either filled or never was real.
 MAX_AGE_DAYS = 60
@@ -155,6 +171,8 @@ def title_reject_reason(title: str | None, company: str | None) -> str | None:
         return "company"
     if _contains_any(title, WRONG_ROLE_WORDS):
         return "not a developer role"
+    if _contains_any(title, OTHER_STACK_WORDS):
+        return "other stack"
     if _contains_any(title, LEAD_WORDS):
         return "lead"
     # "Middle/Senior" still hires a middle — that stays.
@@ -192,8 +210,11 @@ def reject_before_opening(job: Job) -> str | None:
     reason = title_reject_reason(job.title, job.company)
     if reason:
         return reason
-    if _contains_any((job.location or "").lower(), FAR_LOCATION_WORDS):
+    location = (job.location or "").lower()
+    if _contains_any(location, FAR_LOCATION_WORDS):
         return "location"
+    if location and not _contains_any(location, REMOTE_WORDS):
+        return "office"
     if _is_stale(job.date):
         return "stale"
     return None

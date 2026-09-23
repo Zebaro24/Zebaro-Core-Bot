@@ -7,6 +7,7 @@ from src.services.job_searcher.filter import (
     MAX_AGE_DAYS,
     JobFilter,
     evaluate,
+    reject_before_opening,
     required_years,
     title_level,
     title_reject_reason,
@@ -29,6 +30,19 @@ from src.services.job_searcher.filter import (
         ("QA Engineer Python", "TechCorp", "not a developer role"),
         ("AI Training Data Labeling", "TechCorp", "not a developer role"),
         ("Product Manager", "TechCorp", "not a developer role"),
+        ("AI Solutions Manager", "TechCorp", "not a developer role"),
+        ("Business Analyst — AI Healthcare Project", "TechCorp", "not a developer role"),
+        ("Application & AI Cyber Security Engineer", "TechCorp", "not a developer role"),
+        ("Fullstack Team Leader", "TechCorp", "lead"),  # "lead" never matched "leader"
+        ("Middle Full-Stack (React and C#)", "TechCorp", "other stack"),
+        ("Full Stack Engineer (Python & Angular)", "TechCorp", "other stack"),
+        ("Java Fullstack Developer", "TechCorp", "other stack"),
+        (".Net Full-Stack Engineer (Angular)", "TechCorp", "other stack"),
+        ("Full Stack Developer (Vue.js + Node.js)", "TechCorp", "other stack"),
+        ("FullStack Developer (React+PHP Laravel)", "TechCorp", "other stack"),
+        ("Full Stack Developer (React / React Native)", "TechCorp", "other stack"),
+        ("Full Stack Mobile Developer (Cross-Platform / Native)", "TechCorp", "other stack"),
+        ("Software Engineer (Golang, AI)", "TechCorp", "other stack"),
         ("Python Developer", "ФОП Іванов", "company"),
         ("Python Developer", "School ABC", "company"),
     ],
@@ -48,6 +62,13 @@ def test_title_rejects(title, company, reason):
         "Junior Python Developer",  # a strong junior with two years of work is the owner's level
         "Strong Junior Full Stack Developer",
         "Junior/Trainee React Developer",  # hires a junior too
+        # Titles the owner answered — none of the new rules may catch them.
+        "Middle JavaScript Full Stack Developer (Node + React)",  # JavaScript is not Java
+        "Full-Stack Software Engineer (BE + FE / BE + Mobile)",
+        "Fullstack Next.js / Nest.js Developer",
+        "AEM Full Stack Developer",
+        "Technical (Python) Support Engineer",
+        "AI Research Scientist",
         "Middle Python Developer",
         "Python Developer",
         "Software Engineer",
@@ -81,7 +102,7 @@ def test_tiers(title, description, moderation, stack):
 
 
 def test_react_native_is_not_react():
-    verdict = evaluate(Job(title="Mobile Developer", description="React Native, Python backend"))
+    verdict = evaluate(Job(title="Backend Engineer", description="React Native app, Python backend"))
     assert "React" not in verdict.stack
     assert verdict.moderation == "review"
 
@@ -211,3 +232,20 @@ def test_classify_all_keeps_the_required_years_for_the_message():
     JobFilter(storage).classify_all()
 
     assert storage.jobs[0].required_years == 3
+
+
+@pytest.mark.parametrize(
+    "location,reason",
+    [
+        ("In office • London", "office"),
+        ("Dublin", "office"),
+        ("Remote only • Argentina+7", "location"),
+        ("Remote • United States", "location"),
+        ("Remote only • Everywhere", None),
+        ("Remote • Europe+2", None),
+        ("Onsite or remote • London+1", None),
+        (None, None),  # only Wellfound fills it; the rest must not be read as an office
+    ],
+)
+def test_location_rules(location, reason):
+    assert reject_before_opening(Job(title="Full Stack Developer", location=location)) == reason

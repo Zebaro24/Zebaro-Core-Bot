@@ -6,9 +6,11 @@ _REASONS = {
     "lead": "lead / head / architect",
     "intern": "стажировка / trainee",
     "junior": "junior (старое правило, джунов теперь берём)",
-    "not a developer role": "не разработка (QA, менеджеры, дизайн…)",
+    "not a developer role": "не разработка (QA, менеджеры, аналитики, дизайн…)",
+    "other stack": "другой основной стек (Java, .NET, PHP, Angular, Vue, мобилка…)",
+    "office": "офис, не удалёнка",
     "company": "ФОП / школа",
-    "location": "другой континент (Индия и т.п.)",
+    "location": "другой континент (Индия, LATAM, США…)",
     "stale": "висит на сайте больше двух месяцев",
     "no stack match": "стек не совпал",
 }
