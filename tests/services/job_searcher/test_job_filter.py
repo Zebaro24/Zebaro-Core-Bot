@@ -22,8 +22,9 @@ from src.services.job_searcher.filter import (
         ("Lead Python Developer (Database)", "Nova Digital", "lead"),
         ("Head of Engineering", "TechCorp", "lead"),
         ("Solution Architect", "TechCorp", "lead"),
-        ("Junior Python Developer", "TechCorp", "junior"),
-        ("Trainee Frontend (React)", "TechCorp", "junior"),
+        ("Trainee Frontend (React)", "TechCorp", "intern"),
+        ("Python Intern", "TechCorp", "intern"),
+        ("Стажування Python-розробник", "TechCorp", "intern"),
         ("QA Engineer Python", "TechCorp", "not a developer role"),
         ("AI Training Data Labeling", "TechCorp", "not a developer role"),
         ("Product Manager", "TechCorp", "not a developer role"),
@@ -43,6 +44,9 @@ def test_title_rejects(title, company, reason):
     [
         "Middle/Senior Python Developer",  # still hires a middle
         "Junior/Middle Python Developer",
+        "Junior Python Developer",  # a strong junior with two years of work is the owner's level
+        "Strong Junior Full Stack Developer",
+        "Junior/Trainee React Developer",  # hires a junior too
         "Middle Python Developer",
         "Python Developer",
         "Software Engineer",

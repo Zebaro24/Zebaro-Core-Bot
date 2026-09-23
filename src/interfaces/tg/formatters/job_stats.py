@@ -4,7 +4,8 @@ from typing import Any
 _REASONS = {
     "senior": "senior (в заголовке или 5+ лет опыта)",
     "lead": "lead / head / architect",
-    "junior": "junior / стажёр",
+    "intern": "стажировка / trainee",
+    "junior": "junior (старое правило, джунов теперь берём)",
     "not a developer role": "не разработка (QA, менеджеры, дизайн…)",
     "company": "ФОП / школа",
     "location": "другой континент (Индия и т.п.)",

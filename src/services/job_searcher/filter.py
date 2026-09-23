@@ -3,7 +3,7 @@
 Two passes, because the full description costs a page load:
 
 1. `prefilter_all` — the list card only: title, company, location and date. Seniority that
-   does not fit (senior, lead, junior...), roles that are not development at all (QA,
+   does not fit (senior, lead, internships...), roles that are not development at all (QA,
    recruiter...), another continent and months-old postings are rejected here, and their
    vacancy pages are never opened.
 2. `classify_all` — after the parser fetched full descriptions. Rejects what asks for five
@@ -59,7 +59,10 @@ LEAD_WORDS = (
     "lead", "team lead", "tech lead", "head", "principal", "staff", "architect", "director",
     "cto", "vp", "тімлід", "тимлид", "лід", "керівник",
 )  # fmt: skip
-JUNIOR_WORDS = ("junior", "jr", "trainee", "intern", "internship", "стажер", "стажист", "стажування", "джуніор")
+# Juniors are welcome: a strong junior with two years of work is the owner's level. An
+# internship is not — it is a course with a stipend, not a job.
+INTERN_WORDS = ("trainee", "intern", "internship", "стажер", "стажёр", "стажист", "стажування", "стажировка")
+JUNIOR_WORDS = ("junior", "jr", "джуніор", "джун")
 MIDDLE_WORDS = ("middle", "mid", "мідл", "мидл")
 WRONG_ROLE_WORDS = (
     "qa", "aqa", "tester", "test engineer", "ai training", "data labeling", "розмітка",
@@ -143,11 +146,12 @@ def title_reject_reason(title: str | None, company: str | None) -> str | None:
         return "not a developer role"
     if _contains_any(title, LEAD_WORDS):
         return "lead"
-    # "Middle/Senior" and "Junior/Middle" still hire a middle — those stay.
+    # "Middle/Senior" still hires a middle — that stays.
     if _contains_any(title, SENIOR_WORDS) and not has_middle:
         return "senior"
-    if _contains_any(title, JUNIOR_WORDS) and not has_middle:
-        return "junior"
+    # "Junior/Trainee" hires a junior too; a bare "Trainee" or "Intern" does not.
+    if _contains_any(title, INTERN_WORDS) and not has_middle and not _contains_any(title, JUNIOR_WORDS):
+        return "intern"
     return None
 
 
