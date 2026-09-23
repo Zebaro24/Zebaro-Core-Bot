@@ -125,3 +125,22 @@ async def test_remove_jobs_already_in_db(mocker):
         {"platform_name": "TestPlatform", "job_id": "123"}, limit=1
     )
     _ = patched
+
+
+def test_add_job_skips_a_vacancy_this_run_already_has():
+    # DOU lists one vacancy on several searches and in the hot block: it must arrive once.
+    storage = JobStorage()
+
+    assert storage.add_job(Job(platform_name="Dou", job_id="374084", title="Python Dev"))
+    assert not storage.add_job(Job(platform_name="Dou", job_id="374084", title="Python Dev"))
+    assert storage.add_job(Job(platform_name="Djinni", job_id="374084"))  # same id, other site
+
+    assert len(storage.jobs) == 2
+
+
+def test_add_job_keeps_jobs_without_an_id():
+    storage = JobStorage()
+    storage.add_job(Job(title="Dev1"))
+    storage.add_job(Job(title="Dev2"))
+
+    assert len(storage.jobs) == 2

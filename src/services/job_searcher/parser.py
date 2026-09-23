@@ -155,7 +155,7 @@ class JobParser:
                 html_content = await self._get_page_content(page, url_text, listeners.get_list_wait_selector())
                 soup = BeautifulSoup(html_content, "html.parser")
 
-                count = 0
+                count = repeated = 0
                 for job_elem in listeners.get_all_jobs(soup):
                     job = Job(
                         platform_name=listeners.platform_name,
@@ -167,11 +167,12 @@ class JobParser:
                         date=listeners.get_date(job_elem),
                         link=listeners.get_link(job_elem),
                     )
-                    self.job_storage.add_job(job)
                     count += 1
+                    if not self.job_storage.add_job(job):
+                        repeated += 1
 
                 if count:
-                    logger.info("Found %d jobs on %s", count, netloc)
+                    logger.info("Found %d jobs on %s (%d already found by another search)", count, netloc, repeated)
                 else:
                     # A source that suddenly gives nothing is a broken selector or a block,
                     # and silence in the logs is how it stayed unnoticed for weeks.

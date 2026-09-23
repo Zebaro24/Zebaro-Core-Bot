@@ -47,9 +47,22 @@ class Job:
 class JobStorage:
     def __init__(self) -> None:
         self.jobs: list[Job] = []
+        self._seen: set[tuple[str | None, str | None]] = set()
 
-    def add_job(self, job: Job) -> None:
+    def add_job(self, job: Job) -> bool:
+        """Add a vacancy unless this run already has it. Returns whether it was added.
+
+        One vacancy shows up on several searches of the same site (DOU lists it under Python
+        and Fullstack, remote and relocation, in the hot block and in the plain list), and the
+        check against the DB only sees earlier runs — so without this it arrived twice.
+        """
+        if job.job_id is not None:
+            key = (job.platform_name, job.job_id)
+            if key in self._seen:
+                return False
+            self._seen.add(key)
         self.jobs.append(job)
+        return True
 
     def remove_job(self, job: Job) -> None:
         self.jobs.remove(job)

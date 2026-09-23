@@ -51,4 +51,5 @@ class DouListeners(BaseListeners):
         el = element.select_one(self.link)
         if not el:
             raise ValueError("No link found in Dou job")
-        return str(el.get("href"))
+        # Hot vacancies link with "?from=list_hot" — the same page as the plain one.
+        return str(el.get("href")).split("?")[0]
