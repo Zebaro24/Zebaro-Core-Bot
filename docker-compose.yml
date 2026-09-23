@@ -43,6 +43,7 @@ services:
       - PERSONAL_GITHUB_SECRET
       - WEBHOOK_URL
       - JOB_STATS_API_TOKEN
+      - SITE_CONTACT_TOKEN
       - TZ=Europe/Berlin
       - SERVICES_STATE_FILE=/app/state/services.json
     volumes:

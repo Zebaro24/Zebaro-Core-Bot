@@ -31,6 +31,7 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 - GitHub webhook handling (push, PR, workflow, releases)
 - Telegram webhook mode for production
 - Routes under `/webhook/github` and `/webhook/telegram`; public `/jobs/r/<id>` (click-tracked vacancy links) and `/health`
+- `POST /site/contact` — zebaro.dev's contact form → a Telegram message with a reply button; bearer token, compose network only (404 through the public tunnel), 5 messages an hour per sender
 - Telegram updates are answered at once and handled in the background
 
 **Job Search & Scraping**
@@ -134,6 +135,7 @@ See `scripts/README.md` for the release and production helpers.
 | `PERSONAL_GITHUB_SECRET` | yes | — | Webhook HMAC secret |
 | `WEBHOOK_URL` | yes | — | Public base URL for webhooks and vacancy links |
 | `JOB_STATS_API_TOKEN` | no | empty (endpoints refuse) | Bearer token for `/jobs/stats/weekly` and `/jobs/review` |
+| `SITE_CONTACT_TOKEN` | no | empty (endpoint refuses) | Shared with zebaro.dev (`CONTACT_TOKEN` there) for `/site/contact` |
 | `TZ` | no | `Europe/Berlin` | Scheduler timezone (and log time in Docker) |
 | `SERVICES_STATE_FILE` | no | `services.json` | Where `/services` toggles are saved |
 | `MONGO_URI` | no | `mongodb://localhost:27017/zebaro_core` | MongoDB connection string |

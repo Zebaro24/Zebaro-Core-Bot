@@ -29,6 +29,9 @@ class Settings(BaseSettings):
 
     job_stats_api_token: str = ""
 
+    # Shared secret with zebaro.dev's contact form; empty = the endpoint refuses everything.
+    site_contact_token: str = ""
+
     mongo_uri: str = "mongodb://localhost:27017/zebaro_core"
 
     playwright_ws_endpoint: str = "ws://localhost:9222"

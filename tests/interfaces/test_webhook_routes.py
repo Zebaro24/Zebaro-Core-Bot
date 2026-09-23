@@ -24,3 +24,9 @@ def test_vacancy_redirect_lives_where_the_telegram_buttons_point():
 def test_health_is_public_and_reports_the_version():
     paths = {route.path for route in app.routes if isinstance(route, Route)}
     assert "/health" in paths
+
+
+def test_site_contact_lives_where_the_site_posts():
+    # zebaro.dev's CONTACT_ENDPOINT is http://zebaro-core-bot:8000/site/contact.
+    paths = {route.path for route in app.routes if isinstance(route, Route)}
+    assert "/site/contact" in paths
