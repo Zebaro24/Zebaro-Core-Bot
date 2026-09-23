@@ -75,17 +75,20 @@ def test_your_stack_message_says_why_and_folds_the_description():
 
     assert text.startswith("<h3>🔥 Full Stack Developer</h3>")
     assert "<p><b>Acme</b> · Dou · 17.09.2026</p>" in text
-    assert "🔥 <b>Твой стек</b>: <mark>Python</mark> <mark>FastAPI</mark> <mark>React</mark> · ещё TypeScript" in text
+    assert (
+        "<p>🔥 <b>Бэк + фронт</b> — <mark>Python</mark>, <mark>FastAPI</mark> · <mark>React</mark>"
+        "<br>➕ TypeScript</p>"
+    ) in text
     assert "<hr/><blockquote>We build a data product. Requirements 3+ years with Python" in text
     assert "<details><summary>📄 Описание полностью</summary><p>We build" in text
     assert "<details open>" not in text
-    assert text.endswith("<footer>оценка 45</footer>")
+    assert "оценка" not in text  # an internal number for ordering, it told the owner nothing
 
 
 def test_partial_match_uses_the_same_layout_without_the_old_label():
     text = job_to_rich_html(_job(moderation="review", matched_stack=["Python"], matched_bonus=[]))
 
-    assert "👀 <b>Частично совпадает</b>: <mark>Python</mark>" in text
+    assert "<p>👀 <b>Бэкенд</b> — <mark>Python</mark></p>" in text
     assert "проверь сам" not in text
     assert "<details><summary>📄 Описание полностью</summary><p>We build" in text
 
@@ -105,7 +108,26 @@ def test_status_goes_right_under_the_company_line():
     text = job_to_rich_html(_job(), status=status)
 
     assert "<p>✅ <b>Откликнулся</b> — 17.09.2026 14:05</p>" in text
-    assert text.index("Откликнулся") < text.index("Твой стек")
+    assert text.index("Откликнулся") < text.index("Бэк + фронт")
+
+
+def test_why_names_the_half_of_the_stack_that_matched():
+    frontend = job_to_rich_html(_job(moderation="review", matched_stack=["React", "Next.js"], matched_bonus=[]))
+    assert "👀 <b>Фронтенд</b> — <mark>React</mark>, <mark>Next.js</mark>" in frontend
+
+    # Only bonus technologies: they are the reason, not an extra line.
+    related = job_to_rich_html(_job(moderation="review", matched_stack=[], matched_bonus=["TypeScript", "Docker"]))
+    assert "👀 <b>Смежный стек</b> — <mark>TypeScript</mark>, <mark>Docker</mark></p>" in related
+    assert "➕" not in related
+
+
+def test_why_shows_the_experience_and_the_level():
+    text = job_to_rich_html(_job(title="Middle Full Stack Developer", required_years=3))
+    assert "<br>🎓 от 3 лет · Middle</p>" in text
+
+    assert "🎓 от 1 года · Junior/Middle" in job_to_rich_html(_job(title="Junior/Middle Dev", required_years=1))
+    assert "🎓 Junior" in job_to_rich_html(_job(title="Junior Python Developer"))
+    assert "🎓" not in job_to_rich_html(_job())  # the title and the description said nothing
 
 
 def test_everything_user_provided_is_escaped():

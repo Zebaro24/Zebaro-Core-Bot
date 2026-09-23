@@ -3,11 +3,12 @@ import re
 from datetime import datetime
 
 from src.services.job_searcher.container import Job
+from src.services.job_searcher.filter import BACKEND_CORE, FRONTEND_CORE, title_level
 from src.services.job_searcher.text import BULLET
 
 _TIERS = {
-    "sent": ("🔥", "Твой стек"),
-    "review": ("👀", "Частично совпадает"),
+    "sent": "🔥",
+    "review": "👀",
 }
 
 # Rich messages allow 32768 characters including markup; the longest real descriptions are
@@ -118,6 +119,48 @@ def description_to_rich_html(text: str, limit: int = RICH_DESCRIPTION_LIMIT) -> 
     )
 
 
+def _years(years: int) -> str:
+    return f"от {years} года" if years % 10 == 1 and years % 100 != 11 else f"от {years} лет"
+
+
+def _why_lines(job: Job, emoji: str, mark: bool) -> list[str]:
+    """Why the vacancy came, in two or three short lines (the owner's pick, 23.09.2026):
+
+    🔥 Бэк + фронт — Python, FastAPI · React
+    ➕ TypeScript, Docker, LLM
+    🎓 от 3 лет · Middle
+    """
+
+    def names(items: list[str]) -> str:
+        if mark:
+            # <mark> makes the reason the vacancy arrived readable at a glance while scrolling.
+            return ", ".join(f"<mark>{html.escape(name)}</mark>" for name in items)
+        return html.escape(", ".join(items))
+
+    backend = [name for name in job.matched_stack if name in BACKEND_CORE]
+    frontend = [name for name in job.matched_stack if name in FRONTEND_CORE]
+    bonus = list(job.matched_bonus)
+    if backend and frontend:
+        head, groups = "Бэк + фронт", [backend, frontend]
+    elif backend:
+        head, groups = "Бэкенд", [backend]
+    elif frontend:
+        head, groups = "Фронтенд", [frontend]
+    else:
+        # Two bonus technologies with no core one: they are the whole reason, not an extra.
+        head, groups, bonus = "Смежный стек", [bonus], []
+
+    lines = []
+    if any(groups):
+        lines.append(f"{emoji} <b>{head}</b> — " + " · ".join(names(group) for group in groups if group))
+    if bonus:
+        lines.append("➕ " + html.escape(", ".join(bonus)))
+    experience = [_years(job.required_years) if job.required_years else None, title_level(job.title)]
+    if any(experience):
+        lines.append("🎓 " + html.escape(" · ".join(item for item in experience if item)))
+    return lines
+
+
 def job_status_html(emoji: str, text: str, when: datetime) -> str:
     return f"{emoji} <b>{html.escape(text)}</b> — {when:%d.%m.%Y %H:%M}"
 
@@ -133,7 +176,7 @@ def job_to_rich_html(job: Job, status: str | None = None) -> str:
     The conditions can be read without leaving Telegram: a short preview is visible, the full
     description is one tap away in a collapsed block, so a batch of vacancies stays scannable.
     """
-    emoji, label = _TIERS.get(job.moderation or "", ("💼", ""))
+    emoji = _TIERS.get(job.moderation or "", "💼")
     parts = [f"<h3>{emoji} {html.escape(job.title or 'Без названия')}</h3>"]
 
     date = _date(job)
@@ -148,14 +191,8 @@ def job_to_rich_html(job: Job, status: str | None = None) -> str:
     if status:
         parts.append(f"<p>{status}</p>")
 
-    if label:
-        line = f"{emoji} <b>{label}</b>"
-        if job.matched_stack:
-            # <mark> makes the reason the vacancy arrived readable at a glance while scrolling.
-            line += ": " + " ".join(f"<mark>{html.escape(name)}</mark>" for name in job.matched_stack)
-        if job.matched_bonus:
-            line += " · ещё " + ", ".join(html.escape(name) for name in job.matched_bonus)
-        parts.append(f"<p>{line}</p>")
+    if job.moderation in _TIERS and (why := _why_lines(job, emoji, mark=True)):
+        parts.append("<p>" + "<br>".join(why) + "</p>")
 
     if job.similar_to and job.similar_to_platform:
         parts.append(f"<p>🔁 Похоже, уже было на {html.escape(job.similar_to_platform)}</p>")
@@ -171,7 +208,6 @@ def job_to_rich_html(job: Job, status: str | None = None) -> str:
     else:
         parts.append("<p><i>Описание площадка показывает только у себя — кнопка «Вакансия» ниже.</i></p>")
 
-    parts.append(f"<footer>оценка {job.relevance_score}</footer>")
     return "".join(parts)
 
 
@@ -181,7 +217,7 @@ def job_to_html(job: Job) -> str:
     platform = html.escape(job.platform_name or "")
     company = html.escape(job.company or "")
 
-    emoji, label = _TIERS.get(job.moderation or "", ("", ""))
+    emoji = _TIERS.get(job.moderation or "", "")
     text = f"{emoji} {title} - {platform}\n" if emoji else f"{title} - {platform}\n"
     text += f"Company: <b>{company}</b>"
 
@@ -191,8 +227,8 @@ def job_to_html(job: Job) -> str:
     if date := _date(job):
         text += f" Date: <i>{html.escape(date)}</i>"
 
-    if label and job.matched_stack:
-        text += f"\n{emoji} {label}: {html.escape(', '.join(job.matched_stack))}"
+    if emoji and (why := _why_lines(job, emoji, mark=False)):
+        text += "\n" + "\n".join(why)
 
     if job.similar_to and job.similar_to_platform:
         text += f"\n🔁 Похоже, уже видел на {html.escape(job.similar_to_platform)}"

@@ -74,3 +74,17 @@ def test_job_to_html_similar_to_without_platform_hint_is_silent():
     html_text = job_to_html(job)
 
     assert "Похоже, уже видел" not in html_text
+
+
+def test_job_to_html_says_why_in_plain_lines():
+    job = Job(
+        title="Middle Full Stack Developer",
+        platform_name="Dou",
+        company="Acme",
+        moderation="sent",
+        matched_stack=["Python", "React"],
+        matched_bonus=["Docker"],
+        required_years=2,
+    )
+    html_text = job_to_html(job)
+    assert "\n🔥 <b>Бэк + фронт</b> — Python · React\n➕ Docker\n🎓 от 2 лет · Middle" in html_text

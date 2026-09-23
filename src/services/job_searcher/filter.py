@@ -133,6 +133,17 @@ class Verdict:
     stack: list[str] = field(default_factory=list)
     bonus: list[str] = field(default_factory=list)
     reason: str | None = None
+    years: int | None = None
+
+
+_LEVELS = (("Junior", JUNIOR_WORDS), ("Middle", MIDDLE_WORDS), ("Senior", SENIOR_WORDS))
+
+
+def title_level(title: str | None) -> str | None:
+    """The seniority the title names, "Junior/Middle" for a range, None if it says nothing."""
+    title = (title or "").lower()
+    found = [name for name, words in _LEVELS if _contains_any(title, words)]
+    return "/".join(found) or None
 
 
 def title_reject_reason(title: str | None, company: str | None) -> str | None:
@@ -194,8 +205,9 @@ def evaluate(job: Job) -> Verdict:
         return Verdict(REJECTED, reason=reason)
 
     # The title said middle, the description asks for five years: still a senior position.
-    if (years := required_years(job.description)) and years >= SENIOR_YEARS:
-        return Verdict(REJECTED, reason="senior")
+    years = required_years(job.description)
+    if years and years >= SENIOR_YEARS:
+        return Verdict(REJECTED, reason="senior", years=years)
 
     title = (job.title or "").lower()
     text = f"{title}\n{(job.description or '').lower()}"
@@ -206,10 +218,10 @@ def evaluate(job: Job) -> Verdict:
     backend = any(name in stack for name in BACKEND_CORE)
     frontend = any(name in stack for name in FRONTEND_CORE)
     if backend and frontend:
-        return Verdict(SENT, score, stack, bonus)
+        return Verdict(SENT, score, stack, bonus, years=years)
     if stack or len(bonus) >= 2:
-        return Verdict(REVIEW, score, stack, bonus)
-    return Verdict(REJECTED, score, stack, bonus, reason="no stack match")
+        return Verdict(REVIEW, score, stack, bonus, years=years)
+    return Verdict(REJECTED, score, stack, bonus, reason="no stack match", years=years)
 
 
 class JobFilter:
@@ -236,6 +248,7 @@ class JobFilter:
             job.relevance_score = verdict.score
             job.matched_stack = verdict.stack
             job.matched_bonus = verdict.bonus
+            job.required_years = verdict.years
             job.filter_reason = verdict.reason
             counts[verdict.moderation] += 1
         # Messages go out best first: the tier, then the score inside it.

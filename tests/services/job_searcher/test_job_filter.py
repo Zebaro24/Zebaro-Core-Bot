@@ -8,6 +8,7 @@ from src.services.job_searcher.filter import (
     JobFilter,
     evaluate,
     required_years,
+    title_level,
     title_reject_reason,
 )
 
@@ -187,3 +188,26 @@ def test_five_years_of_experience_is_a_senior_position_whatever_the_title_says()
     job = Job(title="Python Developer", description="Python FastAPI React\n5+ years of experience required")
 
     assert evaluate(job).reason == "senior"
+
+
+@pytest.mark.parametrize(
+    "title,level",
+    [
+        ("Middle Python Developer", "Middle"),
+        ("Junior/Middle Full Stack", "Junior/Middle"),
+        ("Middle/Senior Python Developer", "Middle/Senior"),
+        ("Python Developer", None),
+        (None, None),
+    ],
+)
+def test_title_level(title, level):
+    assert title_level(title) == level
+
+
+def test_classify_all_keeps_the_required_years_for_the_message():
+    storage = JobStorage()
+    storage.add_job(Job(title="Full Stack", description="Python, React\nExperience: 3+ years"))
+
+    JobFilter(storage).classify_all()
+
+    assert storage.jobs[0].required_years == 3
