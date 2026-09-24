@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.bot import DefaultBotProperties
@@ -61,7 +62,10 @@ async def start_bot() -> None:
     for hour in SEARCH_HOURS:
         scheduler.add_job(job_notification, "cron", hour=hour, args=[bot], id=search_job_id(hour))
     scheduler.add_job(job_stats_notification, "cron", day_of_week="fri", hour=18, args=[bot], id=WEEKLY_DIGEST_ID)
-    scheduler.add_job(vpn_watch, "interval", minutes=WATCH_MINUTES, args=[bot], id=WATCH_JOB_ID)
+    # First run right away: it also puts wg-easy's firewall hooks in place (vpn_notification.py).
+    scheduler.add_job(
+        vpn_watch, "interval", minutes=WATCH_MINUTES, args=[bot], id=WATCH_JOB_ID, next_run_time=datetime.now()
+    )
     scheduler.add_job(vpn_weekly, "cron", day_of_week="fri", hour=18, minute=5, args=[bot], id=WEEKLY_JOB_ID)
 
     # Register infrastructure and services with ServiceManager

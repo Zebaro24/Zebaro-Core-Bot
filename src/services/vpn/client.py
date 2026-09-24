@@ -21,8 +21,41 @@ logger = logging.getLogger("vpn.client")
 ONLINE_WINDOW = timedelta(minutes=3)
 
 PANEL_PORT = 51821
-PANEL_DROP_UP = f"iptables -I INPUT -i wg0 -p tcp --dport {PANEL_PORT} -j DROP;"
-PANEL_DROP_DOWN = f"iptables -D INPUT -i wg0 -p tcp --dport {PANEL_PORT} -j DROP;"
+
+# wg-easy's own firewall hooks, owned by the bot (WgEasy.apply_hooks). Two things differ from
+# wg-easy's defaults, both found on the server on 24.09.2026:
+#
+# * `iptables-nft`, not `iptables`: inside the image `iptables` is the legacy backend, while the
+#   host and Docker (FORWARD policy DROP) live in nftables. The default rules landed in the
+#   legacy tables, Docker's DROP in nft still applied, and the full profile had no internet.
+#   The first two commands clean up those legacy rules, `|| true` because wg-quick runs hooks
+#   under `set -e` and a missing rule must not take the interface down.
+# * A DROP for the panel on wg0: the full profile routes everything into the server, and Linux
+#   answers on any local address from any interface — a peer could open the panel on
+#   172.17.0.1, where the admin account holds every peer's private key.
+#
+# {{ipv4Cidr}}, {{device}} and {{port}} are wg-easy's own placeholders.
+_LEGACY_CLEANUP = (
+    "iptables-legacy -t nat -D POSTROUTING -s {{ipv4Cidr}} -o {{device}} -j MASQUERADE 2>/dev/null || true; "
+    "iptables-legacy -D FORWARD -i wg0 -j ACCEPT 2>/dev/null || true; "
+    "iptables-legacy -D FORWARD -o wg0 -j ACCEPT 2>/dev/null || true; "
+    "iptables-legacy -D INPUT -p udp -m udp --dport {{port}} -j ACCEPT 2>/dev/null || true;"
+)
+HOOK_POST_UP = (
+    f"{_LEGACY_CLEANUP} "
+    "iptables-nft -t nat -A POSTROUTING -s {{ipv4Cidr}} -o {{device}} -j MASQUERADE; "
+    "iptables-nft -A INPUT -p udp -m udp --dport {{port}} -j ACCEPT; "
+    "iptables-nft -I FORWARD -i wg0 -j ACCEPT; "
+    "iptables-nft -I FORWARD -o wg0 -j ACCEPT; "
+    f"iptables-nft -I INPUT -i wg0 -p tcp --dport {PANEL_PORT} -j DROP;"
+)
+HOOK_POST_DOWN = (
+    "iptables-nft -t nat -D POSTROUTING -s {{ipv4Cidr}} -o {{device}} -j MASQUERADE || true; "
+    "iptables-nft -D INPUT -p udp -m udp --dport {{port}} -j ACCEPT || true; "
+    "iptables-nft -D FORWARD -i wg0 -j ACCEPT || true; "
+    "iptables-nft -D FORWARD -o wg0 -j ACCEPT || true; "
+    f"iptables-nft -D INPUT -i wg0 -p tcp --dport {PANEL_PORT} -j DROP || true;"
+)
 
 
 class VpnError(Exception):
@@ -117,27 +150,24 @@ class WgEasy:
                 return client
         raise VpnError(f"клиента {client_id} нет")
 
-    async def close_panel_to_peers(self) -> bool:
-        """Keep people in the VPN away from wg-easy's panel; True if the hooks had to change.
+    async def apply_hooks(self) -> bool:
+        """Put the bot's firewall hooks into wg-easy (see HOOK_POST_UP); True if they changed.
 
-        The full profile routes everything into the server, and Linux answers on any local
-        address from any interface — so a peer could open the panel on 172.17.0.1, where the
-        admin account holds every peer's private key. A DROP on wg0 for the panel port goes into
-        wg-easy's own PostUp/PostDown, and the interface restarts once to apply it.
+        Idempotent: nothing is sent while the hooks are already ours. When they change, the
+        interface restarts once to run them — people in the VPN reconnect within seconds.
         """
         hooks = (await self._request("GET", "/api/admin/hooks")).json()
-        post_up, post_down = hooks.get("postUp") or "", hooks.get("postDown") or ""
-        if PANEL_DROP_UP in post_up:
+        if hooks.get("postUp") == HOOK_POST_UP and hooks.get("postDown") == HOOK_POST_DOWN:
             return False
         body = {
             "preUp": hooks.get("preUp") or "",
-            "postUp": f"{PANEL_DROP_UP} {post_up}".strip(),
+            "postUp": HOOK_POST_UP,
             "preDown": hooks.get("preDown") or "",
-            "postDown": f"{PANEL_DROP_DOWN} {post_down}".strip(),
+            "postDown": HOOK_POST_DOWN,
         }
         await self._request("POST", "/api/admin/hooks", json=body)
         await self._request("POST", "/api/admin/interface/restart")
-        logger.info("wg-easy panel closed to VPN peers")
+        logger.info("wg-easy firewall hooks applied (nftables, panel closed to peers)")
         return True
 
     async def create_client(self, name: str, expires_at: datetime | None = None) -> int:

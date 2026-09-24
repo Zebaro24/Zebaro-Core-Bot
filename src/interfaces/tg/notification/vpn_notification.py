@@ -12,23 +12,24 @@ from src.services.vpn.client import VpnError, WgEasy
 
 logger = logging.getLogger("tg.notification.vpn")
 
-# The panel is closed to VPN peers once per bot start (WgEasy.close_panel_to_peers is idempotent).
-_panel_closed = False
+# wg-easy's firewall hooks are checked once per bot start (WgEasy.apply_hooks is idempotent):
+# without them the full profile has no internet and the panel is open to peers.
+_hooks_applied = False
 
 
-async def _close_panel(wg: WgEasy) -> None:
-    global _panel_closed
-    if _panel_closed:
+async def _apply_hooks(wg: WgEasy) -> None:
+    global _hooks_applied
+    if _hooks_applied:
         return
-    await wg.close_panel_to_peers()
-    _panel_closed = True
+    await wg.apply_hooks()
+    _hooks_applied = True
 
 
 async def vpn_watch(bot: Bot) -> None:
     """Every few minutes: fold traffic into the history, tell the owner what is new."""
     wg = WgEasy()
     try:
-        await _close_panel(wg)
+        await _apply_hooks(wg)
         clients = await wg.list_clients()
         events = await traffic.snapshot(clients)
     except VpnError as e:

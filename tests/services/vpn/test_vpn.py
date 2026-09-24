@@ -201,25 +201,35 @@ async def test_a_single_client_comes_from_the_list_with_its_handshake(mocker):
 
 
 @pytest.mark.asyncio
-async def test_the_panel_is_closed_to_peers_once(mocker):
-    from src.services.vpn.client import PANEL_DROP_DOWN, PANEL_DROP_UP
+async def test_the_bot_owns_wg_easys_firewall_hooks(mocker):
+    from src.services.vpn.client import HOOK_POST_DOWN, HOOK_POST_UP
 
     wg = WgEasy("http://wg", "u", "p")
-    hooks = {"preUp": "", "postUp": "iptables -t nat -A POSTROUTING;", "preDown": "", "postDown": "x;"}
-    request = AsyncMock(side_effect=[MagicMock(json=MagicMock(return_value=hooks)), MagicMock(), MagicMock()])
+    defaults = {"preUp": "", "postUp": "iptables -t nat -A POSTROUTING;", "preDown": "", "postDown": "x;"}
+    request = AsyncMock(side_effect=[MagicMock(json=MagicMock(return_value=defaults)), MagicMock(), MagicMock()])
     mocker.patch.object(wg, "_request", request)
 
-    assert await wg.close_panel_to_peers() is True
+    assert await wg.apply_hooks() is True
     body = request.await_args_list[1].kwargs["json"]
-    assert body["postUp"].startswith(PANEL_DROP_UP) and "POSTROUTING" in body["postUp"]
-    assert body["postDown"].startswith(PANEL_DROP_DOWN)
+    assert body["postUp"] == HOOK_POST_UP and body["postDown"] == HOOK_POST_DOWN
     assert request.await_args_list[2].args == ("POST", "/api/admin/interface/restart")
 
-    closed = {**hooks, "postUp": body["postUp"]}
-    request = AsyncMock(return_value=MagicMock(json=MagicMock(return_value=closed)))
+    request = AsyncMock(return_value=MagicMock(json=MagicMock(return_value={**defaults, **body})))
     mocker.patch.object(wg, "_request", request)
-    assert await wg.close_panel_to_peers() is False
+    assert await wg.apply_hooks() is False
     assert request.await_count == 1  # no restart when nothing changed
+
+
+def test_hooks_use_nftables_and_never_fail_the_interface():
+    from src.services.vpn.client import HOOK_POST_DOWN, HOOK_POST_UP, PANEL_PORT
+
+    # The host and Docker are on nftables; plain `iptables` in the image is the legacy backend.
+    commands = [c.strip() for c in HOOK_POST_UP.split(";") if c.strip()]
+    assert all(c.startswith(("iptables-nft", "iptables-legacy")) for c in commands)
+    assert all(c.endswith("|| true") for c in commands if c.startswith("iptables-legacy"))
+    assert f"iptables-nft -I INPUT -i wg0 -p tcp --dport {PANEL_PORT} -j DROP" in HOOK_POST_UP
+    down = [c.strip() for c in HOOK_POST_DOWN.split(";") if c.strip()]
+    assert all(c.startswith("iptables-nft") and c.endswith("|| true") for c in down)
 
 
 @pytest.mark.asyncio
