@@ -161,6 +161,20 @@ def _why_lines(job: Job, emoji: str, mark: bool) -> list[str]:
     return lines
 
 
+def repeat_line(job: Job) -> str | None:
+    """What the owner already saw of this vacancy (services/job_searcher/dedup.py)."""
+    if not job.similar_to or not job.similar_to_platform:
+        return None
+    platform = html.escape(job.similar_to_platform)
+    when = f" {job.similar_seen_at:%d.%m}" if isinstance(job.similar_seen_at, datetime) else ""
+    if job.similar_status == "blocked":
+        return f"⛔ На {platform}{when} не пустило — это та же вакансия здесь"
+    if job.similar_status == "pending":
+        return f"🔁 Уже присылал{when} с {platform} — без ответа, кнопки отметят обе"
+    # Documents from before groups: only that a copy existed.
+    return f"🔁 Похоже, уже было на {platform}"
+
+
 def job_status_html(emoji: str, text: str, when: datetime) -> str:
     return f"{emoji} <b>{html.escape(text)}</b> — {when:%d.%m.%Y %H:%M}"
 
@@ -194,8 +208,8 @@ def job_to_rich_html(job: Job, status: str | None = None) -> str:
     if job.moderation in _TIERS and (why := _why_lines(job, emoji, mark=True)):
         parts.append("<p>" + "<br>".join(why) + "</p>")
 
-    if job.similar_to and job.similar_to_platform:
-        parts.append(f"<p>🔁 Похоже, уже было на {html.escape(job.similar_to_platform)}</p>")
+    if repeat := repeat_line(job):
+        parts.append(f"<p>{repeat}</p>")
 
     parts.append("<hr/>")
 
@@ -230,8 +244,8 @@ def job_to_html(job: Job) -> str:
     if emoji and (why := _why_lines(job, emoji, mark=False)):
         text += "\n" + "\n".join(why)
 
-    if job.similar_to and job.similar_to_platform:
-        text += f"\n🔁 Похоже, уже видел на {html.escape(job.similar_to_platform)}"
+    if repeat := repeat_line(job):
+        text += f"\n{repeat}"
 
     if job.description:
         description_text = "\n".join(html.escape(_truncate(job.description, PLAIN_DESCRIPTION_LIMIT)).splitlines())

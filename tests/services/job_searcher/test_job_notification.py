@@ -17,7 +17,7 @@ from src.services.job_searcher.container import Job  # noqa: E402
 
 
 def test_get_reply_markup_uses_action_kb_when_job_id_present():
-    markup = _get_reply_markup("mongo_id_123", "https://example.com/job")
+    markup = _get_reply_markup(Job(platform_name="Dou", link="https://example.com/job"), "mongo_id_123")
     assert markup is not None
 
     urls = [button.url for row in markup.inline_keyboard for button in row if button.url]
@@ -31,7 +31,7 @@ def test_get_reply_markup_uses_action_kb_when_job_id_present():
 
 
 def test_get_reply_markup_falls_back_to_raw_link_when_job_id_missing():
-    markup = _get_reply_markup(None, "https://example.com/job")
+    markup = _get_reply_markup(Job(link="https://example.com/job"), None)
     assert markup is not None
 
     buttons = [button for row in markup.inline_keyboard for button in row]
@@ -40,7 +40,22 @@ def test_get_reply_markup_falls_back_to_raw_link_when_job_id_missing():
 
 
 def test_get_reply_markup_returns_none_when_nothing_available():
-    assert _get_reply_markup(None, None) is None
+    assert _get_reply_markup(Job(), None) is None
+
+
+def test_copies_get_their_own_link_buttons_and_djinni_the_block_button():
+    job = Job(platform_name="Djinni", copies=[{"platform": "Work.ua", "id": "copy_1"}])
+    markup = _get_reply_markup(job, "mongo_id_1")
+    assert markup is not None
+
+    texts = [button.text for row in markup.inline_keyboard for button in row]
+    assert texts == ["🔗 Вакансия", "🔗 Work.ua", "✅ Откликнулся", "❌ Не интересует", "⛔ Djinni не пускает"]
+    urls = [button.url for row in markup.inline_keyboard for button in row if button.url]
+    assert urls[1].endswith("/jobs/r/copy_1")  # clicks on a copy are tracked too
+
+    dou = _get_reply_markup(Job(platform_name="Dou"), "mongo_id_2")
+    assert dou is not None
+    assert all("не пускает" not in button.text for row in dou.inline_keyboard for button in row)
 
 
 def _job(moderation="sent"):

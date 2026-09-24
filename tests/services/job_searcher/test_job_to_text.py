@@ -65,7 +65,7 @@ def test_job_to_html_similar_to_shows_platform_when_hint_is_set():
 
     html_text = job_to_html(job)
 
-    assert "🔁 Похоже, уже видел на Work.ua" in html_text
+    assert "🔁 Похоже, уже было на Work.ua" in html_text
 
 
 def test_job_to_html_similar_to_without_platform_hint_is_silent():

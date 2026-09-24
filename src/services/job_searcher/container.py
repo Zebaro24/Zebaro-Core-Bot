@@ -25,10 +25,16 @@ class Job:
     found_at: datetime = field(default_factory=datetime.utcnow)
     moderation: str | None = None  # "sent" | "review" | "rejected_by_filter"
     relevance_score: int = 0
-    user_status: str = "pending"  # "pending" | "applied" | "not_interested"
+    # "pending" | "applied" | "not_interested" | "blocked" (the site would not let him apply —
+    # Djinni's experience gate) | "duplicate" (a repeat of a group already sent: never counted)
+    user_status: str = "pending"
     status_updated_at: datetime | None = None
     similar_to: str | None = None  # mongo _id похожей вакансии на другой площадке
     similar_to_platform: str | None = None  # платформа этой похожей вакансии (для бейджа в Telegram)
+    similar_seen_at: datetime | None = None  # when that earlier copy was found
+    similar_status: str | None = None  # the group's state then: "pending" | "blocked"
+    group_id: str | None = None  # mongo _id of the first vacancy of this group
+    copies: list[dict] = field(default_factory=list)  # the same vacancy on other sites: {platform, id}
     click_count: int = 0
     matched_stack: list[str] = field(default_factory=list)  # core stack found: "Python", "React", ...
     matched_bonus: list[str] = field(default_factory=list)  # nice-to-have found: "TypeScript", "LLM", ...

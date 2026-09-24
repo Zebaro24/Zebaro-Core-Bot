@@ -40,9 +40,12 @@ def format_weekly_digest_rich(stats: dict[str, Any]) -> str:
         "<ul>"
         f"<li>✅ Откликнулся — <b>{by_status['applied']}</b></li>"
         f"<li>❌ Не интересует — <b>{by_status['not_interested']}</b></li>"
+        f"<li>⛔ Площадка не пустила — <b>{by_status.get('blocked', 0)}</b></li>"
         f"<li>⏳ Без реакции — <b>{by_status['pending']}</b></li>"
         "</ul>",
     ]
+    if totals.get("repeats"):
+        parts.append(f"<p>🔁 Повторов не прислал: <b>{totals['repeats']}</b> — на них ты уже ответил.</p>")
 
     facts = []
     if stats["response_rate"] is not None:
@@ -105,6 +108,7 @@ def format_weekly_digest(stats: dict[str, Any]) -> str:
         f"Отфильтровано: <b>{totals['rejected_by_filter']}</b>\n\n"
         f"✅ Откликнулся: <b>{by_status['applied']}</b>\n"
         f"❌ Не интересует: <b>{by_status['not_interested']}</b>\n"
+        f"⛔ Площадка не пустила: <b>{by_status.get('blocked', 0)}</b>\n"
         f"⏳ Без реакции: <b>{by_status['pending']}</b>\n"
     )
 

@@ -9,7 +9,7 @@ from src.config import settings
 from src.interfaces.tg.formatters.job import job_to_html, job_to_rich_html
 from src.interfaces.tg.keyboards.job import get_job_action_kb, get_job_link_kb
 from src.services.job_searcher.container import Job, JobStorage
-from src.services.job_searcher.dedup import mark_cross_platform_duplicates
+from src.services.job_searcher.dedup import DUPLICATE, group_duplicates
 from src.services.job_searcher.filter import JobFilter
 from src.services.job_searcher.parser import JobParser
 from src.services.job_searcher.urls import urls
@@ -28,13 +28,13 @@ def is_job_search_running() -> bool:
     return _run_lock.locked()
 
 
-def _get_reply_markup(job_id: str | None, link: str | None) -> InlineKeyboardMarkup | None:
+def _get_reply_markup(job: Job, job_id: str | None) -> InlineKeyboardMarkup | None:
     if job_id:
-        return get_job_action_kb(job_id)
-    if link:
+        return get_job_action_kb(job_id, job.platform_name, job.copies)
+    if job.link:
         # save_jobs_to_db() did not return an id (the DB is down): without the raw link the
         # vacancy could not be opened at all — the message text carries no link.
-        return get_job_link_kb(link)
+        return get_job_link_kb(job.link)
     return None
 
 
@@ -106,15 +106,14 @@ async def _run_job_notification(bot: Bot) -> int:
     job_filter.classify_all()  # also orders the batch: your stack first, best score first
 
     ids = await job_storage.save_jobs_to_db()
-    # Dedup runs after saving: the jobs already have real Mongo ids, and comparing with the
-    # last 14 days in the DB covers duplicates inside this batch too.
-    await mark_cross_platform_duplicates(job_storage.jobs, ids)
+    # Grouping runs after saving: the copies need real Mongo ids for their link buttons.
+    await group_duplicates(job_storage.jobs, ids)
 
     sent = 0
     for job, job_id in zip(job_storage.jobs, ids):
-        if job.moderation == "rejected_by_filter":
+        if job.moderation == "rejected_by_filter" or job.user_status == DUPLICATE:
             continue
-        if await _send_job(bot, job, _get_reply_markup(job_id, job.link)):
+        if await _send_job(bot, job, _get_reply_markup(job, job_id)):
             sent += 1
 
     logger.info("Job notification complete. Sent %d/%d jobs", sent, len(job_storage.jobs))

@@ -15,9 +15,13 @@ async def get_weekly_stats(days: int = 7) -> dict[str, Any]:
         logger.warning("DB unavailable for weekly stats: %s", e)
         docs = []
 
-    totals = {"found": len(docs), "sent": 0, "review": 0, "rejected_by_filter": 0}
+    # A repeat of a vacancy already sent (dedup.py) is not a new vacancy nor a new decision.
+    repeats = sum(1 for doc in docs if doc.get("user_status") == "duplicate")
+    docs = [doc for doc in docs if doc.get("user_status") != "duplicate"]
+
+    totals = {"found": len(docs), "sent": 0, "review": 0, "rejected_by_filter": 0, "repeats": repeats}
     by_platform: dict[str, dict[str, int]] = {}
-    by_status = {"applied": 0, "not_interested": 0, "pending": 0}
+    by_status = {"applied": 0, "not_interested": 0, "blocked": 0, "pending": 0}
     # Why vacancies were not sent — what to look at when tuning the filter.
     by_reason: dict[str, int] = {}
     # Which technologies the owner actually answers to: the same counts for what he applied
@@ -55,6 +59,8 @@ async def get_weekly_stats(days: int = 7) -> dict[str, Any]:
         elif user_status == "not_interested":
             platform_stats["not_interested"] += 1
             _count_stack(stack_rejected, doc)
+        elif user_status == "blocked":
+            platform_stats["blocked"] += 1
 
         status_updated_at = doc.get("status_updated_at")
         found_at = doc.get("found_at")
@@ -82,7 +88,7 @@ async def get_weekly_stats(days: int = 7) -> dict[str, Any]:
 
 
 def _empty_platform_stats() -> dict[str, int]:
-    return {"found": 0, "sent": 0, "review": 0, "applied": 0, "not_interested": 0, "clicks": 0}
+    return {"found": 0, "sent": 0, "review": 0, "applied": 0, "not_interested": 0, "blocked": 0, "clicks": 0}
 
 
 def _count_stack(counter: dict[str, int], doc: dict[str, Any]) -> None:

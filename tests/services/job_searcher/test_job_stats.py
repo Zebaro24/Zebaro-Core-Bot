@@ -47,18 +47,20 @@ async def test_get_weekly_stats_totals_and_by_platform(mocker):
         _job_doc(platform_name="Djinni", moderation="review", user_status="pending"),
         _job_doc(platform_name="Work.ua", moderation="sent", user_status="not_interested", status_updated_at=now),
         _job_doc(platform_name="Work.ua", moderation="rejected_by_filter", user_status="pending"),
+        # A repeat of an answered vacancy: neither a new vacancy nor a second decision.
+        _job_doc(platform_name="Djinni", moderation="sent", user_status="duplicate"),
     ]
     mocker.patch("src.services.job_searcher.stats.jobs_collection", mock_jobs_collection)
     mock_jobs_collection.find.return_value = _async_cursor(docs)
 
     stats = await get_weekly_stats(days=7)
 
-    assert stats["totals"] == {"found": 4, "sent": 2, "review": 1, "rejected_by_filter": 1}
-    assert stats["by_status"] == {"applied": 1, "not_interested": 1, "pending": 1}
+    assert stats["totals"] == {"found": 4, "sent": 2, "review": 1, "rejected_by_filter": 1, "repeats": 1}
+    assert stats["by_status"] == {"applied": 1, "not_interested": 1, "blocked": 0, "pending": 1}
 
     by_platform = {p["platform"]: {k: v for k, v in p.items() if k != "platform"} for p in stats["by_platform"]}
-    djinni = {"found": 2, "sent": 1, "review": 1, "applied": 1, "not_interested": 0, "clicks": 0}
-    work_ua = {"found": 2, "sent": 1, "review": 0, "applied": 0, "not_interested": 1, "clicks": 0}
+    djinni = {"found": 2, "sent": 1, "review": 1, "applied": 1, "not_interested": 0, "blocked": 0, "clicks": 0}
+    work_ua = {"found": 2, "sent": 1, "review": 0, "applied": 0, "not_interested": 1, "blocked": 0, "clicks": 0}
     assert by_platform["Djinni"] == djinni
     assert by_platform["Work.ua"] == work_ua
 
@@ -118,7 +120,7 @@ async def test_get_weekly_stats_db_unavailable_returns_empty_stats(mocker):
 
     stats = await get_weekly_stats(days=7)
 
-    assert stats["totals"] == {"found": 0, "sent": 0, "review": 0, "rejected_by_filter": 0}
+    assert stats["totals"] == {"found": 0, "sent": 0, "review": 0, "rejected_by_filter": 0, "repeats": 0}
     assert stats["by_platform"] == []
 
 
