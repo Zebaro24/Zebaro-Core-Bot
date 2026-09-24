@@ -1,3 +1,4 @@
+import json
 import logging
 import sys
 from unittest.mock import AsyncMock, MagicMock
@@ -7,7 +8,8 @@ import pytest
 if "src.config" not in sys.modules:
     sys.modules["src.config"] = MagicMock(settings=MagicMock())
 
-from fastapi import HTTPException  # noqa: E402
+import httpx  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 
 from src.interfaces.tg.formatters.site_contact import site_contact_to_html  # noqa: E402
@@ -54,18 +56,31 @@ def bot():
 
 
 @pytest.fixture
-def post(settings, bot):
-    """Call the endpoint as FastAPI would, after it validated the body; returns the status."""
+def app(settings, bot):
+    app = FastAPI()
+    app.state.bot = bot
+    app.include_router(site.router, prefix="/site")
+    return app
 
+
+@pytest.fixture
+def send(app):
+    """A real HTTP request through FastAPI; returns the status code."""
+
+    async def _send(content: bytes, headers: dict[str, str]) -> int:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://zebaro-core-bot:8000") as client:
+            response = await client.post("/site/contact", content=content, headers=headers)
+        return response.status_code
+
+    return _send
+
+
+@pytest.fixture
+def post(send):
     async def _post(headers=None, **overrides):
-        request = MagicMock()
-        request.headers = headers if headers is not None else AUTH
-        request.app.state.bot = bot
-        try:
-            await site.site_contact(request, SiteContact(**_body(**overrides)))
-        except HTTPException as e:
-            return e.status_code
-        return 202
+        headers = AUTH if headers is None else headers
+        return await send(json.dumps(_body(**overrides)).encode(), {"Content-Type": "application/json", **headers})
 
     return _post
 
@@ -142,12 +157,28 @@ async def test_telegram_refusing_is_a_503_and_the_text_never_reaches_the_logs(po
 
 
 @pytest.mark.asyncio
-async def test_no_bot_yet_is_a_503(settings):
-    request = MagicMock(headers=AUTH)
-    request.app.state.bot = None
-    with pytest.raises(HTTPException) as exc_info:
-        await site.site_contact(request, SiteContact(**_body()))
-    assert exc_info.value.status_code == 503
+async def test_no_bot_yet_is_a_503(app, post):
+    app.state.bot = None
+    assert await post() == 503
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("content", [b"", b"{not json", b"{}"])
+async def test_outside_requests_get_404_whatever_the_body(send, content):
+    # The body used to be parsed first: an empty one answered 422 and showed the path exists.
+    assert await send(content, {"Cf-Connecting-Ip": "1.2.3.4", **AUTH}) == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("content", [b"", b"{not json"])
+async def test_a_tokenless_request_gets_401_whatever_the_body(send, content):
+    assert await send(content, {"Content-Type": "application/json"}) == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("content", [b"", b"{not json", json.dumps(_body(message="short")).encode()])
+async def test_a_bad_body_with_the_token_is_a_422(send, content):
+    assert await send(content, {"Content-Type": "application/json", **AUTH}) == 422
 
 
 @pytest.mark.asyncio

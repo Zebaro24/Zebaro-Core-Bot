@@ -3,6 +3,8 @@ import secrets
 import time
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 
 from src.config import settings
 from src.interfaces.tg.formatters.site_contact import site_contact_to_html
@@ -16,6 +18,13 @@ router = APIRouter()
 rate_limit = ContactRateLimit()
 
 
+def _internal_only(request: Request) -> None:
+    # The site talks to us inside the compose network. A request that came through the
+    # public tunnel carries Cloudflare's header — this endpoint does not exist for it.
+    if request.headers.get("Cf-Connecting-Ip"):
+        raise HTTPException(status_code=404)
+
+
 def _check_token(request: Request) -> None:
     authorization = request.headers.get("Authorization") or ""
     # An empty token closes the endpoint: "Bearer " must not match an unset secret.
@@ -25,18 +34,27 @@ def _check_token(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Invalid or missing token")
 
 
+async def _read_body(request: Request) -> SiteContact:
+    try:
+        return SiteContact.model_validate_json(await request.body())
+    except ValidationError as e:
+        raise RequestValidationError(e.errors(include_url=False)) from e
+
+
 @router.post("/contact", status_code=status.HTTP_202_ACCEPTED)
-async def site_contact(request: Request, body: SiteContact) -> dict[str, bool]:
+async def site_contact(request: Request) -> dict[str, bool]:
     """zebaro.dev's contact form, posted from the site container inside the compose network.
+
+    The body is parsed by hand, after both checks: declared as a parameter, FastAPI would
+    read it first, and an outside request with a broken body would get a 422 that shows the
+    path exists instead of the 404.
 
     The Telegram message is sent inside the request, not in the background: the site shows
     "sent" only on 2xx, so a message Telegram refused must come back as 503.
     """
-    # The site talks to us inside the compose network. A request that came through the
-    # public tunnel carries Cloudflare's header — this endpoint does not exist for it.
-    if request.headers.get("Cf-Connecting-Ip"):
-        raise HTTPException(status_code=404)
+    _internal_only(request)
     _check_token(request)
+    body = await _read_body(request)
     if not rate_limit.allow(body.sender, time.monotonic()):
         raise HTTPException(status_code=429, detail="Too many messages")
 
