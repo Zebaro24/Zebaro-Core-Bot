@@ -21,6 +21,13 @@ logger = logging.getLogger("vpn.client")
 ONLINE_WINDOW = timedelta(minutes=3)
 
 PANEL_PORT = 51821
+# Seconds between keepalives from a device (WgEasy.apply_keepalive): WireGuard's usual value.
+KEEPALIVE_S = 25
+# The fields POST /api/admin/userconfig takes.
+_USERCONFIG_FIELDS = (
+    "port", "defaultMtu", "defaultPersistentKeepalive", "defaultDns", "defaultAllowedIps", "defaultJC",
+    "defaultJMin", "defaultJMax", "defaultI1", "defaultI2", "defaultI3", "defaultI4", "defaultI5", "host",
+)  # fmt: skip
 
 # wg-easy's own firewall hooks, owned by the bot (WgEasy.apply_hooks). Two things differ from
 # wg-easy's defaults, both found on the server on 24.09.2026:
@@ -169,6 +176,30 @@ class WgEasy:
         await self._request("POST", "/api/admin/interface/restart")
         logger.info("wg-easy firewall hooks applied (nftables, panel closed to peers)")
         return True
+
+    async def apply_keepalive(self) -> int:
+        """Make every profile send a keepalive; returns how many settings had to change.
+
+        A device behind a home router is reachable from the server only while the router
+        remembers the mapping, i.e. shortly after the device itself sent something. Without a
+        keepalive the bot could not open the proxy on the owner's PC after a quiet minute —
+        found on 25.09.2026. The setting lives in the profile, so it takes effect with the next
+        files a device gets.
+        """
+        changed = 0
+        config = (await self._request("GET", "/api/admin/userconfig")).json()
+        if config.get("defaultPersistentKeepalive") != KEEPALIVE_S:
+            body = {field: config.get(field) for field in _USERCONFIG_FIELDS}
+            body["defaultPersistentKeepalive"] = KEEPALIVE_S
+            await self._request("POST", "/api/admin/userconfig", json=body)
+            changed += 1
+        for client in await self.list_clients():
+            if not client.raw.get("persistentKeepalive"):
+                await self.update_client(client.id, persistentKeepalive=KEEPALIVE_S)
+                changed += 1
+        if changed:
+            logger.info("wg-easy keepalive set to %s s (%d changes)", KEEPALIVE_S, changed)
+        return changed
 
     async def create_client(self, name: str, expires_at: datetime | None = None) -> int:
         body = {"name": name, "expiresAt": expires_at.isoformat() if expires_at else None}

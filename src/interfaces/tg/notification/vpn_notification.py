@@ -22,6 +22,7 @@ async def _apply_hooks(wg: WgEasy) -> None:
     if _hooks_applied:
         return
     await wg.apply_hooks()
+    await wg.apply_keepalive()
     _hooks_applied = True
 
 

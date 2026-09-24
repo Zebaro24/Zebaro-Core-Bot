@@ -282,3 +282,24 @@ def test_the_prefix_is_not_doubled():
     assert tunnel_name("Zebaro-Laptop") == "Zebaro-Laptop"
     assert tunnel_name("zebaro laptop", lan=True) == "Zebaro-laptop-LAN"
     assert tunnel_name("Zebaro") == "Zebaro-User"
+
+
+@pytest.mark.asyncio
+async def test_every_profile_gets_a_keepalive(mocker):
+    from src.services.vpn.client import KEEPALIVE_S
+
+    wg = WgEasy("http://wg", "u", "p")
+    config = {"port": 51820, "defaultPersistentKeepalive": 0, "host": "server.zebaro.dev", "id": "wg0"}
+    request = AsyncMock(side_effect=[MagicMock(json=MagicMock(return_value=config)), MagicMock()])
+    mocker.patch.object(wg, "_request", request)
+    mocker.patch.object(
+        wg,
+        "list_clients",
+        AsyncMock(return_value=[_client(persistentKeepalive=0), _client(id=4, persistentKeepalive=25)]),
+    )
+    update = mocker.patch.object(wg, "update_client", AsyncMock())
+
+    assert await wg.apply_keepalive() == 2
+    body = request.await_args_list[1].kwargs["json"]
+    assert body["defaultPersistentKeepalive"] == KEEPALIVE_S and "id" not in body
+    update.assert_awaited_once_with(3, persistentKeepalive=KEEPALIVE_S)  # only the one without it
