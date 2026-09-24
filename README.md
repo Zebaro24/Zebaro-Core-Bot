@@ -38,6 +38,7 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 **Job Search & Scraping**
 - Headless browsing via Playwright Stealth (remote browser server, full Chromium in new headless mode)
 - Sources: Work.ua, Robota.ua, NoFluffJobs, Djinni, DOU, HappyMonday, BazaIT, Wellfound (Jooble is behind a bot challenge; Work.ua vacancy pages too, so Work.ua vacancies carry the list snippet)
+- Work.ua, Robota.ua and HappyMonday block the server's datacenter IP; with `HOME_PROXY_URL` they go through the owner's PC over the VPN
 - Relevance scoring, apply / not-interested buttons, cross-site duplicate marks, weekly digest
 
 **VPN (WireGuard via wg-easy)**
@@ -145,6 +146,7 @@ See `scripts/README.md` for the release and production helpers.
 | `JOB_STATS_API_TOKEN` | no | empty (endpoints refuse) | Bearer token for `/jobs/stats/weekly` and `/jobs/review` |
 | `SITE_CONTACT_TOKEN` | no | empty (endpoint refuses) | Shared with zebaro.dev (`CONTACT_TOKEN` there) for `/site/contact` |
 | `WG_PASSWORD` | yes for compose | — | wg-easy admin password (12+ chars); the bot gets it as `WG_EASY_PASSWORD` |
+| `HOME_PROXY_URL` | no | empty (boards go direct) | `http://user:pass@10.0.0.2:8899` — HTTP proxy on the owner's PC in the VPN; Work.ua, Robota.ua and HappyMonday are opened through it (they block the server's IP) and skipped in 2 s when it is off |
 | `WG_HOST` | no | `server.zebaro.dev` | Endpoint clients connect to; must resolve straight to the server (no Cloudflare proxy) |
 | `TZ` | no | `Europe/Berlin` | Scheduler timezone (and log time in Docker) |
 | `SERVICES_STATE_FILE` | no | `services.json` | Where `/services` toggles are saved |

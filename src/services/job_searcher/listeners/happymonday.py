@@ -28,6 +28,7 @@ def _parse_relative_date(text: str) -> datetime | None:
 
 class HappyMondayListeners(BaseListeners):
     platform_name = "HappyMonday"
+    via_home = True
     all_jobs = "div.job_card"
 
     job_id = "pass"

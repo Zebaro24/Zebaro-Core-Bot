@@ -101,6 +101,7 @@ jobs:
             export JOB_STATS_API_TOKEN=${{ secrets.JOB_STATS_API_TOKEN }}
             export SITE_CONTACT_TOKEN=${{ secrets.SITE_CONTACT_TOKEN }}
             export WG_PASSWORD='${{ secrets.WG_PASSWORD }}'
+            export HOME_PROXY_URL='${{ secrets.HOME_PROXY_URL }}'
             
             docker compose -p zebaro-core up -d --pull always
             docker image prune -f

@@ -33,6 +33,8 @@ class BaseListeners:
     detail_description: str | None = None
     # Site chrome that sits inside the description block and must not reach the message.
     detail_noise: tuple[str, ...] = ()
+    # Behind a bot check that only lets a home IP through: opened via the owner's PC (home.py).
+    via_home: bool = False
 
     @staticmethod
     def _get_one_by_selector(element: Tag, selector_text: str) -> str | None:

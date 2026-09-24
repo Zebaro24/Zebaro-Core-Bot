@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     wg_easy_url: str = "http://host.docker.internal:51821"
     wg_easy_username: str = "zebaro"
     wg_easy_password: str = ""
+    # The owner's PC over the VPN, for Work.ua / Robota.ua / HappyMonday: http://user:pass@10.0.0.2:8899
+    # (services/job_searcher/home.py). Empty — those boards go straight from the server.
+    home_proxy_url: str = ""
     # 7zSD.sfx and the WireGuard MSIs the Windows installer is built from (baked into the image).
     vpn_installer_dir: str = "/opt/vpn-installer"
 

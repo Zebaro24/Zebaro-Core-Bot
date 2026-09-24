@@ -7,6 +7,7 @@ from src.services.job_searcher.listeners.base import BaseListeners
 
 class WorkUAListeners(BaseListeners):
     platform_name = "Work.ua"
+    via_home = True
     all_jobs = "#pjax-jobs-list > .job-link"
 
     job_id = "pass"

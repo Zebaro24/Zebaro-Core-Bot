@@ -45,6 +45,7 @@ services:
       - JOB_STATS_API_TOKEN
       - SITE_CONTACT_TOKEN
       - WG_EASY_PASSWORD=${WG_PASSWORD:-}
+      - HOME_PROXY_URL
       - TZ=Europe/Berlin
       - SERVICES_STATE_FILE=/app/state/services.json
     # API wg-easy живёт в сети хоста на мосту Docker (172.17.0.1) — отсюда он host.docker.internal.

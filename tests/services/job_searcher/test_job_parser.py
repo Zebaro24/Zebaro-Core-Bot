@@ -185,3 +185,42 @@ def test_every_search_url_has_listeners():
     from src.services.job_searcher.urls import urls
 
     assert [url for url in urls if urlparse(url).netloc not in _LISTENERS] == []
+
+
+def test_home_proxy_settings(mocker):
+    from src.services.job_searcher import home
+
+    mocker.patch.object(home, "settings", MagicMock(home_proxy_url="http://zebaro:p%40ss@10.0.0.2:8899"))
+    assert home.home_proxy() == {"server": "http://10.0.0.2:8899", "username": "zebaro", "password": "p@ss"}
+
+    mocker.patch.object(home, "settings", MagicMock(home_proxy_url=""))
+    assert home.home_proxy() is None
+
+
+@pytest.mark.asyncio
+async def test_boards_behind_the_home_pc_are_skipped_when_it_is_off(mocker):
+    from src.services.job_searcher import parser as parser_module
+
+    page = _mock_browser(mocker, {"https://jobs.dou.ua/vacancies/": "<html></html>"})
+    mocker.patch.object(parser_module, "home_proxy", return_value={"server": "http://10.0.0.2:8899"})
+    probe = mocker.patch.object(parser_module, "home_proxy_up", AsyncMock(return_value=False))
+
+    await JobParser(
+        ["https://www.work.ua/jobs-remote-python+developer/", "https://jobs.dou.ua/vacancies/"], JobStorage()
+    ).parse_urls()
+
+    probe.assert_awaited_once()
+    opened = [call.args[0] for call in page.goto.await_args_list]
+    assert opened == ["https://jobs.dou.ua/vacancies/"]  # Work.ua not even tried, DOU as usual
+
+
+@pytest.mark.asyncio
+async def test_without_a_home_proxy_the_boards_go_direct(mocker):
+    from src.services.job_searcher import parser as parser_module
+
+    page = _mock_browser(mocker, {"https://www.work.ua/jobs-remote-python+developer/": "<html></html>"})
+    mocker.patch.object(parser_module, "home_proxy", return_value=None)
+
+    await JobParser(["https://www.work.ua/jobs-remote-python+developer/"], JobStorage()).parse_urls()
+
+    assert [call.args[0] for call in page.goto.await_args_list] == ["https://www.work.ua/jobs-remote-python+developer/"]

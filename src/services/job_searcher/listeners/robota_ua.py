@@ -5,6 +5,7 @@ from src.services.job_searcher.listeners.base import BaseListeners
 
 class RobotaUAListeners(BaseListeners):
     platform_name = "Robota.ua"
+    via_home = True
     all_jobs = "alliance-vacancy-card-desktop"
 
     job_id = "a"

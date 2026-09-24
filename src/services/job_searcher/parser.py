@@ -8,6 +8,7 @@ from playwright_stealth import Stealth
 
 from src.config import settings
 from src.services.job_searcher.container import Job, JobStorage
+from src.services.job_searcher.home import home_proxy, home_proxy_up
 from src.services.job_searcher.listeners.base import BaseListeners
 from src.services.job_searcher.listeners.bazait import BazaITListeners
 from src.services.job_searcher.listeners.djinni import DjinniListeners
@@ -139,11 +140,25 @@ class JobParser:
         return str(await page.content())
 
     @staticmethod
-    async def _new_page(browser: Browser) -> Page:
-        context = await browser.new_context(**_CONTEXT_OPTIONS)  # type: ignore[arg-type]
+    async def _new_page(browser: Browser, proxy: dict[str, str] | None = None) -> Page:
+        context = await browser.new_context(**_CONTEXT_OPTIONS, proxy=proxy)  # type: ignore[arg-type]
         page = await context.new_page()
         await Stealth().apply_stealth_async(page)
         return page
+
+    async def _home_page(self, browser: Browser, needed: bool) -> Page | None:
+        """A page that goes out through the owner's PC, when it is configured, needed and up."""
+        proxy = home_proxy()
+        if not needed or proxy is None or not await home_proxy_up(proxy):
+            return None
+        return await self._new_page(browser, proxy)
+
+    @staticmethod
+    def _page_for(listeners: BaseListeners, direct: Page, home: Page | None) -> Page | None:
+        """Where a board is opened from; None — it needs the home PC and the PC is not there."""
+        if not listeners.via_home or home_proxy() is None:
+            return direct  # no home proxy configured: straight from the server, as before
+        return home
 
     @staticmethod
     async def _playwright_available() -> bool:
@@ -161,12 +176,18 @@ class JobParser:
         logger.info("Starting parse for %d URLs", len(self.urls))
         async with async_playwright() as pw:
             browser = await pw.chromium.connect(browser_endpoint())
-            page = await self._new_page(browser)
+            direct = await self._new_page(browser)
+            needs_home = any(self.get_listeners(urlparse(url).netloc).via_home for url in self.urls)
+            home = await self._home_page(browser, needs_home)
 
             for url_text in self.urls:
-                logger.info("Parsing: %s", url_text)
                 netloc = urlparse(url_text).netloc
                 listeners = self.get_listeners(netloc)
+                page = self._page_for(listeners, direct, home)
+                if page is None:
+                    logger.info("Skipping %s: the home PC is not reachable", url_text)
+                    continue
+                logger.info("Parsing: %s%s", url_text, " (via the home PC)" if page is home else "")
                 try:
                     html_content = await self._get_page_content(page, url_text, listeners.get_list_wait_selector())
                 except Exception:
@@ -245,11 +266,15 @@ class JobParser:
         blocked: set[str | None] = set()
         async with async_playwright() as pw:
             browser = await pw.chromium.connect(browser_endpoint())
-            page = await self._new_page(browser)
+            direct = await self._new_page(browser)
+            home = await self._home_page(browser, any(self._via_home(job) for job in targets))
 
             for job in targets:
                 listeners = self.get_listeners_by_platform(job.platform_name)
                 if listeners is None or not job.link or job.platform_name in blocked:
+                    continue
+                page = self._page_for(listeners, direct, home)
+                if page is None:
                     continue
                 try:
                     html_content = await self._get_page_content(page, job.link, listeners.detail_description)
@@ -272,6 +297,10 @@ class JobParser:
             await browser.close()
 
         logger.info("Full descriptions: %d of %d", fetched, len(targets))
+
+    def _via_home(self, job: Job) -> bool:
+        listeners = self.get_listeners_by_platform(job.platform_name)
+        return bool(listeners and listeners.via_home)
 
     @staticmethod
     def get_listeners(netloc: str) -> BaseListeners:
