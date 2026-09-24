@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -79,24 +79,23 @@ def test_get_open_ports(docker_container):
     assert ports == {"8080"}
 
 
-@patch("src.services.docker.container.format_duration")
-@patch("src.services.docker.container.format_memory")
-def test_get_short_info(mock_format_memory, mock_format_duration, docker_container):
-    mock_format_memory.return_value = "0.99 MB"
-    mock_format_duration.return_value = "5 min"
-
-    text = docker_container.get_short_info()
-    assert "Status:" in text
-    assert "RAM: 0.99 MB" in text
-    assert "Restarts: 3" in text
-    assert "Uptime: 5 min" in text
-    assert "Open ports: 8080" in text
+def test_get_open_ports_marks_protocols_other_than_tcp(docker_container):
+    docker_container.container.attrs["NetworkSettings"]["Ports"]["51820/udp"] = [{"HostPort": "51820"}]
+    assert docker_container.get_open_ports() == {"8080", "51820/udp"}
 
 
-def test_get_info(docker_container):
-    text = docker_container.get_info()
-    assert "<b>Logs:</b>" in text
-    assert "test log line 1" in text
+def test_project_image_and_running(docker_container):
+    docker_container.container.attrs["Config"] = {
+        "Labels": {"com.docker.compose.project": "zebaro-core"},
+        "Image": "ghcr.io/zebaro24/zebaro-core-bot:latest",
+    }
+    assert docker_container.get_project_name() == "Zebaro-Core"
+    assert docker_container.get_image() == "ghcr.io/zebaro24/zebaro-core-bot:latest"
+    assert docker_container.is_running() is True
+
+
+def test_project_name_falls_back_to_the_container_name(docker_container):
+    assert docker_container.get_project_name() == "Test_Container"
 
 
 def test_start_stop_restart(docker_container):

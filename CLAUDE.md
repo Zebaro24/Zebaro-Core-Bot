@@ -107,4 +107,3 @@ scripts\start-claude.bat     :: открыть Claude Code в корне про�
 
 - `ds/commands/help.py`: help command needs content
 - `event_handler.py`: `workflow_run` both branches do the same thing — review intent
-- `services/docker/container.py`: `get_short_info` / `get_info` build HTML — belongs in `interfaces/tg/formatters/docker.py`

@@ -2,7 +2,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.interfaces.tg.formatters.docker import format_manager_info
 from src.services.docker.manager import DockerManager
 
 
@@ -65,35 +64,14 @@ def test_get_open_ports(docker_manager):
     assert ports == ["22", "80", "443"]
 
 
-def test_get_memory_used_text(docker_manager):
+def test_sorted_projects_puts_running_and_heavy_first(docker_manager):
     dm = docker_manager
-    mock_c1 = MagicMock(get_memory_usage=MagicMock(return_value=512 * 1024 * 1024))
-    mock_c2 = MagicMock(get_memory_usage=MagicMock(return_value=256 * 1024 * 1024))
-    dm.containers_dict = {"a": mock_c1, "b": mock_c2}
+    stopped = MagicMock(running_count=MagicMock(return_value=0), get_memory_usage=MagicMock(return_value=0))
+    light = MagicMock(running_count=MagicMock(return_value=1), get_memory_usage=MagicMock(return_value=10))
+    heavy = MagicMock(running_count=MagicMock(return_value=2), get_memory_usage=MagicMock(return_value=99))
+    dm.project_dict = {"A": stopped, "B": light, "C": heavy}
 
-    with patch("src.services.docker.manager.format_memory", side_effect=lambda x: f"{x/1024**3:.1f}G"):
-        dm.get_memory_total = MagicMock(return_value=1024**3)
-        text = dm.get_memory_used_text()
-
-    assert "Используется" in text
-    assert "0.8G/1.0G" in text
-
-
-def test_format_manager_info(docker_manager):
-    """format_manager_info() should render all projects + memory + ports."""
-    dm = docker_manager
-    project1 = MagicMock()
-    project1.get_short_info.return_value = "proj info"
-    dm.project_dict = {"Proj": project1}
-    dm.get_open_ports = MagicMock(return_value=["8080"])
-    dm.update_stats = MagicMock()
-    dm.get_memory_used_text = MagicMock(return_value="RAM text\n")
-
-    text = format_manager_info(dm)
-    assert text.startswith("<b>🐳 Docker проекты:")
-    assert "proj info" in text
-    assert "RAM text" in text
-    assert "8080" in text
+    assert [key for key, _ in dm.sorted_projects()] == ["C", "B", "A"]
 
 
 def test_update_stats(docker_manager):

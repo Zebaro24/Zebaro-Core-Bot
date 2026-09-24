@@ -1,16 +1,14 @@
 import logging
 from datetime import UTC, datetime
-from html import escape
 
 from docker.models.containers import Container
 
-from src.utils.format_memory import format_memory
-from src.utils.format_time import format_duration
-
-# TODO: HTML methods (get_short_info, get_info) should ideally live in
-#       interfaces/tg/formatters/docker.py to keep services free of presentation logic.
-
 logger = logging.getLogger("docker.container")
+
+
+def port_sort_key(port: str) -> tuple[int, str]:
+    number, _, protocol = port.partition("/")
+    return (int(number) if number.isdigit() else 0, protocol)
 
 
 class DockerContainer:
@@ -74,34 +72,29 @@ class DockerContainer:
         return int((datetime.now(UTC) - started_dt).total_seconds())
 
     def get_open_ports(self) -> set[str]:
+        """Host ports published by this container: "8000", or "51820/udp" for anything not TCP."""
         ports = self.container.attrs["NetworkSettings"].get("Ports", {})
         if not ports:
             return set()
         open_ports: set[str] = set()
-        for mappings in ports.values():
+        for key, mappings in ports.items():
             if not mappings:
                 continue
+            protocol = str(key).partition("/")[2] or "tcp"
             for mapping in mappings:
                 if host_port := mapping.get("HostPort"):
-                    open_ports.add(host_port)
+                    open_ports.add(host_port if protocol == "tcp" else f"{host_port}/{protocol}")
         return open_ports
 
-    def get_short_info(self) -> str:
-        text = f"<b>📦 {self.get_name().title()}</b>\n"
-        text += f"⚡️ Status: {self.get_status_emoji()} {self.get_status()}\n"
-        text += f"💾 RAM: {format_memory(self.get_memory_usage())} | 🖥️ CPU: {(self.get_cpu_usage() * 100):.2f}%\n"
-        text += f"🔁 Restarts: {self.get_restarts()}\n"
-        if uptime_str := format_duration(self.get_uptime()):
-            text += f"⏱️ Uptime: {uptime_str}\n"
-        if ports := self.get_open_ports():
-            text += f"🌐 Open ports: {', '.join(ports)}\n"
-        return text
+    def get_project_name(self) -> str:
+        labels = self.container.attrs.get("Config", {}).get("Labels") or {}
+        return str(labels.get("com.docker.compose.project") or self.get_name()).title()
 
-    def get_info(self) -> str:
-        text = self.get_short_info()
-        logs_escaped = escape(self.container.logs(tail=20).decode())
-        text += f"\n<b>Logs:</b>\n<pre>{logs_escaped}</pre>"
-        return text
+    def get_image(self) -> str:
+        return str(self.container.attrs.get("Config", {}).get("Image") or "")
+
+    def is_running(self) -> bool:
+        return bool(self.container.status == "running")
 
     def get_log(self, tail: int) -> str:
         return str(self.container.logs(tail=tail).decode(errors="replace"))

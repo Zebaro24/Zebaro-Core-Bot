@@ -3,9 +3,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import docker
 
-from src.services.docker.container import DockerContainer
+from src.services.docker.container import DockerContainer, port_sort_key
 from src.services.docker.project import DockerProject
-from src.utils.format_memory import format_memory
 
 logger = logging.getLogger("docker.manager")
 
@@ -44,7 +43,7 @@ class DockerManager:
         ports: set[str] = set()
         for c in self.containers_dict.values():
             ports.update(c.get_open_ports())
-        return sorted(ports, key=int)
+        return sorted(ports, key=port_sort_key)
 
     def get_memory_total(self) -> int:
         return int(self.client.info()["MemTotal"])
@@ -52,10 +51,15 @@ class DockerManager:
     def get_memory_used(self) -> float:
         return sum(c.get_memory_usage() for c in self.containers_dict.values())
 
-    def get_memory_used_text(self) -> str:
-        return (
-            f"💾 Используется {format_memory(self.get_memory_used())}"
-            f"/{format_memory(self.get_memory_total())} оперативки\n"
+    def get_cpu_used(self) -> float:
+        """Percent of one core, summed over containers — the same unit `docker stats` shows."""
+        return sum(c.get_cpu_usage() for c in self.containers_dict.values())
+
+    def sorted_projects(self) -> list[tuple[str, DockerProject]]:
+        """Working projects first, the heaviest on top: what needs a look is what is running."""
+        return sorted(
+            self.project_dict.items(),
+            key=lambda item: (item[1].running_count() == 0, -item[1].get_memory_usage(), item[0]),
         )
 
     def get_project_by_key(self, key: str) -> DockerProject | None:
