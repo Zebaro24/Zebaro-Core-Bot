@@ -68,7 +68,7 @@ src/
 │   ├── ds/                   # discord.py bot + service.py (needs_restart=True)
 │   └── webhooks/             # FastAPI: /webhook/{github,telegram}, /jobs/*, /site/contact, /health
 └── utils/                    # format_memory, format_time
-scripts/                      # gate.py, release.py, approve.py, dev.bat, prod.bat, start-claude.bat
+scripts/                      # gate.py, release.py, approve.py, dev.bat, prod.bat, start-claude.bat, home_proxy.py (owner's PC)
 .claude/                      # settings.json, hooks/, skills/, agents/, docs/
 _ideas/  _temp/               # вне git: находки и черновики
 ```

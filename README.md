@@ -38,7 +38,7 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 **Job Search & Scraping**
 - Headless browsing via Playwright Stealth (remote browser server, full Chromium in new headless mode)
 - Sources: Work.ua, Robota.ua, NoFluffJobs, Djinni, DOU, HappyMonday, BazaIT, Wellfound (Jooble is behind a bot challenge; Work.ua vacancy pages too, so Work.ua vacancies carry the list snippet)
-- Work.ua, Robota.ua and HappyMonday block the server's datacenter IP; with `HOME_PROXY_URL` they go through the owner's PC over the VPN
+- Work.ua, Robota.ua and HappyMonday block the server's datacenter IP; with `HOME_PROXY_URL` they go through the owner's PC over the VPN — `python scripts/home_proxy.py` there (stdlib only: CONNECT :443, only the server's address, only with the login)
 - Relevance scoring, apply / not-interested buttons, cross-site duplicate marks, weekly digest
 
 **VPN (WireGuard via wg-easy)**
