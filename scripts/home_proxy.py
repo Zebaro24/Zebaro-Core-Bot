@@ -25,6 +25,8 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 SECRETS = Path.home() / ".zebaro" / "zebaro-core-bot-secrets.env"
+LOG_FILE = Path.home() / ".zebaro" / "home-proxy.log"
+RETRY_S = 30
 ALLOWED_PEERS = {"10.0.0.1"}
 ALLOWED_PORTS = {443}
 HEAD_LIMIT = 16 * 1024
@@ -106,20 +108,37 @@ def make_handler(auth: str, allowed_peers: set[str] = ALLOWED_PEERS, allowed_por
 
 
 async def serve(url: str) -> None:
+    """Listen on the VPN address; while it is not there yet (WireGuard still starting after a
+    logon, the laptop just woke up) keep trying instead of exiting."""
     parsed = urlparse(url)
-    server = await asyncio.start_server(make_handler(expected_auth(url)), parsed.hostname, parsed.port)
-    log.info("listening on %s:%s — only %s, only CONNECT :443", parsed.hostname, parsed.port, ", ".join(ALLOWED_PEERS))
-    async with server:
-        await server.serve_forever()
+    handler = make_handler(expected_auth(url))
+    waiting_logged = False
+    while True:
+        try:
+            server = await asyncio.start_server(handler, parsed.hostname, parsed.port)
+        except OSError as e:
+            if not waiting_logged:
+                log.warning("%s:%s not available yet (%s) — WireGuard LAN on? retrying every %s s",
+                            parsed.hostname, parsed.port, e, RETRY_S)  # fmt: skip
+                waiting_logged = True
+            await asyncio.sleep(RETRY_S)
+            continue
+        log.info("listening on %s:%s — only %s, only CONNECT :443", parsed.hostname, parsed.port, ", ".join(ALLOWED_PEERS))
+        async with server:
+            await server.serve_forever()
+
+
+def _setup_logging() -> None:
+    # pythonw (a startup shortcut, no window) has no console: the log goes to a file.
+    target = {"stream": sys.stderr} if sys.stderr else {"filename": str(LOG_FILE), "encoding": "utf-8"}
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S", **target)
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
+    _setup_logging()
     url = sys.argv[1] if len(sys.argv) > 1 else read_url()
     try:
         asyncio.run(serve(url))
-    except OSError as e:
-        raise SystemExit(f"Не удалось открыть {urlparse(url).netloc.rpartition('@')[2]}: {e}. WireGuard включён (LAN)?")
     except KeyboardInterrupt:
         pass
 

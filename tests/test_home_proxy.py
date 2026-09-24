@@ -88,3 +88,27 @@ async def test_a_tunnel_carries_bytes_both_ways():
         await writer.drain()
         assert await asyncio.wait_for(reader.read(10), 5) == b"ping"
         writer.close()
+
+
+@pytest.mark.asyncio
+async def test_it_waits_for_the_vpn_address_instead_of_exiting(monkeypatch):
+    attempts = []
+
+    async def no_address_yet(*args, **kwargs):
+        attempts.append(args)
+        raise OSError("The requested address is not valid in its context")
+
+    sleeps = []
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 2:
+            raise asyncio.CancelledError  # stop the endless wait after two retries
+
+    monkeypatch.setattr(home_proxy.asyncio, "start_server", no_address_yet)
+    monkeypatch.setattr(home_proxy.asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await home_proxy.serve("http://u:p@10.0.0.2:8899")
+
+    assert len(attempts) == 2 and sleeps == [home_proxy.RETRY_S, home_proxy.RETRY_S]
