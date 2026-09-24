@@ -44,8 +44,12 @@ services:
       - WEBHOOK_URL
       - JOB_STATS_API_TOKEN
       - SITE_CONTACT_TOKEN
+      - WG_EASY_PASSWORD=${WG_PASSWORD:-}
       - TZ=Europe/Berlin
       - SERVICES_STATE_FILE=/app/state/services.json
+    # API wg-easy живёт в сети хоста на мосту Docker (172.17.0.1) — отсюда он host.docker.internal.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # Монтируем папку, а не сам файл: если services.json на хосте ещё нет,
@@ -53,3 +57,36 @@ services:
       - ./state:/app/state
     ports:
       - "${SERVER_PORT:-8000}:8000"
+
+  zebaro-core-vpn:
+    # WireGuard с веб-API; бот управляет им через /vpn (src/services/vpn/).
+    # Сеть хоста: 10.0.0.1 — это сам сервер, поэтому через VPN видны Samba (\\10.0.0.1) и
+    # домашний ПК 10.0.0.2. Панель слушает только мост Docker (172.17.0.1:51821): из интернета
+    # её не видно, а людям в VPN её закрывает правило на wg0, которое бот сам добавляет в хуки
+    # wg-easy (WgEasy.close_panel_to_peers). Наружу открыт только UDP 51820.
+    image: ghcr.io/wg-easy/wg-easy:15.4
+    container_name: zebaro-core-vpn
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      # Только при первом запуске, пока в ./vpn пусто; дальше настройки живут в базе wg-easy.
+      - INIT_ENABLED=true
+      - INIT_USERNAME=zebaro
+      - INIT_PASSWORD=${WG_PASSWORD:?WG_PASSWORD is required}
+      - INIT_HOST=${WG_HOST:-server.zebaro.dev}
+      - INIT_PORT=51820
+      - INIT_DNS=94.140.14.14,94.140.15.15
+      - INIT_IPV4_CIDR=10.0.0.0/24
+      - INIT_IPV6_CIDR=fdcc:24::/64
+      - DISABLE_IPV6=true
+      - HOST=172.17.0.1
+      - PORT=51821
+      - INSECURE=true
+    volumes:
+      - ./vpn:/etc/wireguard
+      - /lib/modules:/lib/modules:ro
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    devices:
+      - /dev/net/tun:/dev/net/tun

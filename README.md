@@ -19,7 +19,8 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 
 **Telegram Bot (Aiogram 3)**
 - Admin utilities: chat ID, server health, MongoDB stats
-- Docker control: list/start/stop/restart containers and projects
+- Docker control: `/server_status` — projects and containers as tables, two-column paged buttons, start/stop/restart, logs
+- VPN: `/vpn` — WireGuard (wg-easy) clients with online status and traffic; add with a chosen address (`10.0.0.<n>`), enable/disable, access expiry, rename, readdress, delete; sends two named profiles (full / LAN) or a one-file Windows installer
 - Service manager: enable/disable services and infrastructure at runtime via `/services`
 - Job notifications: scheduled digests from multiple sources, stats on demand via `/job_stats`
 
@@ -38,6 +39,12 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 - Headless browsing via Playwright Stealth (remote browser server, full Chromium in new headless mode)
 - Sources: Work.ua, Robota.ua, NoFluffJobs, Djinni, DOU, HappyMonday, BazaIT, Wellfound (Jooble is behind a bot challenge; Work.ua vacancy pages too, so Work.ua vacancies carry the list snippet)
 - Relevance scoring, apply / not-interested buttons, cross-site duplicate marks, weekly digest
+
+**VPN (WireGuard via wg-easy)**
+- `zebaro-core-vpn` runs wg-easy in the host network: `10.0.0.1` is the server itself (Samba, the home PC at `10.0.0.2`)
+- Addresses: `.2–.9` the owner's devices, `.10–.99` chosen per person, `.100+` automatic; DNS is AdGuard (ads blocked)
+- The Windows installer is a 7-Zip SFX: installs WireGuard 1.1.1 only when missing or older, imports `Zebaro-<Name>` and `Zebaro-<Name>-LAN`, switches one on unless another VPN is active
+- Traffic history survives counter resets (Mongo); first-connection and access-expiry notices; weekly table on Fridays
 
 **Infrastructure management**
 - MongoDB and Playwright containers started/stopped on demand
@@ -90,10 +97,11 @@ cp .env.example .env   # names of every variable; fill in the values
 docker compose up -d
 ```
 
-Starts three containers:
+Starts four containers:
 - `zebaro-core-db` — MongoDB
 - `zebaro-core-playwright` — Playwright browser server
 - `zebaro-core-bot` — bot + webhooks on port 8000 (configurable via `SERVER_PORT`)
+- `zebaro-core-vpn` — wg-easy (WireGuard, UDP 51820; API on the Docker bridge only); needs `WG_PASSWORD`
 
 ---
 
@@ -136,6 +144,8 @@ See `scripts/README.md` for the release and production helpers.
 | `WEBHOOK_URL` | yes | — | Public base URL for webhooks and vacancy links |
 | `JOB_STATS_API_TOKEN` | no | empty (endpoints refuse) | Bearer token for `/jobs/stats/weekly` and `/jobs/review` |
 | `SITE_CONTACT_TOKEN` | no | empty (endpoint refuses) | Shared with zebaro.dev (`CONTACT_TOKEN` there) for `/site/contact` |
+| `WG_PASSWORD` | yes for compose | — | wg-easy admin password (12+ chars); the bot gets it as `WG_EASY_PASSWORD` |
+| `WG_HOST` | no | `server.zebaro.dev` | Endpoint clients connect to; must resolve straight to the server (no Cloudflare proxy) |
 | `TZ` | no | `Europe/Berlin` | Scheduler timezone (and log time in Docker) |
 | `SERVICES_STATE_FILE` | no | `services.json` | Where `/services` toggles are saved |
 | `MONGO_URI` | no | `mongodb://localhost:27017/zebaro_core` | MongoDB connection string |

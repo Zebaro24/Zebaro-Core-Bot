@@ -1,0 +1,4 @@
+;!@Install@!UTF-8!
+Title="Zebaro VPN"
+RunProgram="install.bat"
+;!@InstallEnd@!

@@ -55,6 +55,7 @@ src/
 │   ├── github/               # GithubManager (instance-level dicts!), service, webhook, event_handler
 │   ├── job_searcher/         # container, filter (scoring), dedup, stats, parser, urls, listeners/
 │   ├── site_contact.py       # zebaro.dev contact form: model + rate limit
+│   ├── vpn/                  # wg-easy API client, addresses 10.0.0.x, profiles, traffic, installer/ (EXE)
 │   └── speedtest/            # SpeedTestManager
 ├── interfaces/
 │   ├── tg/
@@ -83,6 +84,7 @@ _ideas/  _temp/               # вне git: находки и черновики
 - **DB/Playwright resilience**: operations wrapped in try/except with graceful fallback.
 - **Scheduler runs in local time** (`TZ`, default `Europe/Berlin`), not UTC.
 - **Playwright**: the Python package in `poetry.lock` and the image in `docker-compose.yml` move together (major.minor) — `tests/test_playwright_version.py` checks it.
+- **VPN**: wg-easy runs with `network_mode: host` (10.0.0.1 = the server), API on `172.17.0.1:51821` (bot reaches it as `host.docker.internal`); VPN peers are kept off the panel by a DROP on wg0 the bot puts into wg-easy's hooks — the bind address alone does not do it. `GET /api/client/{id}` has no handshake/traffic: read clients from the list. `WG_VERSION` in `services/vpn/installer.py` and `ARG WG_VERSION` in `Dockerfile` move together — `tests/test_vpn_installer_version.py`. `install.bat` is shipped with CRLF (built in code).
 - **Tests replace `src.config` with a mock at import time** — never read `settings` at module level in a way a `MagicMock` breaks.
 
 ## Команды

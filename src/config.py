@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     # Shared secret with zebaro.dev's contact form; empty = the endpoint refuses everything.
     site_contact_token: str = ""
 
+    # wg-easy (the VPN server) API: host network, web UI bound to the Docker bridge.
+    wg_easy_url: str = "http://host.docker.internal:51821"
+    wg_easy_username: str = "zebaro"
+    wg_easy_password: str = ""
+    # 7zSD.sfx and the WireGuard MSIs the Windows installer is built from (baked into the image).
+    vpn_installer_dir: str = "/opt/vpn-installer"
+
     mongo_uri: str = "mongodb://localhost:27017/zebaro_core"
 
     playwright_ws_endpoint: str = "ws://localhost:9222"

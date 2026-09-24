@@ -67,3 +67,6 @@ state/
 # Dev version
 docker-compose.override.yml
 mongo_db/
+
+# wg-easy data (keys) when the stack runs locally
+/vpn/

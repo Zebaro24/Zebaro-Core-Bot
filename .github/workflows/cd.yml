@@ -100,6 +100,7 @@ jobs:
             export SERVER_PORT=${{ vars.SERVER_PORT }}
             export JOB_STATS_API_TOKEN=${{ secrets.JOB_STATS_API_TOKEN }}
             export SITE_CONTACT_TOKEN=${{ secrets.SITE_CONTACT_TOKEN }}
+            export WG_PASSWORD='${{ secrets.WG_PASSWORD }}'
             
             docker compose -p zebaro-core up -d --pull always
             docker image prune -f

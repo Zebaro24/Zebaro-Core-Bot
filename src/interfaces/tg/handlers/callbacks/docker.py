@@ -1,8 +1,7 @@
 import logging
 
 from aiogram import Router
-from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardMarkup, InputRichMessage, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from src.interfaces.tg.formatters.docker import (
     LOG_TAIL,
@@ -19,6 +18,7 @@ from src.interfaces.tg.keyboards.docker import (
     get_docker_project_kb,
 )
 from src.interfaces.tg.middlewares.docker import docker_middleware
+from src.interfaces.tg.rich import show_rich
 from src.services.docker.manager import DockerManager
 
 logger = logging.getLogger("tg.handlers.callbacks.docker")
@@ -27,17 +27,6 @@ LOG_FILE_TAIL = 5000
 
 router = Router()
 router.callback_query.middleware(docker_middleware)
-
-
-async def _show(message: Message, html: str, keyboard: InlineKeyboardMarkup) -> None:
-    """Replace the screen in place; a message from before rich screens is answered anew."""
-    try:
-        await message.edit_text(rich_message=InputRichMessage(html=html), reply_markup=keyboard)
-    except TelegramBadRequest as e:
-        if "not modified" in str(e):
-            return  # "Обновить" with nothing changed
-        logger.info("Could not edit the Docker screen in place (%s), sending a new one", e)
-        await message.answer_rich(rich_message=InputRichMessage(html=html), reply_markup=keyboard)
 
 
 @router.callback_query(DockerManagerCallback.filter())
@@ -53,7 +42,7 @@ async def manager_info_callback(
     if callback_data.action == "refresh":
         docker_manager.update_projects()
         docker_manager.update_stats()
-        await _show(
+        await show_rich(
             query.message,
             format_manager_rich(docker_manager),
             get_docker_manager_kb(docker_manager, callback_data.page),
@@ -89,7 +78,7 @@ async def project_info_callback(
     if callback_data.action in ("get", "refresh"):
         project.reload_containers()
         project.update_stats()
-        await _show(query.message, format_project_rich(project), get_docker_project_kb(project, callback_data.page))
+        await show_rich(query.message, format_project_rich(project), get_docker_project_kb(project, callback_data.page))
         logger.info("Project info shown: %s", project.name)
 
     await query.answer()
@@ -144,7 +133,7 @@ async def container_info_callback(
     # Every other action ends on the refreshed card: the owner sees the new state at once.
     container.reload()
     container.update_stats()
-    await _show(
+    await show_rich(
         query.message,
         format_container_rich(container, container.get_log(tail=LOG_TAIL)),
         get_docker_container_kb(container),
