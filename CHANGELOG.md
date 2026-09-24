@@ -9,6 +9,9 @@
 
 ## Unreleased
 
+- **Имя туннеля без двойного «Zebaro»:** устройство `Zebaro-Laptop` получает файлы
+  `Zebaro-Laptop.conf`, а не `Zebaro-Zebaro-Laptop.conf`. Уже выданные файлы работают как были.
+
 ## v0.11.0 — 2026-09-24
 
 - **Work.ua, Robota.ua и HappyMonday — через твой ноутбук.** Эти три площадки не пускают IP
