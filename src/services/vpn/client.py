@@ -28,34 +28,34 @@ PANEL_PORT = 51821
 # * `iptables-nft`, not `iptables`: inside the image `iptables` is the legacy backend, while the
 #   host and Docker (FORWARD policy DROP) live in nftables. The default rules landed in the
 #   legacy tables, Docker's DROP in nft still applied, and the full profile had no internet.
-#   The first two commands clean up those legacy rules, `|| true` because wg-quick runs hooks
-#   under `set -e` and a missing rule must not take the interface down.
 # * A DROP for the panel on wg0: the full profile routes everything into the server, and Linux
 #   answers on any local address from any interface — a peer could open the panel on
 #   172.17.0.1, where the admin account holds every peer's private key.
 #
-# {{ipv4Cidr}}, {{device}} and {{port}} are wg-easy's own placeholders.
-_LEGACY_CLEANUP = (
-    "iptables-legacy -t nat -D POSTROUTING -s {{ipv4Cidr}} -o {{device}} -j MASQUERADE 2>/dev/null || true; "
-    "iptables-legacy -D FORWARD -i wg0 -j ACCEPT 2>/dev/null || true; "
-    "iptables-legacy -D FORWARD -o wg0 -j ACCEPT 2>/dev/null || true; "
-    "iptables-legacy -D INPUT -p udp -m udp --dport {{port}} -j ACCEPT 2>/dev/null || true;"
+# Every rule is first removed in a loop, then added once: wg-easy's restart ran PostUp again
+# without the matching PostDown, and the rules piled up in copies. The loops also sweep away
+# the legacy-table copies from before. wg-quick runs hooks under `set -e`, so nothing here may
+# fail. {{ipv4Cidr}}, {{device}} and {{port}} are wg-easy's own placeholders.
+_RULES = (
+    # (table, chain and match, add with)
+    ("-t nat", "POSTROUTING -s {{ipv4Cidr}} -o {{device}} -j MASQUERADE", "-A"),
+    ("", "INPUT -p udp -m udp --dport {{port}} -j ACCEPT", "-A"),
+    ("", "FORWARD -i wg0 -j ACCEPT", "-I"),
+    ("", "FORWARD -o wg0 -j ACCEPT", "-I"),
+    ("", f"INPUT -i wg0 -p tcp --dport {PANEL_PORT} -j DROP", "-I"),
 )
-HOOK_POST_UP = (
-    f"{_LEGACY_CLEANUP} "
-    "iptables-nft -t nat -A POSTROUTING -s {{ipv4Cidr}} -o {{device}} -j MASQUERADE; "
-    "iptables-nft -A INPUT -p udp -m udp --dport {{port}} -j ACCEPT; "
-    "iptables-nft -I FORWARD -i wg0 -j ACCEPT; "
-    "iptables-nft -I FORWARD -o wg0 -j ACCEPT; "
-    f"iptables-nft -I INPUT -i wg0 -p tcp --dport {PANEL_PORT} -j DROP;"
+
+
+def _remove_all(tool: str, table: str, rule: str) -> str:
+    return f"while {tool} {table} -D {rule} 2>/dev/null; do :; done;".replace("  ", " ")
+
+
+HOOK_POST_UP = " ".join(
+    [_remove_all("iptables-legacy", table, rule) for table, rule, _ in _RULES]
+    + [_remove_all("iptables-nft", table, rule) for table, rule, _ in _RULES]
+    + [f"iptables-nft {table} {add} {rule};".replace("  ", " ") for table, rule, add in _RULES]
 )
-HOOK_POST_DOWN = (
-    "iptables-nft -t nat -D POSTROUTING -s {{ipv4Cidr}} -o {{device}} -j MASQUERADE || true; "
-    "iptables-nft -D INPUT -p udp -m udp --dport {{port}} -j ACCEPT || true; "
-    "iptables-nft -D FORWARD -i wg0 -j ACCEPT || true; "
-    "iptables-nft -D FORWARD -o wg0 -j ACCEPT || true; "
-    f"iptables-nft -D INPUT -i wg0 -p tcp --dport {PANEL_PORT} -j DROP || true;"
-)
+HOOK_POST_DOWN = " ".join(_remove_all("iptables-nft", table, rule) for table, rule, _ in _RULES)
 
 
 class VpnError(Exception):

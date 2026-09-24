@@ -220,16 +220,19 @@ async def test_the_bot_owns_wg_easys_firewall_hooks(mocker):
     assert request.await_count == 1  # no restart when nothing changed
 
 
-def test_hooks_use_nftables_and_never_fail_the_interface():
-    from src.services.vpn.client import HOOK_POST_DOWN, HOOK_POST_UP, PANEL_PORT
+def test_hooks_use_nftables_and_keep_exactly_one_copy_of_each_rule():
+    from src.services.vpn.client import _RULES, HOOK_POST_DOWN, HOOK_POST_UP, PANEL_PORT
 
     # The host and Docker are on nftables; plain `iptables` in the image is the legacy backend.
-    commands = [c.strip() for c in HOOK_POST_UP.split(";") if c.strip()]
-    assert all(c.startswith(("iptables-nft", "iptables-legacy")) for c in commands)
-    assert all(c.endswith("|| true") for c in commands if c.startswith("iptables-legacy"))
-    assert f"iptables-nft -I INPUT -i wg0 -p tcp --dport {PANEL_PORT} -j DROP" in HOOK_POST_UP
-    down = [c.strip() for c in HOOK_POST_DOWN.split(";") if c.strip()]
-    assert all(c.startswith("iptables-nft") and c.endswith("|| true") for c in down)
+    assert "iptables " not in HOOK_POST_UP.replace("iptables-", "")
+    for table, rule, add in _RULES:
+        nft_rule = f"iptables-nft {table} {add} {rule};".replace("  ", " ")
+        assert HOOK_POST_UP.count(nft_rule) == 1
+        # Every copy goes before the one is added, so a repeated PostUp cannot stack rules.
+        sweep = f"while iptables-nft {table} -D {rule} 2>/dev/null; do :; done;".replace("  ", " ")
+        assert HOOK_POST_UP.index(sweep) < HOOK_POST_UP.index(nft_rule)
+        assert sweep in HOOK_POST_DOWN
+    assert f"--dport {PANEL_PORT} -j DROP" in HOOK_POST_UP
 
 
 @pytest.mark.asyncio
