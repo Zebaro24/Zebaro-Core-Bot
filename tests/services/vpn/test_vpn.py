@@ -276,3 +276,9 @@ async def test_extending_access_keeps_a_paused_client_paused_but_revives_an_expi
     wg.get_client = AsyncMock(return_value=_client(enabled=False, expiresAt="2020-01-01T00:00:00Z"))
     await handler._set_expiry(wg, 3, "7")
     assert wg.update_client.await_args.kwargs["enabled"] is True
+
+
+def test_the_prefix_is_not_doubled():
+    assert tunnel_name("Zebaro-Laptop") == "Zebaro-Laptop"
+    assert tunnel_name("zebaro laptop", lan=True) == "Zebaro-laptop-LAN"
+    assert tunnel_name("Zebaro") == "Zebaro-User"

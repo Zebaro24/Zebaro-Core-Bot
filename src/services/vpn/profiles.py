@@ -44,7 +44,9 @@ def slug(name: str) -> str:
 def tunnel_name(name: str, lan: bool = False) -> str:
     suffix = _LAN_SUFFIX if lan else ""
     room = _TUNNEL_MAX - len(PREFIX) - 1 - len(suffix)
-    return f"{PREFIX}-{slug(name)[:room].rstrip('-.')}{suffix}"
+    # "Zebaro-Laptop" must not become "Zebaro-Zebaro-Laptop".
+    base = re.sub(rf"^{PREFIX}[-_.]*", "", slug(name), flags=re.IGNORECASE) or "User"
+    return f"{PREFIX}-{base[:room].rstrip('-.')}{suffix}"
 
 
 @dataclass
