@@ -3,7 +3,13 @@
     python scripts/job_stats.py                 weekly stats (7 days), as a table
     python scripts/job_stats.py --days 30       any period, 1..180 days
     python scripts/job_stats.py review          vacancies waiting for a manual look
-    python scripts/job_stats.py --json          raw JSON (works with `review` too)
+    python scripts/job_stats.py job <id>        one vacancy in full: our _id or the platform's job_id
+    python scripts/job_stats.py search [text] --platform dou --moderation review --status applied
+                                --reason senior --days 30 --limit 50
+    python scripts/job_stats.py applied --days 90 --out applied.md
+                                vacancies you applied to, with descriptions - ready for an AI
+    (search takes --full too: the same blocks with descriptions instead of a table)
+    python scripts/job_stats.py --json          raw JSON (works with every command)
 
 Token: JOB_STATS_API_TOKEN from the environment, otherwise from
 ~/.zebaro/zebaro-core-bot-secrets.env. Base URL: PROD_URL (default https://bot.zebaro.dev).
@@ -19,6 +25,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -51,7 +58,8 @@ def fetch(path: str) -> Any:
         hints = {
             401: "токен не подошёл - сверь с секретом JOB_STATS_API_TOKEN в GitHub (env prod)",
             403: "ответил Cloudflare, до бота запрос не дошёл",
-            422: "неверный параметр (--days от 1 до 180)",
+            404: "не найдено (или на проде старая версия без этого эндпоинта)",
+            422: "неверный параметр (--days, --limit вне допустимого)",
         }
         sys.exit(f"HTTP {e.code} на {base + path}: {hints.get(e.code, e.reason)}")
     except urllib.error.URLError as e:
@@ -109,23 +117,127 @@ def print_review(jobs: list[dict[str, Any]]) -> None:
     print(f"\nВсего: {len(jobs)}")
 
 
+def print_job(job: dict[str, Any]) -> None:
+    skip = {"description", "copies"}
+    width = max(len(k) for k in job)
+    for key, value in job.items():
+        if key not in skip and value not in (None, "", [], {}):
+            print(f"{key.ljust(width)}  {value}")
+    if job.get("copies"):
+        print(f"{'copies'.ljust(width)}  {len(job['copies'])}")
+    if job.get("description"):
+        print("\n" + str(job["description"]).strip())
+
+
+def print_search(jobs: list[dict[str, Any]]) -> None:
+    rows = [
+        [
+            str(j.get("found_at", ""))[:10],
+            j.get("platform_name", ""),
+            j.get("moderation", ""),
+            j.get("user_status", ""),
+            j.get("relevance_score", ""),
+            j.get("click_count", 0),
+            str(j.get("title", ""))[:50],
+            str(j.get("company", ""))[:25],
+            j.get("_id", ""),
+        ]
+        for j in jobs
+    ]
+    print(table(rows, ["found", "platform", "moderation", "status", "score", "clicks", "title", "company", "id"]))
+    print(f"\nВсего: {len(jobs)}")
+
+
+def render_full(jobs: list[dict[str, Any]]) -> str:
+    """Markdown blocks with descriptions: a file an AI can read and compare as is."""
+    blocks = []
+    for j in jobs:
+        facts = [
+            f"- Платформа: {j.get('platform_name', '?')}, найдено {str(j.get('found_at', ''))[:10]}",
+            f"- Модерация: {j.get('moderation', '?')}, статус: {j.get('user_status', '?')}, "
+            f"score {j.get('relevance_score', '?')}, кликов {j.get('click_count', 0)}",
+        ]
+        for key, label in (
+            ("matched_stack", "Стек"),
+            ("matched_bonus", "Бонусы"),
+            ("required_years", "Опыт, лет"),
+            ("location", "Локация"),
+            ("filter_reason", "Причина отсева"),
+        ):
+            if j.get(key) not in (None, "", []):
+                value = ", ".join(map(str, j[key])) if isinstance(j[key], list) else j[key]
+                facts.append(f"- {label}: {value}")
+        facts.append(f"- Ссылка: {j.get('link', '')}  (id {j.get('_id', '')})")
+        description = str(j.get("description") or "(описания нет)").strip()
+        header = f"## {j.get('title', '?')} - {j.get('company', '?')}"
+        blocks.append(header + "\n\n" + "\n".join(facts) + "\n\n" + description)
+    return f"# Вакансии: {len(jobs)}\n\n" + "\n\n---\n\n".join(blocks) + "\n"
+
+
 def main() -> None:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
-    parser = argparse.ArgumentParser(description="Статистика поиска вакансий с прода")
-    parser.add_argument("what", nargs="?", choices=["weekly", "review"], default="weekly")
-    parser.add_argument("--days", type=int, default=7, help="период для weekly, 1..180")
+    parser = argparse.ArgumentParser(description="Статистика и данные поиска вакансий с прода")
     parser.add_argument("--json", action="store_true", help="сырой JSON вместо таблицы")
+    parser.add_argument("--days", type=int, help="период: weekly 1..180 (7), search 1..365 (30), applied (90)")
+    # The same flags after the subcommand; SUPPRESS keeps a subparser from resetting them.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+    common.add_argument("--days", type=int, default=argparse.SUPPRESS)
+    sub = parser.add_subparsers(dest="what")
+    sub.add_parser("weekly", parents=[common], help="недельная статистика (по умолчанию)")
+    sub.add_parser("review", parents=[common], help="вакансии на ручном ревью")
+    job = sub.add_parser("job", parents=[common], help="одна вакансия целиком")
+    job.add_argument("id")
+    search = sub.add_parser("search", parents=[common], help="поиск вакансий")
+    search.add_argument("text", nargs="?", help="подстрока в названии или компании")
+    search.add_argument("--platform")
+    search.add_argument("--moderation", help="sent / review / rejected_by_filter")
+    search.add_argument("--status", help="pending / applied / not_interested / blocked")
+    search.add_argument("--reason", help="подстрока причины отсева")
+    applied = sub.add_parser("applied", parents=[common], help="отклики с описаниями - для анализа ИИ")
+    for p in (search, applied):
+        p.add_argument("--limit", type=int, default=50)
+        p.add_argument("--full", action="store_true", help="блоками с описаниями, а не таблицей")
+        p.add_argument("--out", help="записать результат в файл (markdown)")
     args = parser.parse_args()
+    what = args.what or "weekly"
 
-    data = fetch(f"/jobs/stats/weekly?days={args.days}" if args.what == "weekly" else "/jobs/review")
+    if what == "weekly":
+        data = fetch(f"/jobs/stats/weekly?days={args.days or 7}")
+    elif what == "review":
+        data = fetch("/jobs/review")
+    elif what == "job":
+        data = fetch("/jobs/job/" + urllib.parse.quote(args.id, safe=""))
+    elif what in ("search", "applied"):
+        full = what == "applied" or args.full
+        params = {
+            "q": getattr(args, "text", None),
+            "platform": getattr(args, "platform", None),
+            "moderation": getattr(args, "moderation", None),
+            "status": "applied" if what == "applied" else args.status,
+            "reason": getattr(args, "reason", None),
+            "days": args.days or (90 if what == "applied" else 30),
+            "limit": args.limit,
+            "with_description": "true" if full else None,
+        }
+        data = fetch("/jobs/search?" + urllib.parse.urlencode({k: v for k, v in params.items() if v is not None}))
+        if not args.json:
+            text = render_full(data) if full else None
+            if args.out:
+                Path(args.out).write_text(text or json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+                print(f"Записал {len(data)} вакансий в {args.out}")
+            elif text:
+                print(text)
+            else:
+                print_search(data)
+            return
+
     if args.json:
         print(json.dumps(data, ensure_ascii=False, indent=2))
-    elif args.what == "weekly":
-        print_weekly(data)
     else:
-        print_review(data)
+        {"weekly": print_weekly, "review": print_review, "job": print_job}[what](data)
 
 
 if __name__ == "__main__":

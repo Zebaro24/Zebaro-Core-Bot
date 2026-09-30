@@ -31,7 +31,7 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 **Webhooks API (FastAPI + Uvicorn)**
 - GitHub webhook handling (push, PR, workflow, releases)
 - Telegram webhook mode for production
-- Routes under `/webhook/github` and `/webhook/telegram`; public `/jobs/r/<id>` (click-tracked vacancy links) and `/health`
+- Routes under `/webhook/github` and `/webhook/telegram`; public `/jobs/r/<id>` (click-tracked vacancy links) and `/health`; token-protected read-only job analytics under `/jobs/*`
 - `POST /site/contact` — zebaro.dev's contact form → a Telegram message with a reply button; bearer token, compose network only (404 through the public tunnel), 5 messages an hour per sender
 - Telegram updates are answered at once and handled in the background
 
@@ -143,7 +143,7 @@ See `scripts/README.md` for the release and production helpers.
 | `PERSONAL_GITHUB_TOKEN` | yes | — | GitHub API token |
 | `PERSONAL_GITHUB_SECRET` | yes | — | Webhook HMAC secret |
 | `WEBHOOK_URL` | yes | — | Public base URL for webhooks and vacancy links |
-| `JOB_STATS_API_TOKEN` | no | empty (endpoints refuse) | Bearer token for `/jobs/stats/weekly` and `/jobs/review` |
+| `JOB_STATS_API_TOKEN` | no | empty (endpoints refuse) | Bearer token for the analysis endpoints: `/jobs/stats/weekly`, `/jobs/review`, `/jobs/search`, `/jobs/job/<id>` (client: `scripts/job_stats.py`) |
 | `SITE_CONTACT_TOKEN` | no | empty (endpoint refuses) | Shared with zebaro.dev (`CONTACT_TOKEN` there) for `/site/contact` |
 | `WG_PASSWORD` | yes for compose | — | wg-easy admin password (12+ chars); the bot gets it as `WG_EASY_PASSWORD` |
 | `HOME_PROXY_URL` | no | empty (boards go direct) | `http://user:pass@10.0.0.2:8899` — HTTP proxy on the owner's PC in the VPN; Work.ua, Robota.ua and HappyMonday are opened through it (they block the server's IP) and skipped in 2 s when it is off |

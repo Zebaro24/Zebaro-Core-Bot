@@ -47,3 +47,28 @@ def test_check_token_rejects_empty_bearer_when_token_not_configured(mocker):
     with pytest.raises(HTTPException) as exc_info:
         _check_token(_request_with_auth_header("Bearer "))
     assert exc_info.value.status_code == 401
+
+
+def test_search_query_escapes_user_text():
+    from src.interfaces.webhooks.routes.jobs import build_search_query
+
+    query = build_search_query("c++ (senior)", "dou", "review", "pending", None, 30)
+
+    assert query["$or"][0]["title"]["$regex"] == r"c\+\+\ \(senior\)"
+    assert query["platform_name"]["$regex"] == "^dou$"
+    assert query["moderation"] == "review"
+    assert query["user_status"] == "pending"
+    assert "filter_reason" not in query
+
+
+def test_to_jsonable_turns_object_ids_and_dates_into_strings():
+    from datetime import datetime
+
+    from bson import ObjectId
+
+    from src.interfaces.webhooks.routes.jobs import to_jsonable
+
+    oid = ObjectId()
+    doc = {"_id": oid, "found_at": datetime(2026, 9, 30, 12, 0), "copies": [{"id": oid}]}
+
+    assert to_jsonable(doc) == {"_id": str(oid), "found_at": "2026-09-30T12:00:00", "copies": [{"id": str(oid)}]}
