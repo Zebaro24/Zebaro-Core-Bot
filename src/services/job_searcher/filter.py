@@ -85,7 +85,8 @@ WRONG_ROLE_WORDS = (
     "annotator", "анотатор", "викладач", "тренер", "mentor", "ментор", "instructor", "інструктор",
     "teacher", "tutor", "for kids", "для дітей", "odoo", "1c", "1с", "recruiter", "рекрутер",
     "sales", "manager", "менеджер", "product owner", "designer", "дизайнер", "business analyst",
-    "systems analyst", "data analyst", "аналітик", "analytics engineer", "advocate", "consultant",
+    "systems analyst", "system analyst", "data analyst", "producer", "аналітик", "analytics engineer",
+    "advocate", "consultant",
     "content", "creator", "writer", "copywriter", "motion", "security", "customer success",
     "growth hacker", "engagement specialist", "бухгалтер", "accountant", "artist", "illustrator",
     "talent acquisition", "hr",
@@ -149,7 +150,9 @@ SURFACED = (TOP, SENT, REVIEW)
 
 # Warnings: what to check on the vacancy page before applying.
 WARN_ENGLISH = "english"  # B2 asked, the owner has B1
-WARN_ABROAD = "abroad"  # remote, but the board does not say a candidate abroad is fine
+# Remote, but DOU's "за кордоном" is not ticked. Nearly every DOU vacancy (the board he answers
+# best) lacks it, so it is a note in the conditions line and never costs the top tier.
+WARN_ABROAD = "abroad"
 WARN_UKRAINE = "ukraine"  # the description talks about being in Ukraine
 WARN_NO_DESCRIPTION = "no_description"  # the page did not load: judged by the title alone
 
@@ -318,7 +321,8 @@ def evaluate(job: Job) -> Verdict:
         return Verdict(moderation, score, stack, bonus, years=years, english=english, warnings=warnings)
 
     if backend and frontend:
-        on_target = not warnings and _level_fits(job, years) and bool(_found(title, CORE_STACK) or "full" in title)
+        blocking = [warning for warning in warnings if warning != WARN_ABROAD]
+        on_target = not blocking and _level_fits(job, years) and bool(_found(title, CORE_STACK) or "full" in title)
         return verdict(TOP if on_target else SENT)
     # An AI position is worth a look on its title alone: the owner applied to "AI Engineer" and
     # "Agentic AI Engineer" whose text named neither Python nor a framework.

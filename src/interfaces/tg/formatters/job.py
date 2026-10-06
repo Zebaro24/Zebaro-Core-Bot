@@ -15,7 +15,6 @@ _TIERS = {
 _FORMATS = {"remote": "Удалённо", "office_or_remote": "Офис или удалённо", "hybrid": "Гибрид", "office": "Офис"}
 _WARNINGS = {
     "english": "просят английский B2",
-    "abroad": "не отмечено «за кордоном» — уточни, берут ли из-за границы",
     "ukraine": "в тексте про нахождение в Украине",
     "no_description": "описание не загрузилось — сужу по названию",
 }
@@ -146,7 +145,9 @@ def _applicants(count: int) -> str:
 
 def conditions_line(job: Job) -> str | None:
     """What the vacancy asks and offers, in one line: 📍 Удалённо · Весь світ · 🗣 B2 · 💰 до $2500."""
-    place = [_FORMATS.get(job.work_format or "", ""), job.countries or ""]
+    # DOU without "за кордоном": usually a forgotten tick, worth a glance, not an alarm.
+    abroad = "за кордон не отмечен" if "abroad" in job.warnings else ""
+    place = [_FORMATS.get(job.work_format or "", ""), job.countries or abroad]
     english = "без английского" if job.english == "none" else job.english
     items = [
         "📍 " + " · ".join(item for item in place if item) if any(place) else None,

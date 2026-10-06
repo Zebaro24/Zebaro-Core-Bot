@@ -79,10 +79,14 @@ def fetch(path: str) -> Any:
 def fetch_all(params: dict[str, Any], cap: int = 5000) -> list[dict[str, Any]]:
     """Every vacancy the search matches, 500 at a time (the API's page size)."""
     docs: list[dict[str, Any]] = []
+    seen: set[str] = set()
     while len(docs) < cap:
         page = fetch("/jobs/search?" + urllib.parse.urlencode({**params, "limit": 500, "skip": len(docs)}))
-        docs += page
-        if len(page) < 500:
+        fresh = [doc for doc in page if doc.get("_id") not in seen]
+        seen.update(str(doc.get("_id")) for doc in fresh)
+        docs += fresh
+        # A server from before `skip` returns the first page again: stop instead of looping.
+        if len(page) < 500 or not fresh:
             break
     return docs
 

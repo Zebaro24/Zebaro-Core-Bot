@@ -178,5 +178,7 @@ def test_warnings_tell_what_to_check_before_applying():
 
     text = job_to_rich_html(job)
 
-    assert "⚠️ просят английский B2; не отмечено «за кордоном»" in text
+    assert "⚠️ просят английский B2" in text
+    assert "за кордон не отмечен" in text  # a note in the conditions, not an alarm
+    assert "кордон" not in text.split("⚠️")[1]
     assert "⚠️" in job_to_html(job)

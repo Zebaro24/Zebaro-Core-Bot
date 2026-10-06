@@ -54,6 +54,8 @@ from src.services.job_searcher.filter import (
         ("Fullstack Developer до 1 окремий медичний батальйон", "1 окремий медичний батальйон", "military"),
         ("Software Engineer", "301 ОБТВР", "military"),
         ("Інженер БпЛА", "116 ОМБр", "military"),
+        ("Middle/Senior System Analyst (AI)", "ПриватБанк", "not a developer role"),
+        ("AI Creative Producer", "Breeze", "not a developer role"),
         ("Python-розробник", "Військова частина А1234", "military"),
         ("Розробник у штурмова бригада", "TechCorp", "military"),
     ],
@@ -266,6 +268,15 @@ def test_location_rules(location, reason):
 _FULL = "Python, FastAPI and React on the job. " * 8  # long enough to count as a loaded page
 
 
+def test_dou_without_the_abroad_tick_can_still_be_on_target():
+    job = Job(title="Middle Full Stack Developer (Python / React)", description=_FULL, platform_name="Dou",
+              work_format="remote")  # fmt: skip
+
+    verdict = evaluate(job)
+
+    assert verdict.moderation == "top" and verdict.warnings == ["abroad"]
+
+
 def test_a_full_match_with_a_known_level_and_no_warnings_is_on_target():
     job = Job(title="Middle Full Stack Developer (Python / React)", description=_FULL)
 
@@ -276,7 +287,6 @@ def test_a_full_match_with_a_known_level_and_no_warnings_is_on_target():
     "fields",
     [
         {"english": "B2"},  # a warning keeps it out of the top
-        {"platform_name": "Dou", "work_format": "remote"},  # remote without "за кордоном"
         {"title": "Full Stack Developer (Python / React)"},  # the level is not known
     ],
 )
