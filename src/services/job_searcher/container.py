@@ -23,10 +23,11 @@ class Job:
     link: str | None = None
 
     found_at: datetime = field(default_factory=datetime.utcnow)
-    moderation: str | None = None  # "sent" | "review" | "rejected_by_filter"
+    moderation: str | None = None  # "top" | "sent" | "review" | "rejected_by_filter"
     relevance_score: int = 0
-    # "pending" | "applied" | "not_interested" | "blocked" (the site would not let him apply —
-    # Djinni's experience gate) | "duplicate" (a repeat of a group already sent: never counted)
+    # "pending" | "applied" | "mismatch" (he does not meet the requirements) | "not_interested" |
+    # "blocked" (the site would not let him apply — Djinni's profile gate) | "duplicate" (a
+    # repeat of a group already sent: never counted)
     user_status: str = "pending"
     status_updated_at: datetime | None = None
     similar_to: str | None = None  # mongo _id похожей вакансии на другой площадке
@@ -38,8 +39,21 @@ class Job:
     click_count: int = 0
     matched_stack: list[str] = field(default_factory=list)  # core stack found: "Python", "React", ...
     matched_bonus: list[str] = field(default_factory=list)  # nice-to-have found: "TypeScript", "LLM", ...
-    required_years: int | None = None  # the lowest experience the description asks for
-    filter_reason: str | None = None  # why it was not sent: "senior", "intern", "no stack match", ...
+    required_years: int | None = None  # the main experience requirement (card or description)
+    filter_reason: str | None = None  # why it was not sent: "senior", "experience", "office", ...
+
+    # What the board says apart from the text (Djinni's card, DOU's cities) or what was read
+    # out of the description — services/job_searcher/extract.py.
+    work_format: str | None = None  # "remote" | "office" | "hybrid" | "office_or_remote"
+    countries: str | None = None  # where candidates may live, as the site writes it
+    english: str | None = None  # "A1".."C2", "none"
+    salary: str | None = None  # as the site writes it: "до $2500", "$3500–4500"
+    applicants: int | None = None  # how many applied already (Djinni)
+    warnings: list[str] = field(default_factory=list)  # what may not fit: "english", "ukraine", ...
+    search_url: str | None = None  # the search that found it — to compare searches
+    # Why the owner said no: "experience" | "location" | "english" | "site" | "stack" (mismatch),
+    # "role" | "stack" | "domain" | "conditions" | "other" (not_interested).
+    status_reason: str | None = None
 
     def __str__(self) -> str:
         return f"<{self.platform_name} - {self.title} - {self.company}>"

@@ -37,9 +37,9 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 
 **Job Search & Scraping**
 - Headless browsing via Playwright Stealth (remote browser server, full Chromium in new headless mode)
-- Sources: Work.ua, Robota.ua, NoFluffJobs, Djinni, DOU, HappyMonday, BazaIT, Wellfound (Jooble is behind a bot challenge; Work.ua vacancy pages too, so Work.ua vacancies carry the list snippet)
+- Sources: DOU, Djinni, Robota.ua, Work.ua, NoFluffJobs, HappyMonday (BazaIT, Wellfound and Jooble listeners are kept but switched off); Djinni's card fields (work format, countries, years, English, salary, applicants) are read as they are
 - Work.ua, Robota.ua and HappyMonday block the server's datacenter IP; with `HOME_PROXY_URL` they go through the owner's PC over the VPN — `python scripts/home_proxy.py` there (stdlib only: CONNECT :443, only the server's address, only with the login)
-- Relevance scoring, apply / not-interested buttons, cross-site duplicate marks, weekly digest
+- Three tiers (on target / your stack / partial) with warnings, apply / mismatch / not-interested buttons with reasons, cross-site duplicate marks, a two-part weekly digest (market and own decisions)
 
 **VPN (WireGuard via wg-easy)**
 - `zebaro-core-vpn` runs wg-easy in the host network: `10.0.0.1` is the server itself (Samba, the home PC at `10.0.0.2`)
@@ -143,7 +143,7 @@ See `scripts/README.md` for the release and production helpers.
 | `PERSONAL_GITHUB_TOKEN` | yes | — | GitHub API token |
 | `PERSONAL_GITHUB_SECRET` | yes | — | Webhook HMAC secret |
 | `WEBHOOK_URL` | yes | — | Public base URL for webhooks and vacancy links |
-| `JOB_STATS_API_TOKEN` | no | empty (endpoints refuse) | Bearer token for the analysis endpoints: `/jobs/stats/weekly`, `/jobs/review`, `/jobs/search`, `/jobs/job/<id>` (client: `scripts/job_stats.py`) |
+| `JOB_STATS_API_TOKEN` | no | empty (endpoints refuse) | Bearer token for the analysis endpoints: `/jobs/stats/weekly`, `/jobs/stats/digest`, `/jobs/stats/searches`, `/jobs/review`, `/jobs/search`, `/jobs/job/<id>` (client: `scripts/job_stats.py`) |
 | `SITE_CONTACT_TOKEN` | no | empty (endpoint refuses) | Shared with zebaro.dev (`CONTACT_TOKEN` there) for `/site/contact` |
 | `WG_PASSWORD` | yes for compose | — | wg-easy admin password (12+ chars); the bot gets it as `WG_EASY_PASSWORD` |
 | `HOME_PROXY_URL` | no | empty (boards go direct) | `http://user:pass@10.0.0.2:8899` — HTTP proxy on the owner's PC in the VPN; Work.ua, Robota.ua and HappyMonday are opened through it (they block the server's IP) and skipped in 2 s when it is off |

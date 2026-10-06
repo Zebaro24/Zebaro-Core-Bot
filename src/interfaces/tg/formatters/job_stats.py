@@ -1,138 +1,180 @@
+"""The weekly digest in Telegram: "the market" and "your week" (services/job_searcher/digest.py)."""
+
 import html
 from typing import Any
 
-_REASONS = {
-    "senior": "senior (в заголовке или 5+ лет опыта)",
+# Why the filter did not send a vacancy. Old reasons stay: the API reports stored documents.
+REASONS = {
+    "senior": "senior в названии или в описании",
+    "experience": "просят от 4 лет",
+    "english": "английский выше B2",
     "lead": "lead / head / architect",
     "intern": "стажировка / trainee",
-    "junior": "junior (старое правило, джунов теперь берём)",
-    "not a developer role": "не разработка (QA, менеджеры, аналитики, дизайн…)",
-    "other stack": "другой основной стек (Java, .NET, PHP, Angular, Vue, мобилка…)",
-    "office": "офис, не удалёнка",
+    "junior": "junior (старое правило)",
+    "not a developer role": "не разработка",
+    "other stack": "другой основной стек",
+    "office": "офис или гибрид",
+    "country": "не берут из-за границы",
     "company": "ФОП / школа",
-    "location": "другой континент (Индия, LATAM, США…)",
-    "stale": "висит на сайте больше двух месяцев",
+    "military": "воинская часть",
+    "location": "другой континент",
+    "stale": "висит больше двух месяцев",
     "no stack match": "стек не совпал",
 }
+MISMATCH_REASONS = {
+    "experience": "опыт",
+    "location": "офис / страна",
+    "english": "английский",
+    "stack": "стек",
+    "site": "сайт не пустил",
+    "other": "другое",
+}
+REJECT_REASONS = {"role": "роль", "stack": "стек", "domain": "домен", "conditions": "условия", "other": "просто нет"}
+_FORMATS = {"remote": "удалённо", "office_or_remote": "офис или удалённо", "hybrid": "гибрид", "office": "офис"}
 
-# How many technologies the "what you answer to" lists show before it stops being readable.
-_TOP_STACK = 6
+
+def _pct(value: float | None) -> str:
+    return f"{value:.0%}" if value is not None else "—"
 
 
-def _stack_line(counter: dict[str, int]) -> str:
-    items = list(counter.items())[:_TOP_STACK]
-    return ", ".join(f"{html.escape(name)} <b>{count}</b>" for name, count in items)
+def _trend(now: int, before: int) -> str:
+    if now == before:
+        return ""
+    return f" ▲{now - before}" if now > before else f" ▼{before - now}"
 
 
-def format_weekly_digest_rich(stats: dict[str, Any]) -> str:
-    """The digest as a rich message: tables instead of lines of "label: number"."""
-    totals = stats["totals"]
-    by_status = stats["by_status"]
+def _shares(counter: dict[str, int], names: dict[str, str] | None = None) -> str:
+    total = sum(counter.values())
+    if not total:
+        return "—"
+    return " · ".join(f"{html.escape((names or {}).get(k, k))} {v / total:.0%}" for k, v in counter.items())
 
+
+def _cells(counter: dict[str, Any]) -> str:
+    return "".join(f'<td align="center">{v}</td>' for v in counter.values())
+
+
+def _heads(counter: dict[str, Any]) -> str:
+    return "".join(f"<th>{html.escape(str(k))}</th>" for k in counter)
+
+
+def format_market_rich(digest: dict[str, Any]) -> str:
+    market = digest["market"]
+    tiers = market["by_tier"]
     parts = [
-        f"<h2>📊 Вакансии за {stats['period_days']} дней</h2>",
-        "<table bordered striped compact>"
-        "<tr><th>Найдено</th><th>🔥 Твой стек</th><th>👀 Частично</th><th>Мимо</th></tr>"
-        f"<tr><td align=\"center\">{totals['found']}</td><td align=\"center\">{totals['sent']}</td>"
-        f"<td align=\"center\">{totals['review']}</td><td align=\"center\">{totals['rejected_by_filter']}</td></tr>"
-        "</table>",
-        "<h4>Что ты с ними сделал</h4>",
-        "<ul>"
-        f"<li>✅ Откликнулся — <b>{by_status['applied']}</b></li>"
-        f"<li>❌ Не интересует — <b>{by_status['not_interested']}</b></li>"
-        f"<li>⛔ Площадка не пустила — <b>{by_status.get('blocked', 0)}</b></li>"
-        f"<li>⏳ Без реакции — <b>{by_status['pending']}</b></li>"
-        "</ul>",
+        f"<h2>🌍 Рынок за {digest['period_days']} дней</h2>",
+        f"<p>В твоей области <b>{market['in_field']}</b> вакансий, прислал <b>{market['surfaced']}</b>: "
+        f"🔥🔥🔥 {tiers['top']} · 🔥 {tiers['sent']} · 👀 {tiers['review']}</p>",
+        "<h4>Сколько лет опыта просят</h4>",
+        f"<table bordered compact><tr>{_heads(market['years'])}</tr><tr>{_cells(market['years'])}</tr></table>",
+        "<h4>Какой английский</h4>",
+        f"<table bordered compact><tr>{_heads(market['english'])}</tr><tr>{_cells(market['english'])}</tr></table>",
     ]
-    if totals.get("repeats"):
-        parts.append(f"<p>🔁 Повторов не прислал: <b>{totals['repeats']}</b> — на них ты уже ответил.</p>")
-
-    facts = []
-    if stats["response_rate"] is not None:
-        facts.append(f"откликаешься на <b>{stats['response_rate']:.0%}</b> присланного")
-    if stats["avg_hours_to_action"] is not None:
-        facts.append(f"реагируешь в среднем за <b>{stats['avg_hours_to_action']:.1f} ч</b>")
-    if facts:
-        sentence = ", ".join(facts)
-        parts.append(f"<p>{sentence[0].upper()}{sentence[1:]}</p>")
-
-    if stats["by_platform"]:
-        rows = "".join(
-            f"<tr><td>{html.escape(p['platform'])}</td><td align=\"center\">{p['found']}</td>"
-            f"<td align=\"center\">{p['sent']}</td><td align=\"center\">{p.get('review', 0)}</td>"
-            f"<td align=\"center\">{p['applied']}</td><td align=\"center\">{p['not_interested']}</td></tr>"
-            for p in stats["by_platform"]
-        )
+    if market["english_b1_share"] is not None:
+        parts.append(f"<p>Где уровень назван, B1 хватает в <mark>{_pct(market['english_b1_share'])}</mark></p>")
+    if market["work_format"]:
+        parts.append(f"<p>📍 Формат: {_shares(market['work_format'], _FORMATS)}</p>")
+    if market["top_tech"]:
+        tech = " · ".join(f"{html.escape(name)} {share:.0%}" for name, share in market["top_tech"])
+        parts.append(f"<h4>Чаще всего просят</h4><p>{tech}</p>")
+    if salary := market["salary"]:
         parts.append(
-            "<h4>По площадкам</h4><table bordered striped compact>"
-            "<tr><th>Площадка</th><th>Всего</th><th>🔥</th><th>👀</th><th>✅</th><th>❌</th></tr>" + rows + "</table>"
+            f"<p>💰 Зарплата: медиана <b>${salary['median']}</b>, от ${salary['low']} до ${salary['high']} "
+            f"(по {salary['n']} вакансиям)</p>"
         )
-
-    # What the owner answers to, against what he waves off: the two lists are the evidence
-    # for every change to the filter's stack.
-    applied, rejected = stats.get("stack_applied") or {}, stats.get("stack_rejected") or {}
-    if applied or rejected:
-        parts.append("<h4>На что ты откликаешься</h4><ul>")
-        if applied:
-            parts.append(f"<li>✅ {_stack_line(applied)}</li>")
-        if rejected:
-            parts.append(f"<li>❌ {_stack_line(rejected)}</li>")
-        parts.append("</ul>")
-
-    by_reason = stats.get("by_reason") or {}
-    if by_reason:
+    if market["applicants_median"] is not None:
+        parts.append(f"<p>👥 На вакансию Djinni откликаются в среднем <b>{market['applicants_median']}</b> человек</p>")
+    if market["blockers"]:
         items = "".join(
-            f"<li>{html.escape(_REASONS.get(reason, reason))} — <b>{count}</b></li>"
-            for reason, count in by_reason.items()
+            f"<li>{html.escape(REASONS.get(reason, reason))} — <b>{count}</b></li>"
+            for reason, count in market["blockers"].items()
         )
-        parts.append(f"<h4>Почему не прислал</h4><ul>{items}</ul>")
-
-    silent = stats.get("silent_sources") or []
-    if silent:
-        names = ", ".join(html.escape(name) for name in silent)
-        parts.append(f"<p>⚠️ Ничего не дали за период: <b>{names}</b> — или блокируют, или сломалась вёрстка.</p>")
-
+        parts.append(f"<h4>Что не пускает в твою область</h4><ul>{items}</ul>")
     return "".join(parts)
 
 
-def format_weekly_digest(stats: dict[str, Any]) -> str:
-    """Plain HTML fallback for when Telegram refuses the rich message."""
-    totals = stats["totals"]
-    by_status = stats["by_status"]
+def format_me_rich(digest: dict[str, Any]) -> str:
+    me = digest["me"]
+    now, before = me["decisions"], me["prev"]
+    parts = [
+        "<h2>👤 Твоя неделя</h2>",
+        "<table bordered striped compact><tr><th>✅ Отклик</th><th>🚫 Не прохожу</th><th>👎 Не интересно</th>"
+        "<th>⛔ Не пустил</th></tr><tr>"
+        + "".join(
+            f'<td align="center">{now[k]}{_trend(now[k], before[k])}</td>'
+            for k in ("applied", "mismatch", "not_interested", "blocked")
+        )
+        + "</tr></table>",
+        f"<p>Откликаешься на <b>{_pct(me['apply_rate'])}</b> решений (неделей раньше {_pct(me['apply_rate_prev'])})"
+        + (f", реагируешь за {me['avg_hours_to_action']:.0f} ч" if me["avg_hours_to_action"] is not None else "")
+        + "</p>",
+    ]
+    pending = me["pending"]
+    if pending["count"]:
+        old = f", из них {pending['old']} старше 3 дней" if pending["old"] else ""
+        parts.append(f"<p>⏳ Ждут ответа: <b>{pending['count']}</b>{old}</p>")
 
-    text = f"<b>📊 Джоб-дайджест за {stats['period_days']} дней</b>\n\n"
-    text += (
-        f"Найдено: <b>{totals['found']}</b>\n"
-        f"🔥 Отправлено: <b>{totals['sent']}</b>\n"
-        f"👀 Частично: <b>{totals['review']}</b>\n"
-        f"Отфильтровано: <b>{totals['rejected_by_filter']}</b>\n\n"
-        f"✅ Откликнулся: <b>{by_status['applied']}</b>\n"
-        f"❌ Не интересует: <b>{by_status['not_interested']}</b>\n"
-        f"⛔ Площадка не пустила: <b>{by_status.get('blocked', 0)}</b>\n"
-        f"⏳ Без реакции: <b>{by_status['pending']}</b>\n"
-    )
-
-    response_rate = stats["response_rate"]
-    if response_rate is not None:
-        text += f"\nResponse rate: <b>{response_rate:.0%}</b>"
-
-    avg_hours = stats["avg_hours_to_action"]
-    if avg_hours is not None:
-        text += f"\nСреднее время реакции: <b>{avg_hours:.1f} ч</b>"
-
-    by_platform = stats["by_platform"]
-    if by_platform:
-        text += "\n\n<b>По площадкам:</b>\n"
-        for platform_stats in by_platform:
-            text += (
-                f"• {html.escape(platform_stats['platform'])}: "
-                f"найдено {platform_stats['found']}, "
-                f"отправлено {platform_stats['sent']}, "
-                f"откликнулся {platform_stats['applied']}\n"
+    if me["by_platform"]:
+        rows = "".join(
+            f"<tr><td>{html.escape(p['platform'])}</td><td align=\"center\">{p['decided']}</td>"
+            f"<td align=\"center\">{p['applied']}</td><td align=\"center\">{_pct(p['rate'])}</td>"
+            f"<td align=\"center\">{p['blocked'] or ''}</td></tr>"
+            for p in me["by_platform"]
+        )
+        parts.append(
+            "<h4>Площадки</h4><table bordered striped compact>"
+            "<tr><th>Площадка</th><th>Решений</th><th>✅</th><th>%</th><th>⛔</th></tr>" + rows + "</table>"
+        )
+    tiers = me["by_tier_rate"]
+    if any(rate is not None for rate in tiers.values()):
+        parts.append(
+            f"<p>Откликаешься по тирам (4 недели): 🔥🔥🔥 {_pct(tiers['top'])} · 🔥 {_pct(tiers['sent'])} · "
+            f"👀 {_pct(tiers['review'])}</p>"
+        )
+    if searches := me["searches"]:
+        best = " · ".join(f"{html.escape(s['label'])} {s['rate']:.0%} ({s['n']})" for s in searches["best"])
+        worst = " · ".join(f"{html.escape(s['label'])} {s['rate']:.0%} ({s['n']})" for s in searches["worst"])
+        parts.append(f"<h4>Поиски за 4 недели</h4><p>👍 {best}<br>👎 {worst}</p>")
+    if me["mismatch_reasons"]:
+        years = me["mismatch_years_median"]
+        line = _shares(me["mismatch_reasons"], MISMATCH_REASONS)
+        parts.append(
+            f"<h4>Чего не хватает</h4><p>{line}"
+            + (f"<br>В таких вакансиях просят в среднем {years} г. опыта" if years else "")
+            + "</p>"
+        )
+    if misses := me["filter_misses"]:
+        if misses["mismatch"]:
+            parts.append(
+                f"<p>⚠️ Фильтр ошибся: из {misses['promised']} 🔥 ты не прошёл по <b>{misses['mismatch']}</b> — "
+                "причины выше, их стоит научить фильтр видеть</p>"
             )
-
-    silent = stats.get("silent_sources") or []
+    if me["not_interested_reasons"]:
+        parts.append(f"<p>👎 Не интересно: {_shares(me['not_interested_reasons'], REJECT_REASONS)}</p>")
+    silent = digest.get("silent_sources") or []
     if silent:
-        text += f"\n⚠️ Ничего не дали: {html.escape(', '.join(silent))}"
+        names = ", ".join(html.escape(name) for name in silent)
+        parts.append(f"<p>⚠️ Ничего не дали за период: <b>{names}</b> — или блокируют, или сломалась вёрстка.</p>")
+    return "".join(parts)
 
+
+def format_digest_plain(digest: dict[str, Any]) -> str:
+    """Plain HTML fallback for when Telegram refuses the rich messages: the key numbers only."""
+    market, me = digest["market"], digest["me"]
+    now = me["decisions"]
+    years = " · ".join(f"{k} {v}" for k, v in market["years"].items())
+    english = " · ".join(f"{k} {v}" for k, v in market["english"].items())
+    platforms = "\n".join(
+        f"• {html.escape(p['platform'])}: {p['decided']} решений, ✅ {p['applied']} ({_pct(p['rate'])})"
+        for p in me["by_platform"]
+    )
+    text = (
+        f"<b>📊 Вакансии за {digest['period_days']} дней</b>\n\n"
+        f"🌍 В твоей области {market['in_field']}, прислал {market['surfaced']}\n"
+        f"Опыт: {years}\nАнглийский: {html.escape(english)}\n\n"
+        f"✅ {now['applied']} · 🚫 {now['mismatch']} · 👎 {now['not_interested']} · ⛔ {now['blocked']}\n"
+        f"Откликаешься на {_pct(me['apply_rate'])}\n"
+    )
+    if platforms:
+        text += f"\n{platforms}"
     return text

@@ -7,8 +7,17 @@ from src.services.job_searcher.filter import BACKEND_CORE, FRONTEND_CORE, title_
 from src.services.job_searcher.text import BULLET
 
 _TIERS = {
+    "top": "🔥🔥🔥",
     "sent": "🔥",
     "review": "👀",
+}
+
+_FORMATS = {"remote": "Удалённо", "office_or_remote": "Офис или удалённо", "hybrid": "Гибрид", "office": "Офис"}
+_WARNINGS = {
+    "english": "просят английский B2",
+    "abroad": "не отмечено «за кордоном» — уточни, берут ли из-за границы",
+    "ukraine": "в тексте про нахождение в Украине",
+    "no_description": "описание не загрузилось — сужу по названию",
 }
 
 # Rich messages allow 32768 characters including markup; the longest real descriptions are
@@ -120,7 +129,38 @@ def description_to_rich_html(text: str, limit: int = RICH_DESCRIPTION_LIMIT) -> 
 
 
 def _years(years: int) -> str:
+    if years == 0:
+        return "без опыта"
     return f"от {years} года" if years % 10 == 1 and years % 100 != 11 else f"от {years} лет"
+
+
+def _applicants(count: int) -> str:
+    if count % 10 == 1 and count % 100 != 11:
+        word = "отклик"
+    elif count % 10 in (2, 3, 4) and count % 100 not in (12, 13, 14):
+        word = "отклика"
+    else:
+        word = "откликов"
+    return f"{count} {word}"
+
+
+def conditions_line(job: Job) -> str | None:
+    """What the vacancy asks and offers, in one line: 📍 Удалённо · Весь світ · 🗣 B2 · 💰 до $2500."""
+    place = [_FORMATS.get(job.work_format or "", ""), job.countries or ""]
+    english = "без английского" if job.english == "none" else job.english
+    items = [
+        "📍 " + " · ".join(item for item in place if item) if any(place) else None,
+        f"🗣 {english}" if english else None,
+        f"💰 {job.salary}" if job.salary else None,
+        f"👥 {_applicants(job.applicants)}" if job.applicants is not None else None,
+    ]
+    line = " · ".join(item for item in items if item)
+    return html.escape(line) if line else None
+
+
+def warnings_line(job: Job) -> str | None:
+    texts = [_WARNINGS[warning] for warning in job.warnings if warning in _WARNINGS]
+    return "⚠️ " + html.escape("; ".join(texts)) if texts else None
 
 
 def _why_lines(job: Job, emoji: str, mark: bool) -> list[str]:
@@ -155,7 +195,7 @@ def _why_lines(job: Job, emoji: str, mark: bool) -> list[str]:
         lines.append(f"{emoji} <b>{head}</b> — " + " · ".join(names(group) for group in groups if group))
     if bonus:
         lines.append("➕ " + html.escape(", ".join(bonus)))
-    experience = [_years(job.required_years) if job.required_years else None, title_level(job.title)]
+    experience = [_years(job.required_years) if job.required_years is not None else None, title_level(job.title)]
     if any(experience):
         lines.append("🎓 " + html.escape(" · ".join(item for item in experience if item)))
     return lines
@@ -205,8 +245,11 @@ def job_to_rich_html(job: Job, status: str | None = None) -> str:
     if status:
         parts.append(f"<p>{status}</p>")
 
-    if job.moderation in _TIERS and (why := _why_lines(job, emoji, mark=True)):
-        parts.append("<p>" + "<br>".join(why) + "</p>")
+    if job.moderation in _TIERS:
+        lines = _why_lines(job, emoji, mark=True)
+        lines += [line for line in (conditions_line(job), warnings_line(job)) if line]
+        if lines:
+            parts.append("<p>" + "<br>".join(lines) + "</p>")
 
     if repeat := repeat_line(job):
         parts.append(f"<p>{repeat}</p>")
@@ -220,7 +263,7 @@ def job_to_rich_html(job: Job, status: str | None = None) -> str:
         body = description_to_rich_html(job.description)
         parts.append(f"<details><summary>📄 Описание полностью</summary>{body}</details>")
     else:
-        parts.append("<p><i>Описание площадка показывает только у себя — кнопка «Вакансия» ниже.</i></p>")
+        parts.append("<p><i>Описание не подтянулось — открой его кнопкой «Вакансия» ниже.</i></p>")
 
     return "".join(parts)
 
@@ -241,8 +284,10 @@ def job_to_html(job: Job) -> str:
     if date := _date(job):
         text += f" Date: <i>{html.escape(date)}</i>"
 
-    if emoji and (why := _why_lines(job, emoji, mark=False)):
-        text += "\n" + "\n".join(why)
+    if emoji:
+        why = _why_lines(job, emoji, mark=False) + [line for line in (conditions_line(job), warnings_line(job)) if line]
+        if why:
+            text += "\n" + "\n".join(why)
 
     if repeat := repeat_line(job):
         text += f"\n{repeat}"

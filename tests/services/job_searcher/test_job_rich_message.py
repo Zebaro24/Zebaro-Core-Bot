@@ -100,7 +100,7 @@ def test_location_stands_next_to_the_company():
 
 def test_missing_description_points_to_the_button():
     text = job_to_rich_html(_job(description=None))
-    assert "кнопка «Вакансия»" in text
+    assert "кнопкой «Вакансия»" in text
 
 
 def test_status_goes_right_under_the_company_line():
@@ -154,3 +154,30 @@ def test_plain_fallback_fits_a_telegram_message():
     text = job_to_html(_job(description="word " * 5000))
     assert len(text) < 4096
     assert len(text) > PLAIN_DESCRIPTION_LIMIT
+
+
+def test_on_target_vacancy_shows_three_fires_conditions_and_no_warnings():
+    job = _job(
+        moderation="top",
+        matched_stack=["Python", "React"],
+        work_format="remote",
+        countries="Весь світ",
+        english="B1",
+        salary="до $2500",
+        applicants=42,
+    )
+
+    text = job_to_rich_html(job)
+
+    assert "<h3>🔥🔥🔥 Full Stack Developer</h3>" in text
+    assert "📍 Удалённо · Весь світ · 🗣 B1 · 💰 до $2500 · 👥 42 отклика" in text
+    assert "⚠️" not in text
+
+
+def test_warnings_tell_what_to_check_before_applying():
+    job = _job(english="B2", warnings=["english", "abroad"])
+
+    text = job_to_rich_html(job)
+
+    assert "⚠️ просят английский B2; не отмечено «за кордоном»" in text
+    assert "⚠️" in job_to_html(job)

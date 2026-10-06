@@ -19,9 +19,9 @@ async def get_weekly_stats(days: int = 7) -> dict[str, Any]:
     repeats = sum(1 for doc in docs if doc.get("user_status") == "duplicate")
     docs = [doc for doc in docs if doc.get("user_status") != "duplicate"]
 
-    totals = {"found": len(docs), "sent": 0, "review": 0, "rejected_by_filter": 0, "repeats": repeats}
+    totals = {"found": len(docs), "top": 0, "sent": 0, "review": 0, "rejected_by_filter": 0, "repeats": repeats}
     by_platform: dict[str, dict[str, int]] = {}
-    by_status = {"applied": 0, "not_interested": 0, "blocked": 0, "pending": 0}
+    by_status = {"applied": 0, "mismatch": 0, "not_interested": 0, "blocked": 0, "pending": 0}
     # Why vacancies were not sent — what to look at when tuning the filter.
     by_reason: dict[str, int] = {}
     # Which technologies the owner actually answers to: the same counts for what he applied
@@ -38,7 +38,7 @@ async def get_weekly_stats(days: int = 7) -> dict[str, Any]:
         platform = doc.get("platform_name") or "Unknown"
         platform_stats = by_platform.setdefault(platform, _empty_platform_stats())
         platform_stats["found"] += 1
-        if moderation == "sent":
+        if moderation in ("top", "sent"):
             platform_stats["sent"] += 1
         elif moderation == "review":
             platform_stats["review"] += 1
@@ -59,6 +59,8 @@ async def get_weekly_stats(days: int = 7) -> dict[str, Any]:
         elif user_status == "not_interested":
             platform_stats["not_interested"] += 1
             _count_stack(stack_rejected, doc)
+        elif user_status == "mismatch":
+            platform_stats["mismatch"] += 1
         elif user_status == "blocked":
             platform_stats["blocked"] += 1
 
@@ -67,7 +69,7 @@ async def get_weekly_stats(days: int = 7) -> dict[str, Any]:
         if user_status != "pending" and status_updated_at and found_at:
             action_hours.append((status_updated_at - found_at).total_seconds() / 3600)
 
-    surfaced = totals["sent"] + totals["review"]
+    surfaced = totals["top"] + totals["sent"] + totals["review"]
     response_rate = by_status["applied"] / surfaced if surfaced > 0 else None
     avg_hours_to_action = sum(action_hours) / len(action_hours) if action_hours else None
 
@@ -88,7 +90,10 @@ async def get_weekly_stats(days: int = 7) -> dict[str, Any]:
 
 
 def _empty_platform_stats() -> dict[str, int]:
-    return {"found": 0, "sent": 0, "review": 0, "applied": 0, "not_interested": 0, "blocked": 0, "clicks": 0}
+    return {
+        "found": 0, "sent": 0, "review": 0, "applied": 0, "mismatch": 0, "not_interested": 0, "blocked": 0,
+        "clicks": 0,
+    }  # fmt: skip
 
 
 def _count_stack(counter: dict[str, int], doc: dict[str, Any]) -> None:
@@ -105,6 +110,53 @@ def silent_sources(by_platform: dict[str, dict[str, int]]) -> list[str]:
     from src.services.job_searcher.parser import platform_names
 
     return sorted(name for name in platform_names() if not by_platform.get(name, {}).get("found"))
+
+
+async def get_search_stats(days: int = 30) -> list[dict[str, Any]]:
+    """Every search over `days`: what it found, what reached the chat, what was answered.
+
+    Counted by the search that found the vacancy first (`Job.search_url`; vacancies stored
+    before 06.10.2026 have none). Repeats of answered vacancies are left out.
+    """
+    from src.services.job_searcher.digest import search_label
+
+    since = datetime.utcnow() - timedelta(days=days)
+    try:
+        docs = [
+            doc
+            async for doc in jobs_collection.find(
+                {"found_at": {"$gte": since}, "user_status": {"$ne": "duplicate"}}, {"description": 0}
+            )
+        ]
+    except Exception as e:
+        logger.warning("DB unavailable for search stats: %s", e)
+        docs = []
+
+    searches: dict[str, dict[str, Any]] = {}
+    for doc in docs:
+        url = doc.get("search_url") or "(до 06.10.2026)"
+        row = searches.setdefault(
+            url,
+            {"search_url": url, "label": search_label(doc.get("search_url")), "found": 0, "surfaced": 0, "top": 0,
+             "applied": 0, "mismatch": 0, "not_interested": 0, "pending": 0, "reasons": {}},
+        )  # fmt: skip
+        row["found"] += 1
+        moderation = doc.get("moderation") or "rejected_by_filter"
+        if moderation == "rejected_by_filter":
+            reason = doc.get("filter_reason") or "?"
+            row["reasons"][reason] = row["reasons"].get(reason, 0) + 1
+            continue
+        row["surfaced"] += 1
+        row["top"] += moderation == "top"
+        status = doc.get("user_status") or "pending"
+        key = "mismatch" if status == "blocked" else status
+        if key in row:
+            row[key] += 1
+    for row in searches.values():
+        decided = row["applied"] + row["mismatch"] + row["not_interested"]
+        row["apply_rate"] = row["applied"] / decided if decided else None
+        row["reasons"] = _sorted_by_count(row["reasons"])
+    return sorted(searches.values(), key=lambda row: -row["found"])
 
 
 async def get_pending_review_jobs(days: int = 14) -> list[dict[str, Any]]:

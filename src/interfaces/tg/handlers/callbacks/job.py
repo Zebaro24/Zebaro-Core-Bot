@@ -9,22 +9,32 @@ from pymongo import ReturnDocument
 
 from src.db.client import jobs_collection
 from src.interfaces.tg.formatters.job import job_status_html, job_to_rich_html
-from src.interfaces.tg.keyboards.job import JobActionCallback
+from src.interfaces.tg.keyboards.job import (
+    REASON_TEXTS,
+    JobActionCallback,
+    LegacyJobCallback,
+    get_job_action_kb,
+    get_job_reason_kb,
+)
 from src.interfaces.tg.middlewares.admin import AdminMiddleware
 from src.services.job_searcher.container import Job
-from src.services.job_searcher.dedup import DECIDED, DUPLICATE, group_root
+from src.services.job_searcher.dedup import BLOCKED, DECIDED, DUPLICATE, group_root
 
 logger = logging.getLogger("tg.handlers.callbacks.job")
 
 router = Router()
 router.callback_query.middleware(AdminMiddleware())
 
+# The stored status, its emoji and its words.
 _STATUS_INFO = {
-    "apply": ("applied", "✅", "Откликнулся"),
-    "reject": ("not_interested", "❌", "Не интересует"),
-    "block": ("blocked", "⛔", "Не пускает — пришлю копию с другой площадки"),
+    "applied": ("✅", "Откликнулся"),
+    "mismatch": ("🚫", "Не прохожу"),
+    "not_interested": ("👎", "Не интересно"),
+    BLOCKED: ("⛔", "Сайт не пускает — пришлю копию с другой площадки"),
 }
-_DECIDED_INFO = {status: (emoji, text) for status, emoji, text in _STATUS_INFO.values()}
+# Messages sent before the reasons (06.10.2026) still carry these answers.
+_LEGACY_ACTIONS = {"block": (BLOCKED, "site")}
+_REASON_MENUS = ("mismatch", "reject")
 
 
 async def _group_docs(root: str) -> list[dict]:
@@ -51,18 +61,65 @@ async def _edit(query: CallbackQuery, doc: dict, status: str) -> None:
         await message.edit_text(f"{message.html_text}\n\n{status}", reply_markup=None, disable_web_page_preview=True)
 
 
+def _answer(callback_data: JobActionCallback) -> tuple[str, str | None] | None:
+    """The status and the reason a button stands for; None for a button that only opens a menu."""
+    if callback_data.action in _LEGACY_ACTIONS:
+        return _LEGACY_ACTIONS[callback_data.action]
+    if callback_data.action == "apply":
+        return "applied", None
+    if callback_data.action in _REASON_MENUS and callback_data.reason:
+        if callback_data.action == "mismatch":
+            # "The site will not let me" keeps its own status: dedup sends a copy from elsewhere.
+            return (BLOCKED if callback_data.reason == "site" else "mismatch"), callback_data.reason
+        return "not_interested", callback_data.reason
+    return None
+
+
+async def _switch_buttons(query: CallbackQuery, callback_data: JobActionCallback) -> None:
+    """Open the reasons of a "no", or go back to the main buttons — the same message."""
+    message = query.message
+    if not isinstance(message, Message):
+        return
+    try:
+        doc = await jobs_collection.find_one({"_id": ObjectId(callback_data.job_id)})
+    except Exception as e:  # a bad id and a DB outage end the same way: buttons without copies
+        logger.warning("Could not read the vacancy for its buttons: %s", e)
+        doc = None
+    copies = (doc or {}).get("copies") or []
+    if callback_data.action == "back":
+        markup = get_job_action_kb(callback_data.job_id, copies)
+    else:
+        markup = get_job_reason_kb(callback_data.job_id, callback_data.action, copies)
+    await message.edit_reply_markup(reply_markup=markup)
+
+
+@router.callback_query(LegacyJobCallback.filter())
+async def legacy_job_action_callback(query: CallbackQuery, callback_data: LegacyJobCallback) -> None:
+    """An old message's button: "apply" and "block" answer as before, "reject" opens the reasons."""
+    await job_action_callback(query, JobActionCallback(action=callback_data.action, job_id=callback_data.job_id))
+
+
 @router.callback_query(JobActionCallback.filter())
 async def job_action_callback(query: CallbackQuery, callback_data: JobActionCallback) -> None:
     if not isinstance(query.message, Message):
         await query.answer()
         return
 
-    status_info = _STATUS_INFO.get(callback_data.action)
-    if status_info is None:
-        await query.answer("Неизвестное действие")
+    answer = _answer(callback_data)
+    if answer is None:
+        if callback_data.action in (*_REASON_MENUS, "back"):
+            await _switch_buttons(query, callback_data)
+            await query.answer()
+        else:
+            await query.answer("Неизвестное действие")
         return
 
-    user_status, emoji, status_text = status_info
+    user_status, reason = answer
+    emoji, status_text = _STATUS_INFO[user_status]
+    if reason and user_status != BLOCKED:
+        menu = "mismatch" if user_status == "mismatch" else "reject"
+        label = REASON_TEXTS[menu].get(reason, f" {reason}")  # a renamed reason must not crash an old button
+        status_text = f"{status_text}: {label.split(' ', 1)[-1].lower()}"
 
     try:
         job_object_id = ObjectId(callback_data.job_id)
@@ -83,11 +140,11 @@ async def job_action_callback(query: CallbackQuery, callback_data: JobActionCall
         )
         if answered is not None and user_status in DECIDED:
             user_status = DUPLICATE
-            emoji, status_text = _DECIDED_INFO[answered["user_status"]]
+            emoji, status_text = _STATUS_INFO.get(answered["user_status"], ("✔️", "Уже решено"))
             status_text = f"{status_text} (на {answered.get('platform_name')})"
         doc = await jobs_collection.find_one_and_update(
             {"_id": job_object_id},
-            {"$set": {"user_status": user_status, "status_updated_at": datetime.utcnow()}},
+            {"$set": {"user_status": user_status, "status_reason": reason, "status_updated_at": datetime.utcnow()}},
             return_document=ReturnDocument.AFTER,
         )
         if user_status in DECIDED:
@@ -107,5 +164,5 @@ async def job_action_callback(query: CallbackQuery, callback_data: JobActionCall
 
     await _edit(query, doc, job_status_html(emoji, status_text, datetime.now()))
 
-    logger.info("Job %s marked as %s by user_id=%s", callback_data.job_id, user_status, query.from_user.id)
+    logger.info("Job %s marked as %s (%s) by user_id=%s", callback_data.job_id, user_status, reason, query.from_user.id)
     await query.answer()

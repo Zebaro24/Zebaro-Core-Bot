@@ -53,10 +53,10 @@ src/
 ├── services/
 │   ├── docker/               # DockerManager, DockerProject, DockerContainer
 │   ├── github/               # GithubManager (instance-level dicts!), service, webhook, event_handler
-│   ├── job_searcher/         # container, filter (scoring), dedup, stats, parser, urls, listeners/
+│   ├── job_searcher/         # container, extract, filter (tiers), dedup, stats, digest, parser, urls, listeners/
 │   ├── site_contact.py       # zebaro.dev contact form: model + rate limit
 │   ├── vpn/                  # wg-easy API client, addresses 10.0.0.x, profiles, traffic, installer/ (EXE)
-│   └── speedtest/            # SpeedTestManager
+│   └── speedtest/            # SpeedTestManager (speed.cloudflare.com over httpx)
 ├── interfaces/
 │   ├── tg/
 │   │   ├── formatters/       # HTML formatting lives HERE (not in services)

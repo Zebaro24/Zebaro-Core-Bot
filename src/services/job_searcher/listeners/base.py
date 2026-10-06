@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from bs4.element import Tag
 
@@ -93,6 +94,12 @@ class BaseListeners:
         if not self.date:
             return None
         return self._get_one_by_selector(element, self.date)
+
+    def get_details(self, element: Tag) -> dict[str, Any]:
+        """Fields the card shows apart from the text — work format, countries, experience,
+        English, salary, applicants. Keys are `Job` field names; boards without them return {}.
+        """
+        return {}
 
     def get_link(self, element: Tag) -> str | None:
         if not self.link:

@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from bs4 import Tag
 
@@ -28,10 +29,26 @@ class DouListeners(BaseListeners):
     title = "a.vt"
     company = "a.company"
     description = "div.sh-info"
+    # "Київ, віддалено", "за кордоном, віддалено", "Львів" — where the job is done, and whether
+    # a candidate abroad is taken at all ("за кордоном").
+    location = "span.cities"
+    salary = "span.salary"
     date = "div.date"
     link = "a.vt"
 
     detail_description = ".b-typo.vacancy-section"
+
+    def get_details(self, element: Tag) -> dict[str, Any]:
+        details: dict[str, Any] = {}
+        if salary := self._get_one_by_selector(element, self.salary):
+            details["salary"] = " ".join(salary.split())
+        cities = (self.get_location(element) or "").lower()
+        if cities:
+            details["work_format"] = "remote" if "віддалено" in cities else "office"
+        # No "за кордоном" is not a refusal: companies forget the tick. The filter warns instead.
+        if "за кордоном" in cities:
+            details["countries"] = "за кордоном"
+        return details
 
     def get_job_id(self, element: Tag) -> str:
         el = element.select_one(self.job_id)

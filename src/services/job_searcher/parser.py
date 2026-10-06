@@ -59,9 +59,11 @@ _RENDER_TIMEOUT_MS = 8_000
 # A bot-check interstitial reloads itself after a few seconds; this is the second chance
 # the list gets before the source is written off as blocked.
 _CHALLENGE_WAIT_MS = 6_000
-# Upper bound of vacancy pages opened in one run: the very first run after adding a source
-# can see a hundred new vacancies, and each page costs a couple of seconds.
-MAX_DETAIL_PAGES = 60
+# Upper bound of vacancy pages opened per site in one run: the very first run after adding a
+# source can see a hundred new vacancies, and each page costs a couple of seconds. Per site, not
+# per run: a run-wide 60 went to DOU's eight searches first, and Robota.ua's vacancies arrived
+# with "the site shows the description only on its page" (06.10.2026).
+MAX_DETAIL_PAGES = 40
 
 # Which browser the Playwright server launches for us. Its default is "chromium headless
 # shell" — a stripped build that Cloudflare recognises: Work.ua, Robota.ua and HappyMonday
@@ -195,7 +197,7 @@ class JobParser:
                     logger.exception("Could not open %s, moving on to the next search", url_text)
                     continue
 
-                jobs = self._parse_list(listeners, BeautifulSoup(html_content, "html.parser"))
+                jobs = self._parse_list(listeners, BeautifulSoup(html_content, "html.parser"), url_text)
                 repeated = sum(not self.job_storage.add_job(job) for job in jobs)
 
                 if jobs:
@@ -218,7 +220,7 @@ class JobParser:
             return None
 
     @staticmethod
-    def _parse_list(listeners: BaseListeners, soup: BeautifulSoup) -> list[Job]:
+    def _parse_list(listeners: BaseListeners, soup: BeautifulSoup, search_url: str | None = None) -> list[Job]:
         jobs = []
         for job_elem in listeners.get_all_jobs(soup):
             try:
@@ -232,6 +234,8 @@ class JobParser:
                         location=listeners.get_location(job_elem),
                         date=listeners.get_date(job_elem),
                         link=listeners.get_link(job_elem),
+                        search_url=search_url,
+                        **listeners.get_details(job_elem),
                     )
                 )
             except Exception as e:
@@ -248,13 +252,15 @@ class JobParser:
         are only as good as this text. Call it after the title filter, so pages of vacancies
         that are rejected anyway are never opened.
         """
-        targets = [
-            job
-            for job in jobs
-            if job.link
-            and (listeners := self.get_listeners_by_platform(job.platform_name))
-            and listeners.detail_description
-        ][:MAX_DETAIL_PAGES]
+        per_site: dict[str | None, int] = {}
+        targets = []
+        for job in jobs:
+            listeners = self.get_listeners_by_platform(job.platform_name)
+            if not job.link or not listeners or not listeners.detail_description:
+                continue
+            if per_site.get(job.platform_name, 0) < MAX_DETAIL_PAGES:
+                per_site[job.platform_name] = per_site.get(job.platform_name, 0) + 1
+                targets.append(job)
         if not targets or not await self._playwright_available():
             return
 

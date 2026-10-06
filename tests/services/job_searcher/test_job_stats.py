@@ -55,12 +55,22 @@ async def test_get_weekly_stats_totals_and_by_platform(mocker):
 
     stats = await get_weekly_stats(days=7)
 
-    assert stats["totals"] == {"found": 4, "sent": 2, "review": 1, "rejected_by_filter": 1, "repeats": 1}
-    assert stats["by_status"] == {"applied": 1, "not_interested": 1, "blocked": 0, "pending": 1}
+    assert stats["totals"] == {"found": 4, "top": 0, "sent": 2, "review": 1, "rejected_by_filter": 1, "repeats": 1}
+    assert stats["by_status"] == {"applied": 1, "mismatch": 0, "not_interested": 1, "blocked": 0, "pending": 1}
 
     by_platform = {p["platform"]: {k: v for k, v in p.items() if k != "platform"} for p in stats["by_platform"]}
-    djinni = {"found": 2, "sent": 1, "review": 1, "applied": 1, "not_interested": 0, "blocked": 0, "clicks": 0}
-    work_ua = {"found": 2, "sent": 1, "review": 0, "applied": 0, "not_interested": 1, "blocked": 0, "clicks": 0}
+    empty = {
+        "found": 2,
+        "sent": 0,
+        "review": 0,
+        "applied": 0,
+        "mismatch": 0,
+        "not_interested": 0,
+        "blocked": 0,
+        "clicks": 0,
+    }
+    djinni = {**empty, "sent": 1, "review": 1, "applied": 1}
+    work_ua = {**empty, "sent": 1, "not_interested": 1}
     assert by_platform["Djinni"] == djinni
     assert by_platform["Work.ua"] == work_ua
 
@@ -120,7 +130,7 @@ async def test_get_weekly_stats_db_unavailable_returns_empty_stats(mocker):
 
     stats = await get_weekly_stats(days=7)
 
-    assert stats["totals"] == {"found": 0, "sent": 0, "review": 0, "rejected_by_filter": 0, "repeats": 0}
+    assert stats["totals"] == {"found": 0, "top": 0, "sent": 0, "review": 0, "rejected_by_filter": 0, "repeats": 0}
     assert stats["by_platform"] == []
 
 

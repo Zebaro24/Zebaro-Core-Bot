@@ -25,6 +25,16 @@ class WorkUAListeners(BaseListeners):
             raise ValueError("No job id found in Work.ua element")
         return str(el.get("href")).split("/")[-2]
 
+    def get_company(self, element: Tag) -> str | None:
+        # The selector also matches the "·" between the company and the city, and a recruiter
+        # card has an empty span first — 6 of 17 stored Work.ua vacancies had "·" or "" as the
+        # company. The first one with a letter in it is the name.
+        for span in element.select(self.company or ""):
+            text = span.get_text(" ", strip=True)
+            if any(char.isalpha() for char in text):
+                return text
+        return None
+
     def get_description(self, element: Tag) -> str | None:
         text = super().get_description(element)
         if not text:

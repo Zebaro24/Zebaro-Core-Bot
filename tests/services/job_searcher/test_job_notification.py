@@ -25,9 +25,14 @@ def test_get_reply_markup_uses_action_kb_when_job_id_present():
     callback_actions = [
         button.callback_data for row in markup.inline_keyboard for button in row if button.callback_data
     ]
-    assert len(callback_actions) == 2
+    assert len(callback_actions) == 3
     styles = {button.text: button.style for row in markup.inline_keyboard for button in row}
-    assert styles == {"🔗 Вакансия": "primary", "✅ Откликнулся": "success", "❌ Не интересует": "danger"}
+    assert styles == {
+        "🔗 Вакансия": "primary",
+        "✅ Откликнулся": "success",
+        "🚫 Не прохожу": "danger",
+        "👎 Не интересно": None,
+    }
 
 
 def test_get_reply_markup_falls_back_to_raw_link_when_job_id_missing():
@@ -43,19 +48,15 @@ def test_get_reply_markup_returns_none_when_nothing_available():
     assert _get_reply_markup(Job(), None) is None
 
 
-def test_copies_get_their_own_link_buttons_and_djinni_the_block_button():
+def test_copies_get_their_own_link_buttons():
     job = Job(platform_name="Djinni", copies=[{"platform": "Work.ua", "id": "copy_1"}])
     markup = _get_reply_markup(job, "mongo_id_1")
     assert markup is not None
 
     texts = [button.text for row in markup.inline_keyboard for button in row]
-    assert texts == ["🔗 Вакансия", "🔗 Work.ua", "✅ Откликнулся", "❌ Не интересует", "⛔ Djinni не пускает"]
+    assert texts == ["🔗 Вакансия", "🔗 Work.ua", "✅ Откликнулся", "🚫 Не прохожу", "👎 Не интересно"]
     urls = [button.url for row in markup.inline_keyboard for button in row if button.url]
     assert urls[1].endswith("/jobs/r/copy_1")  # clicks on a copy are tracked too
-
-    dou = _get_reply_markup(Job(platform_name="Dou"), "mongo_id_2")
-    assert dou is not None
-    assert all("не пускает" not in button.text for row in dou.inline_keyboard for button in row)
 
 
 def _job(moderation="sent"):

@@ -37,7 +37,8 @@ LOOKBACK_DAYS = 30
 PLATFORM_PRIORITY = ("Dou", "Work.ua", "Robota.ua", "No Fluff Jobs", "HappyMonday", "BazaIT", "Wellfound", "Djinni")
 _UNKNOWN_RANK = PLATFORM_PRIORITY.index("Djinni") - 0.5
 
-DECIDED = ("applied", "not_interested")
+# "mismatch" — he does not meet the requirements: as final as "not interested" for this group.
+DECIDED = ("applied", "not_interested", "mismatch")
 BLOCKED = "blocked"
 DUPLICATE = "duplicate"
 PENDING = "pending"

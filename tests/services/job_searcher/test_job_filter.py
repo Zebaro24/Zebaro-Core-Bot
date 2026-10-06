@@ -45,6 +45,17 @@ from src.services.job_searcher.filter import (
         ("Software Engineer (Golang, AI)", "TechCorp", "other stack"),
         ("Python Developer", "ФОП Іванов", "company"),
         ("Python Developer", "School ABC", "company"),
+        ("Junior/Trainee React Developer", "TechCorp", "intern"),  # trainee is a skip, junior or not
+        ("Trainee/Junior Full Stack JavaScript Developer (React/Node)", "Insiders", "intern"),
+        ("Programming Instructor for Kids (Python, Roblox Studio, Unity)", "itkingdom", "not a developer role"),
+        ("Інструктор із програмування для дітей 8-18 років (Python, AI)", "itkingdom", "not a developer role"),
+        ("Data Analyst", "PRO.people", "not a developer role"),
+        ("Customer Success Engineer", "YTC", "not a developer role"),
+        ("Fullstack Developer до 1 окремий медичний батальйон", "1 окремий медичний батальйон", "military"),
+        ("Software Engineer", "301 ОБТВР", "military"),
+        ("Інженер БпЛА", "116 ОМБр", "military"),
+        ("Python-розробник", "Військова частина А1234", "military"),
+        ("Розробник у штурмова бригада", "TechCorp", "military"),
     ],
 )
 def test_title_rejects(title, company, reason):
@@ -61,7 +72,8 @@ def test_title_rejects(title, company, reason):
         "Junior/Middle Python Developer",
         "Junior Python Developer",  # a strong junior with two years of work is the owner's level
         "Strong Junior Full Stack Developer",
-        "Junior/Trainee React Developer",  # hires a junior too
+        "Full Stack Developer in Marketing team",  # "marketing" is the team, not the role
+        "Freelance Next.js Developer - Marketing Site & Landing Pages",
         # Titles the owner answered — none of the new rules may catch them.
         "Middle JavaScript Full Stack Developer (Node + React)",  # JavaScript is not Java
         "Full-Stack Software Engineer (BE + FE / BE + Mobile)",
@@ -91,7 +103,7 @@ def test_titles_that_stay(title):
         ("Frontend Developer", "React and TypeScript", "review", ["React"]),
         ("AI Engineer", "LLM agents with LangChain on AWS", "review", []),
         # nothing matches
-        ("DevOps Engineer", "Kubernetes, Terraform, CI/CD", "rejected_by_filter", []),
+        ("DevOps Engineer", "Kubernetes, Terraform, CI/CD. " * 10, "rejected_by_filter", []),
         ("Java Developer", "Spring Boot", "rejected_by_filter", []),
     ],
 )
@@ -137,7 +149,7 @@ def test_prefilter_marks_rejected_and_returns_the_rest():
 def test_classify_all_sets_fields_and_orders_best_first():
     storage = JobStorage()
     jobs = [
-        Job(title="DevOps Engineer", description="Terraform"),
+        Job(title="DevOps Engineer", description="Terraform. " * 30),
         Job(title="Python Developer", description="Django"),
         Job(title="Full Stack", description="Python FastAPI React"),
         Job(title="Senior Python Dev"),
@@ -159,8 +171,8 @@ def test_classify_all_sets_fields_and_orders_best_first():
 def test_classify_job_keeps_the_tuple_interface():
     assert JobFilter.classify_job(Job(title="Python React Developer")) == (
         "sent",
-        30,
-    )  # 2 core x10 + 2 core in title x5
+        35,
+    )  # 2 core x10 + 2 core in title x5 + 5 for the backend side
 
 
 @pytest.mark.parametrize(
@@ -205,10 +217,10 @@ def test_required_years_reads_only_experience_lines(description, years):
     assert required_years(description) == years
 
 
-def test_five_years_of_experience_is_a_senior_position_whatever_the_title_says():
-    job = Job(title="Python Developer", description="Python FastAPI React\n5+ years of experience required")
+def test_four_years_of_experience_is_too_much_whatever_the_title_says():
+    job = Job(title="Python Developer", description="Python FastAPI React\n4+ years of experience required")
 
-    assert evaluate(job).reason == "senior"
+    assert evaluate(job).reason == "experience"
 
 
 @pytest.mark.parametrize(
@@ -249,3 +261,93 @@ def test_classify_all_keeps_the_required_years_for_the_message():
 )
 def test_location_rules(location, reason):
     assert reject_before_opening(Job(title="Full Stack Developer", location=location)) == reason
+
+
+_FULL = "Python, FastAPI and React on the job. " * 8  # long enough to count as a loaded page
+
+
+def test_a_full_match_with_a_known_level_and_no_warnings_is_on_target():
+    job = Job(title="Middle Full Stack Developer (Python / React)", description=_FULL)
+
+    assert evaluate(job).moderation == "top"
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"english": "B2"},  # a warning keeps it out of the top
+        {"platform_name": "Dou", "work_format": "remote"},  # remote without "за кордоном"
+        {"title": "Full Stack Developer (Python / React)"},  # the level is not known
+    ],
+)
+def test_anything_to_check_keeps_a_full_match_at_one_fire(fields):
+    job = Job(**{"title": "Middle Full Stack Developer (Python / React)", "description": _FULL, **fields})
+
+    assert evaluate(job).moderation == "sent"
+
+
+@pytest.mark.parametrize(
+    "fields,reason",
+    [
+        ({"work_format": "office"}, "office"),
+        ({"work_format": "hybrid"}, "office"),
+        ({"countries": "Україна"}, "country"),
+        ({"countries": "Польща"}, "country"),
+        ({"required_years": 4}, "experience"),
+        ({"english": "C1"}, "english"),
+    ],
+)
+def test_the_card_rejects_before_the_page_is_opened(fields, reason):
+    assert reject_before_opening(Job(title="Python Developer", **fields)) == reason
+
+
+@pytest.mark.parametrize("countries", ["Весь світ", "Країни Європи та Україна", "Країни ЄС", "за кордоном", None])
+def test_countries_that_take_a_candidate_from_austria(countries):
+    assert reject_before_opening(Job(title="Python Developer", countries=countries)) is None
+
+
+@pytest.mark.parametrize(
+    "description,reason",
+    [
+        ("Привіт! Ми шукаємо Senior / Lead Full Stack GenAI Engineer. " + _FULL, "senior"),
+        ("English: Advanced (C1). " + _FULL, "english"),
+        ("Робота в офісі у Києві. " + _FULL, "office"),
+        ("5+ years of commercial experience\n3+ years with Go\n" + _FULL, "experience"),
+    ],
+)
+def test_the_description_rejects_what_the_title_hid(description, reason):
+    assert evaluate(Job(title="Full Stack Developer", description=description)).reason == reason
+
+
+def test_a_senior_mentioned_beside_a_middle_is_not_a_senior_position():
+    description = "We are looking for a senior or a strong middle engineer. " + _FULL
+
+    assert evaluate(Job(title="Full Stack Developer", description=description)).reason is None
+
+
+def test_plain_support_is_not_development_but_product_support_is():
+    helpdesk = "Answer customer tickets and calls about the product, Python is a plus. " * 4
+    product = "Fix bugs in our Python codebase and develop new features. " * 4
+
+    assert evaluate(Job(title="Technical Support Engineer", description=helpdesk)).reason == "not a developer role"
+    assert evaluate(Job(title="Фахівець технічна підтримка", description=helpdesk)).reason == "not a developer role"
+    assert evaluate(Job(title="Technical (Python) Support Engineer", description=product)).moderation == "review"
+
+
+def test_a_page_that_did_not_load_is_judged_by_the_title_not_rejected():
+    verdict = evaluate(Job(title="Full Stack Developer", description=""))
+
+    assert verdict.moderation == "review"
+    assert "no_description" in verdict.warnings
+
+
+def test_an_ai_title_is_worth_a_look_without_a_stack_in_the_text():
+    description = "Build production systems with large models for our clients. " * 5
+
+    assert evaluate(Job(title="AI Engineer", description=description)).moderation == "review"
+
+
+def test_the_card_figures_win_over_the_description():
+    job = Job(title="Full Stack Developer", description="5+ years of experience\n" + _FULL, required_years=2)
+
+    assert evaluate(job).reason is None

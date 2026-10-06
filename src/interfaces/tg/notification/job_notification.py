@@ -10,11 +10,15 @@ from src.interfaces.tg.formatters.job import job_to_html, job_to_rich_html
 from src.interfaces.tg.keyboards.job import get_job_action_kb, get_job_link_kb
 from src.services.job_searcher.container import Job, JobStorage
 from src.services.job_searcher.dedup import DUPLICATE, group_duplicates
-from src.services.job_searcher.filter import JobFilter
+from src.services.job_searcher.filter import REJECTED, SENT, TOP, JobFilter
 from src.services.job_searcher.parser import JobParser
 from src.services.job_searcher.urls import urls
 
 logger = logging.getLogger("tg.notification.job")
+
+# Telegram's 🔥 message effect: a vacancy right on target arrives with it. The plain fallback
+# goes without — an unknown effect would be the reason the rich one was refused.
+FIRE_EFFECT_ID = "5104841245755180586"
 
 # How many flood-control waits one vacancy may take before it is given up on.
 _SEND_ATTEMPTS = 5
@@ -30,7 +34,7 @@ def is_job_search_running() -> bool:
 
 def _get_reply_markup(job: Job, job_id: str | None) -> InlineKeyboardMarkup | None:
     if job_id:
-        return get_job_action_kb(job_id, job.platform_name, job.copies)
+        return get_job_action_kb(job_id, job.copies)
     if job.link:
         # save_jobs_to_db() did not return an id (the DB is down): without the raw link the
         # vacancy could not be opened at all — the message text carries no link.
@@ -40,7 +44,7 @@ def _get_reply_markup(job: Job, job_id: str | None) -> InlineKeyboardMarkup | No
 
 async def _deliver(bot: Bot, job: Job, reply_markup: InlineKeyboardMarkup | None) -> None:
     # Only "your stack" rings; partial matches arrive silently and wait to be scrolled.
-    silent = job.moderation != "sent"
+    silent = job.moderation not in (TOP, SENT)
     try:
         await bot.send_rich_message(
             chat_id=settings.telegram_admin_id,
@@ -48,6 +52,7 @@ async def _deliver(bot: Bot, job: Job, reply_markup: InlineKeyboardMarkup | None
             rich_message=InputRichMessage(html=job_to_rich_html(job)),
             reply_markup=reply_markup,
             disable_notification=silent,
+            message_effect_id=FIRE_EFFECT_ID if job.moderation == TOP else None,
         )
     except TelegramBadRequest:
         logger.warning("Telegram refused the rich message for %s, sending the plain version", job, exc_info=True)
@@ -111,7 +116,7 @@ async def _run_job_notification(bot: Bot) -> int:
 
     sent = 0
     for job, job_id in zip(job_storage.jobs, ids):
-        if job.moderation == "rejected_by_filter" or job.user_status == DUPLICATE:
+        if job.moderation == REJECTED or job.user_status == DUPLICATE:
             continue
         if await _send_job(bot, job, _get_reply_markup(job, job_id)):
             sent += 1

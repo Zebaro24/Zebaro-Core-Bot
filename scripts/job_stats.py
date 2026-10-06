@@ -8,7 +8,17 @@
                                 --reason senior --days 30 --limit 50
     python scripts/job_stats.py applied --days 90 --out applied.md
                                 vacancies you applied to, with descriptions - ready for an AI
-    (search takes --full too: the same blocks with descriptions instead of a table)
+    (search takes --full too: the same blocks with descriptions instead of a table;
+     --status-reason experience and --search-url djinni narrow it further)
+    python scripts/job_stats.py searches --days 30   every search URL: found, sent, answered
+    python scripts/job_stats.py digest --days 7      the weekly digest's numbers
+    python scripts/job_stats.py audit --days 30      your "no" answers grouped by reason: where the
+                                filter let through what it should have caught
+    python scripts/job_stats.py fields --days 7      what the parsers read off each vacancy: format,
+                                countries, years, English, salary, applicants, warnings
+    poetry run python scripts/job_stats.py replay --days 60
+                                the filter of this working tree over the stored vacancies, against
+                                your answers: what it would now skip that you applied to
     python scripts/job_stats.py --json          raw JSON (works with every command)
 
 Token: JOB_STATS_API_TOKEN from the environment, otherwise from
@@ -64,6 +74,17 @@ def fetch(path: str) -> Any:
         sys.exit(f"HTTP {e.code} на {base + path}: {hints.get(e.code, e.reason)}")
     except urllib.error.URLError as e:
         sys.exit(f"Не достучался до {base}: {e.reason}")
+
+
+def fetch_all(params: dict[str, Any], cap: int = 5000) -> list[dict[str, Any]]:
+    """Every vacancy the search matches, 500 at a time (the API's page size)."""
+    docs: list[dict[str, Any]] = []
+    while len(docs) < cap:
+        page = fetch("/jobs/search?" + urllib.parse.urlencode({**params, "limit": 500, "skip": len(docs)}))
+        docs += page
+        if len(page) < 500:
+            break
+    return docs
 
 
 def table(rows: list[list[Any]], headers: list[str]) -> str:
@@ -174,6 +195,91 @@ def render_full(jobs: list[dict[str, Any]]) -> str:
     return f"# Вакансии: {len(jobs)}\n\n" + "\n\n---\n\n".join(blocks) + "\n"
 
 
+def print_searches(rows: list[dict[str, Any]]) -> None:
+    def rate(row: dict[str, Any]) -> str:
+        return f"{row['apply_rate']:.0%}" if row.get("apply_rate") is not None else "-"
+
+    data = [
+        [r["label"][:45], r["found"], r["surfaced"], r["top"], r["applied"], r["mismatch"], r["not_interested"],
+         r["pending"], rate(r), ", ".join(f"{k} {v}" for k, v in list(r["reasons"].items())[:3])]
+        for r in rows
+    ]  # fmt: skip
+    print(table(data, ["search", "found", "sent", "top", "appl", "mism", "ni", "pend", "rate", "filtered out"]))
+
+
+def print_digest(digest: dict[str, Any]) -> None:
+    print(json.dumps(digest, ensure_ascii=False, indent=2))
+
+
+def print_audit(jobs: list[dict[str, Any]]) -> None:
+    """Answers grouped by their reason: each group is a rule the filter could learn."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for j in jobs:
+        blocked = j.get("user_status") == "blocked"
+        status = "mismatch" if blocked else j.get("user_status")
+        reason = "site" if blocked else j.get("status_reason") or "-"
+        groups.setdefault(f"{status} / {reason}", []).append(j)
+    for key, items in sorted(groups.items(), key=lambda item: -len(item[1])):
+        print(f"\n== {key}: {len(items)}")
+        for j in items[:25]:
+            facts = " ".join(
+                f"{k}={j[k]}" for k in ("moderation", "required_years", "english", "work_format", "countries")
+                if j.get(k) not in (None, "", [])
+            )  # fmt: skip
+            print(f"  {str(j.get('title', ''))[:55]:55}  {str(j.get('platform_name', ''))[:8]:8}  {facts}")
+
+
+def print_fields(jobs: list[dict[str, Any]]) -> None:
+    rows = [
+        [str(j.get("title", ""))[:40], str(j.get("platform_name", ""))[:8], str(j.get("moderation", ""))[:6],
+         j.get("work_format") or "", str(j.get("countries") or "")[:20], j.get("required_years") or "",
+         j.get("english") or "", str(j.get("salary") or "")[:14], j.get("applicants") or "",
+         ",".join(j.get("warnings") or []), j.get("filter_reason") or ""]
+        for j in jobs
+    ]  # fmt: skip
+    headers = ["title", "platform", "mod", "format", "countries", "yrs", "eng", "salary", "appl", "warnings", "reason"]
+    print(table(rows, headers))
+
+
+def replay(days: int) -> None:
+    """Run the filter of this working tree over the stored vacancies and compare with the answers.
+
+    Needs the project's environment (poetry run): it imports src/. Nothing is written anywhere.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    try:
+        from src.services.job_searcher.container import Job
+        from src.services.job_searcher.filter import evaluate
+    except ImportError as e:
+        sys.exit(f"replay imports src/ - run it as `poetry run python scripts/job_stats.py replay` ({e})")
+
+    docs = fetch_all({"days": days, "with_description": "true"})
+    counts: dict[tuple[str, str], int] = {}
+    lost: list[tuple[str | None, dict[str, Any]]] = []
+    caught = 0
+    for doc in docs:
+        status = doc.get("user_status") or "pending"
+        # Staleness is about today, not the day the vacancy was found.
+        # Years and English stored by an older filter came from the text: read them again. Only
+        # Djinni's are the card's own.
+        fresh = {} if doc.get("platform_name") == "Djinni" else {"required_years": None, "english": None}
+        verdict = evaluate(Job.from_doc({**doc, "date": None, **fresh}))
+        counts[(status, verdict.moderation)] = counts.get((status, verdict.moderation), 0) + 1
+        if status == "applied" and verdict.moderation == "rejected_by_filter":
+            lost.append((verdict.reason, doc))
+        if status in ("not_interested", "mismatch", "blocked") and verdict.moderation == "rejected_by_filter":
+            caught += 1
+
+    print(f"Вакансий: {len(docs)} за {days} дн.\n")
+    tiers = ["top", "sent", "review", "rejected_by_filter"]
+    statuses = sorted({status for status, _ in counts})
+    print(table([[s] + [counts.get((s, t), 0) for t in tiers] for s in statuses], ["status"] + tiers))
+    print(f"\nОтказов, которые фильтр теперь отсеял бы сам: {caught}")
+    print(f"Откликов, которые фильтр теперь отсеял бы: {len(lost)}")
+    for reason, doc in lost:
+        print(f"  [{reason}] {doc.get('title')} - {doc.get('company')}  ({doc.get('_id')})")
+
+
 def main() -> None:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -196,7 +302,14 @@ def main() -> None:
     search.add_argument("--moderation", help="sent / review / rejected_by_filter")
     search.add_argument("--status", help="pending / applied / not_interested / blocked")
     search.add_argument("--reason", help="подстрока причины отсева")
+    search.add_argument("--status-reason", help="experience / location / english / site / stack / role / ...")
+    search.add_argument("--search-url", help="подстрока URL поиска, который нашёл вакансию")
     applied = sub.add_parser("applied", parents=[common], help="отклики с описаниями - для анализа ИИ")
+    sub.add_parser("searches", parents=[common], help="статистика по каждому URL поиска")
+    sub.add_parser("digest", parents=[common], help="цифры недельного дайджеста")
+    sub.add_parser("audit", parents=[common], help="ответы «не прохожу» / «не интересно» по причинам")
+    sub.add_parser("fields", parents=[common], help="что парсеры вытащили из вакансий")
+    sub.add_parser("replay", parents=[common], help="фильтр из рабочей копии против твоих ответов")
     for p in (search, applied):
         p.add_argument("--limit", type=int, default=50)
         p.add_argument("--full", action="store_true", help="блоками с описаниями, а не таблицей")
@@ -210,6 +323,21 @@ def main() -> None:
         data = fetch("/jobs/review")
     elif what == "job":
         data = fetch("/jobs/job/" + urllib.parse.quote(args.id, safe=""))
+    elif what == "searches":
+        data = fetch(f"/jobs/stats/searches?days={args.days or 30}")
+    elif what == "digest":
+        data = fetch(f"/jobs/stats/digest?days={args.days or 7}")
+    elif what == "audit":
+        data = [
+            doc
+            for status in ("mismatch", "blocked", "not_interested")
+            for doc in fetch_all({"days": args.days or 30, "status": status})
+        ]
+    elif what == "fields":
+        data = fetch_all({"days": args.days or 7})
+    elif what == "replay":
+        replay(args.days or 60)
+        return
     elif what in ("search", "applied"):
         full = what == "applied" or args.full
         params = {
@@ -218,6 +346,8 @@ def main() -> None:
             "moderation": getattr(args, "moderation", None),
             "status": "applied" if what == "applied" else args.status,
             "reason": getattr(args, "reason", None),
+            "status_reason": getattr(args, "status_reason", None),
+            "search_url": getattr(args, "search_url", None),
             "days": args.days or (90 if what == "applied" else 30),
             "limit": args.limit,
             "with_description": "true" if full else None,
@@ -237,7 +367,11 @@ def main() -> None:
     if args.json:
         print(json.dumps(data, ensure_ascii=False, indent=2))
     else:
-        {"weekly": print_weekly, "review": print_review, "job": print_job}[what](data)
+        printers = {
+            "weekly": print_weekly, "review": print_review, "job": print_job, "searches": print_searches,
+            "digest": print_digest, "audit": print_audit, "fields": print_fields,
+        }  # fmt: skip
+        printers[what](data)
 
 
 if __name__ == "__main__":

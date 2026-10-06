@@ -1,5 +1,8 @@
+from datetime import datetime
+
 from bs4 import Tag
 
+from src.services.job_searcher import extract
 from src.services.job_searcher.listeners.base import BaseListeners
 
 
@@ -22,6 +25,12 @@ class RobotaUAListeners(BaseListeners):
         if not el:
             raise ValueError("No job id found in Robota.ua element")
         return str(el.get("href")).split("/")[-1][7:]
+
+    def get_date(self, element: Tag) -> datetime | None:
+        # "2 дні тому", "19 годин тому" — stored as text, it broke the staleness check and the
+        # date in the message (06.10.2026).
+        raw = super().get_date(element)
+        return extract.relative_date(raw) if isinstance(raw, str) else None
 
     def get_link(self, element: Tag) -> str:
         el = element.select_one(self.link)

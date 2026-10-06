@@ -56,9 +56,9 @@ def _query():
     return query
 
 
-async def _press(action, doc):
+async def _press(action, doc, reason=""):
     query = _query()
-    await callback.job_action_callback(query, JobActionCallback(action=action, job_id=str(doc["_id"])))
+    await callback.job_action_callback(query, JobActionCallback(action=action, job_id=str(doc["_id"]), reason=reason))
     return query
 
 
@@ -82,7 +82,7 @@ async def test_a_second_answer_on_another_copy_is_not_counted_again(collection):
     doc = _doc("Djinni", group_id=str(root["_id"]))
     _setup(collection, doc, [root, doc])
 
-    query = await _press("reject", doc)
+    query = await _press("reject", doc, "role")
 
     # Stored as a repeat, and the message says what was decided and where.
     assert collection.find_one_and_update.await_args.args[1]["$set"]["user_status"] == "duplicate"
@@ -99,4 +99,78 @@ async def test_djinni_blocking_keeps_the_group_open(collection):
 
     assert collection.find_one_and_update.await_args.args[1]["$set"]["user_status"] == "blocked"
     collection.update_many.assert_not_awaited()
-    assert "Не пускает" in query.message.edit_text.await_args.args[0]
+    assert "Сайт не пускает" in query.message.edit_text.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_a_no_without_a_reason_opens_the_reasons_in_the_same_message(collection):
+    doc = _doc("Dou")
+    _setup(collection, doc, [doc])
+    query = _query()
+    query.message.edit_reply_markup = AsyncMock()
+
+    await callback.job_action_callback(query, JobActionCallback(action="mismatch", job_id=str(doc["_id"])))
+
+    collection.find_one_and_update.assert_not_awaited()
+    markup = query.message.edit_reply_markup.await_args.kwargs["reply_markup"]
+    texts = [button.text for row in markup.inline_keyboard for button in row]
+    assert "🎓 Опыт / уровень" in texts and "↩️ Назад" in texts
+
+
+@pytest.mark.asyncio
+async def test_the_reason_is_stored_with_the_answer(collection):
+    doc = _doc("Dou")
+    _setup(collection, doc, [doc])
+
+    query = await _press("mismatch", doc, "experience")
+
+    stored = collection.find_one_and_update.await_args.args[1]["$set"]
+    assert stored["user_status"] == "mismatch" and stored["status_reason"] == "experience"
+    assert "Не прохожу: опыт / уровень" in query.message.edit_text.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_the_site_refusing_keeps_its_own_status(collection):
+    doc = _doc("Djinni")
+    _setup(collection, doc, [doc])
+
+    await _press("mismatch", doc, "site")
+
+    stored = collection.find_one_and_update.await_args.args[1]["$set"]
+    assert stored["user_status"] == "blocked" and stored["status_reason"] == "site"
+    collection.update_many.assert_not_awaited()  # the group stays open for a copy elsewhere
+
+
+def _real_query(data: str):
+    from aiogram.types import CallbackQuery, User
+
+    return CallbackQuery(id="1", from_user=User(id=1, is_bot=False, first_name="O"), chat_instance="c", data=data)
+
+
+@pytest.mark.asyncio
+async def test_buttons_of_messages_sent_before_the_reasons_still_answer(collection):
+    from src.interfaces.tg.keyboards.job import LegacyJobCallback
+
+    doc = _doc("Djinni")
+    _setup(collection, doc, [doc])
+    raw = _real_query(f"job:block:{doc['_id']}")
+
+    # The new class refuses two parts — the legacy one takes them.
+    assert await JobActionCallback.filter()(raw) is False
+    matched = await LegacyJobCallback.filter()(raw)
+    assert matched
+
+    await callback.legacy_job_action_callback(_query(), matched["callback_data"])
+
+    stored = collection.find_one_and_update.await_args.args[1]["$set"]
+    assert stored["user_status"] == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_new_buttons_are_not_taken_by_the_legacy_filter():
+    from src.interfaces.tg.keyboards.job import LegacyJobCallback
+
+    raw = _real_query(JobActionCallback(action="mismatch", job_id="a" * 24, reason="english").pack())
+
+    assert await LegacyJobCallback.filter()(raw) is False
+    assert await JobActionCallback.filter()(raw)

@@ -1,24 +1,30 @@
-"""Relevance of a vacancy for the owner: skip, "partial match" or "your stack".
+"""Relevance of a vacancy for the owner: skip, "partial", "your stack" or "right on target".
 
 Two passes, because the full description costs a page load:
 
-1. `prefilter_all` — the list card only: title, company, location and date. Seniority that
-   does not fit (senior, lead, internships...), roles that are not development at all (QA,
-   recruiter...), a title built on another main stack (Java, .NET, PHP, Angular...), an office
-   or another continent and months-old postings are rejected here, and their
-   vacancy pages are never opened.
-2. `classify_all` — after the parser fetched full descriptions. Rejects what asks for five
-   years of experience whatever the title said, then looks for the core stack in the title
-   and the whole description and puts the vacancy into a tier.
+1. `prefilter_all` — the list card only: title, company, location, date and whatever the board
+   shows apart from the text (Djinni's work format, countries, years and English; DOU's
+   cities). Seniority that does not fit, internships, roles that are not development, a title
+   built on another main stack, military units, an office, a country list without Austria and
+   months-old postings are rejected here, and their vacancy pages are never opened.
+2. `classify_all` — after the parser fetched full descriptions. Reads what the card did not
+   say out of the text (services/job_searcher/extract.py), rejects what asks for too much,
+   then looks for the core stack and puts the vacancy into a tier.
 
-Tiers (stored in `Job.moderation`, the values stats and the API already use):
-  "sent"                🔥 your stack: a backend core (Python / FastAPI) AND a frontend
-                        core (React / Next.js) both appear
+Tiers (stored in `Job.moderation`, the values stats and the API use):
+  "top"                 🔥🔥🔥 right on target: your stack on both sides, the level fits, and
+                        nothing in the conditions needs a second look
+  "sent"                🔥 your stack: a backend core (Python / FastAPI) AND a frontend core
+                        (React / Next.js) both appear
   "review"              👀 partial: at least one core technology, or two bonus ones
   "rejected_by_filter"  not sent; `Job.filter_reason` says why
 
-`relevance_score` only orders messages inside a tier: more core technologies first, a core
-technology in the title counts extra, bonus technologies break ties.
+`Job.warnings` lists what may not fit and is worth a look before applying — B2 English,
+remote without "за кордоном", a line about living in Ukraine. A warning keeps a vacancy out of
+"top" but never rejects it.
+
+The owner's limits (06.10.2026): remote only, from Austria; English B1 (B2 in his Djinni
+profile); up to three years of experience asked.
 """
 
 import logging
@@ -26,9 +32,13 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from src.services.job_searcher import extract
 from src.services.job_searcher.container import Job, JobStorage
+from src.services.job_searcher.extract import required_years
 
 logger = logging.getLogger("job_searcher.filter")
+
+__all__ = ["required_years"]  # re-exported: the tests and older callers import it from here
 
 # The owner's main stack. A vacancy with both sides of it is the one to open first.
 CORE_STACK: dict[str, tuple[str, ...]] = {
@@ -53,25 +63,41 @@ BONUS_STACK: dict[str, tuple[str, ...]] = {
     "RAG": ("rag",),
 }
 
+AI_TITLE_WORDS = ("ai", "llm", "genai", "agentic", "ml", "machine learning")
+
 # Checked in the title only. The description of almost any vacancy mentions "senior engineers
-# on the team", so looking there would reject everything.
+# on the team", so looking there would reject everything — extract.senior_in_description
+# looks only for "we are looking for a senior".
 SENIOR_WORDS = ("senior", "sr", "сеньйор", "сеньор")
 LEAD_WORDS = (
     "lead", "team lead", "tech lead", "head", "principal", "staff", "architect", "director",
     "cto", "vp", "тімлід", "тимлид", "лід", "керівник", "leader",
 )  # fmt: skip
 # Juniors are welcome: a strong junior with two years of work is the owner's level. An
-# internship is not — it is a course with a stipend, not a job.
-INTERN_WORDS = ("trainee", "intern", "internship", "стажер", "стажёр", "стажист", "стажування", "стажировка")
+# internship or a trainee position is not — "Trainee/Junior" included (06.10.2026).
+INTERN_WORDS = (
+    "trainee", "intern", "internship", "стажер", "стажёр", "стажист", "стажування", "стажировка",
+)  # fmt: skip
 JUNIOR_WORDS = ("junior", "jr", "джуніор", "джун")
 MIDDLE_WORDS = ("middle", "mid", "мідл", "мидл")
 WRONG_ROLE_WORDS = (
-    "qa", "aqa", "tester", "test engineer", "ai training", "data labeling", "розмітка",
-    "викладач", "тренер", "mentor", "ментор", "odoo", "1c", "1с", "recruiter", "рекрутер",
-    "sales", "marketing", "manager", "менеджер", "designer", "дизайнер", "business analyst",
-    "systems analyst", "advocate", "consultant", "content", "writer", "copywriter", "motion",
-    "video", "security",
+    "qa", "aqa", "tester", "test engineer", "sdet", "ai training", "data labeling", "розмітка",
+    "annotator", "анотатор", "викладач", "тренер", "mentor", "ментор", "instructor", "інструктор",
+    "teacher", "tutor", "for kids", "для дітей", "odoo", "1c", "1с", "recruiter", "рекрутер",
+    "sales", "manager", "менеджер", "product owner", "designer", "дизайнер", "business analyst",
+    "systems analyst", "data analyst", "аналітик", "analytics engineer", "advocate", "consultant",
+    "content", "creator", "writer", "copywriter", "motion", "security", "customer success",
+    "growth hacker", "engagement specialist", "бухгалтер", "accountant", "artist", "illustrator",
+    "talent acquisition", "hr",
 )  # fmt: skip
+# "Support Engineer" is a developer when the job is fixing and improving the product, and a
+# help desk otherwise — told apart by the description (see _plain_support).
+# Whole words: a keyword never matches with a letter after it, so every form is listed.
+SUPPORT_WORDS = ("support", "сапорт", "підтримка", "підтримки", "підтримку", "підтримці")
+_DEVELOPER_WORK = re.compile(
+    r"\b(develop\w*|bug ?fix\w*|fix(ing)? bugs|codebase|pull requests?|розробк\w*|розробля\w*|"
+    r"виправля\w*|доробк\w*|implement\w*)\b"
+)
 # A title that names another main stack. The owner answered none of these in a week of
 # decisions (0 of ~25 by 23.09.2026) even with React beside it: "React and C#", "Python &
 # Angular". Node.js is not here — "Node + React" full-stack positions he does take.
@@ -81,6 +107,14 @@ OTHER_STACK_WORDS = (
     "wordpress", "webflow",
 )  # fmt: skip
 WRONG_COMPANY_WORDS = ("фоп", "school")
+# Military units hire through the same boards: "Fullstack Developer до 1 окремий медичний
+# батальйон", "Інженер БпЛА — 116 ОМБр". Never for the owner.
+MILITARY_WORDS = (
+    "обр", "омбр", "обтвр", "огшб", "ошб", "батальйон", "бригада", "бригаду", "бригади", "зсу", "тро",
+    "бпла", "полк", "нгу", "дшв", "сил оборони",
+    "військова", "військовий", "військової", "військову", "військових", "військові", "військовою",
+    "штурмова", "штурмовий", "штурмової", "штурмову", "штурмових", "штурмові",
+)  # fmt: skip
 
 # Wellfound and the other international boards list vacancies hiring on another continent —
 # "Remote only • India" is a job for someone living there, not a remote job for Europe.
@@ -91,31 +125,33 @@ FAR_LOCATION_WORDS = (
     "jakarta", "vietnam", "hanoi", "argentina", "brazil", "mexico", "colombia", "chile",
     "latam", "latin america", "south america", "south africa", "united states", "usa", "canada",
 )  # fmt: skip
-# Only Wellfound fills the location. A remote job says so ("Remote • Europe", "Onsite or
-# remote • London"); a bare "Dublin" or "In office • London" means an office — all of those
-# were turned down.
+# A location line that does not say remote is an office: "Dublin", "In office • London", DOU's
+# "Київ, Львів" — all of those were turned down.
 REMOTE_WORDS = ("remote", "віддалено", "дистанційно", "удаленно", "relocation", "релокація")
 
 # A vacancy still hanging on the board months later is either filled or never was real.
 MAX_AGE_DAYS = 60
 
-# Years of experience that make it a senior position whatever the title says.
-SENIOR_YEARS = 5
-# Only a figure asked *of the candidate* counts, so it has to carry a "+", a range or a word
-# of minimum. "Our team has 5 years of experience" is not a requirement for five years.
-_YEAR_WORDS = r"(?:years?|yrs?|років|роки|рік|лет|года|год)"
-_MIN_WORDS = r"(?:at least|minimum|min\.?|starting from|від|от|не мен\w+|щонайменш\w*|мінімум|минимум)"
-_YEARS_PATTERNS = (
-    re.compile(rf"(\d{{1,2}})\s*\+\s*{_YEAR_WORDS}"),  # "5+ years"
-    re.compile(rf"(\d{{1,2}})\s*[-–—]\s*\d{{1,2}}\s*{_YEAR_WORDS}"),  # "3-5 years" — the bar is 3
-    re.compile(rf"{_MIN_WORDS}\s+(\d{{1,2}})\s*\+?\s*{_YEAR_WORDS}"),  # "від 5 років"
-)
-_EXPERIENCE_WORDS = ("experience", "досвід", "опыт", "exp.")
+# The most experience the owner can show: 4 years asked is already too much (06.10.2026). Of
+# the vacancies asking 4+ he applied to 7 and turned down 38.
+MAX_YEARS = 3
+# His English: B2 is the edge (a warning), anything above is a skip.
+MAX_ENGLISH = "B2"
+# Less text than this is a page that did not load, not a vacancy without a stack.
+MIN_DESCRIPTION = 200
 
+TOP = "top"
 SENT = "sent"
 REVIEW = "review"
 REJECTED = "rejected_by_filter"
-TIER_ORDER = {SENT: 0, REVIEW: 1, REJECTED: 2}
+TIER_ORDER = {TOP: 0, SENT: 1, REVIEW: 2, REJECTED: 3}
+SURFACED = (TOP, SENT, REVIEW)
+
+# Warnings: what to check on the vacancy page before applying.
+WARN_ENGLISH = "english"  # B2 asked, the owner has B1
+WARN_ABROAD = "abroad"  # remote, but the board does not say a candidate abroad is fine
+WARN_UKRAINE = "ukraine"  # the description talks about being in Ukraine
+WARN_NO_DESCRIPTION = "no_description"  # the page did not load: judged by the title alone
 
 # Keywords that need more than a word boundary.
 _SPECIAL_PATTERNS = {
@@ -150,6 +186,8 @@ class Verdict:
     bonus: list[str] = field(default_factory=list)
     reason: str | None = None
     years: int | None = None
+    english: str | None = None
+    warnings: list[str] = field(default_factory=list)
 
 
 _LEVELS = (("Junior", JUNIOR_WORDS), ("Middle", MIDDLE_WORDS), ("Senior", SENIOR_WORDS))
@@ -167,6 +205,8 @@ def title_reject_reason(title: str | None, company: str | None) -> str | None:
     company = (company or "").lower()
     has_middle = _contains_any(title, MIDDLE_WORDS)
 
+    if _contains_any(title, MILITARY_WORDS) or _contains_any(company, MILITARY_WORDS):
+        return "military"
     if _contains_any(company, WRONG_COMPANY_WORDS):
         return "company"
     if _contains_any(title, WRONG_ROLE_WORDS):
@@ -178,8 +218,7 @@ def title_reject_reason(title: str | None, company: str | None) -> str | None:
     # "Middle/Senior" still hires a middle — that stays.
     if _contains_any(title, SENIOR_WORDS) and not has_middle:
         return "senior"
-    # "Junior/Trainee" hires a junior too; a bare "Trainee" or "Intern" does not.
-    if _contains_any(title, INTERN_WORDS) and not has_middle and not _contains_any(title, JUNIOR_WORDS):
+    if _contains_any(title, INTERN_WORDS):
         return "intern"
     return None
 
@@ -189,20 +228,13 @@ def _is_stale(date: str | datetime | None) -> bool:
     return isinstance(date, datetime) and (datetime.now() - date).days > MAX_AGE_DAYS
 
 
-def required_years(description: str | None) -> int | None:
-    """The lowest number of years the vacancy asks for, or None if it does not say.
-
-    Only lines that talk about experience count, and only figures written as a requirement
-    ("5+ years", "3-5 years", "від 5 років") — a description mentioning "10 years on the
-    market" is not asking for ten years of work. The lowest figure is the entry bar.
-    """
-    years: list[int] = []
-    for line in (description or "").lower().split("\n"):
-        if not any(word in line for word in _EXPERIENCE_WORDS):
-            continue
-        for pattern in _YEARS_PATTERNS:
-            years += [int(match) for match in pattern.findall(line)]
-    return min(years) if years else None
+def _too_much(years: int | None, english: str | None) -> str | None:
+    if years is not None and years > MAX_YEARS:
+        return "experience"
+    rank, limit = extract.english_rank(english), extract.english_rank(MAX_ENGLISH)
+    if rank is not None and limit is not None and rank > limit:
+        return "english"
+    return None
 
 
 def reject_before_opening(job: Job) -> str | None:
@@ -215,9 +247,38 @@ def reject_before_opening(job: Job) -> str | None:
         return "location"
     if location and not _contains_any(location, REMOTE_WORDS):
         return "office"
+    if job.work_format in ("office", "hybrid"):
+        return "office"
+    if extract.abroad_ok(job.countries) is False:
+        return "country"  # "Україна", "Польща" — Djinni does not let an application from Austria in
+    if reason := _too_much(job.required_years, job.english):
+        return reason
     if _is_stale(job.date):
         return "stale"
     return None
+
+
+def _plain_support(title: str, description: str) -> bool:
+    return _contains_any(title, SUPPORT_WORDS) and _DEVELOPER_WORK.search(description) is None
+
+
+def _warnings(job: Job, description: str, english: str | None) -> list[str]:
+    warnings = []
+    if english == MAX_ENGLISH:
+        warnings.append(WARN_ENGLISH)
+    if job.platform_name == "Dou" and job.work_format == "remote" and not job.countries:
+        warnings.append(WARN_ABROAD)
+    if extract.ukraine_only_text(description):
+        warnings.append(WARN_UKRAINE)
+    return warnings
+
+
+def _level_fits(job: Job, years: int | None) -> bool:
+    """The level is known and is the owner's: years asked, or the title saying junior / middle."""
+    if years is not None:
+        return years <= MAX_YEARS
+    level = title_level(job.title) or ""
+    return "Junior" in level or "Middle" in level
 
 
 def evaluate(job: Job) -> Verdict:
@@ -225,24 +286,50 @@ def evaluate(job: Job) -> Verdict:
     if reason:
         return Verdict(REJECTED, reason=reason)
 
-    # The title said middle, the description asks for five years: still a senior position.
-    years = required_years(job.description)
-    if years and years >= SENIOR_YEARS:
-        return Verdict(REJECTED, reason="senior", years=years)
-
+    description = (job.description or "").lower()
     title = (job.title or "").lower()
-    text = f"{title}\n{(job.description or '').lower()}"
+    # The card's figures first: they are the ones the site checks an application against.
+    years = job.required_years if job.required_years is not None else required_years(job.description)
+    english = job.english or extract.english_level(job.description)
+
+    def rejected(why: str) -> Verdict:
+        return Verdict(REJECTED, reason=why, years=years, english=english)
+
+    if reason := _too_much(years, english):
+        return rejected(reason)
+    if extract.senior_in_description(job.description):
+        return rejected("senior")
+    if extract.office_only(job.description):
+        return rejected("office")
+    if _plain_support(title, description):
+        return rejected("not a developer role")
+
+    text = f"{title}\n{description}"
     stack = _found(text, CORE_STACK)
     bonus = _found(text, BONUS_STACK)
-    score = 10 * len(stack) + 5 * len(_found(title, CORE_STACK)) + 2 * len(bonus)
-
     backend = any(name in stack for name in BACKEND_CORE)
     frontend = any(name in stack for name in FRONTEND_CORE)
+    # Backend first: frontend-only and Node + React positions come last in their tier — the
+    # owner takes them, but they are not what he is after.
+    score = 10 * len(stack) + 5 * len(_found(title, CORE_STACK)) + 2 * len(bonus) + (5 if backend else 0)
+    warnings = _warnings(job, description, english)
+
+    def verdict(moderation: str) -> Verdict:
+        return Verdict(moderation, score, stack, bonus, years=years, english=english, warnings=warnings)
+
     if backend and frontend:
-        return Verdict(SENT, score, stack, bonus, years=years)
-    if stack or len(bonus) >= 2:
-        return Verdict(REVIEW, score, stack, bonus, years=years)
-    return Verdict(REJECTED, score, stack, bonus, reason="no stack match", years=years)
+        on_target = not warnings and _level_fits(job, years) and bool(_found(title, CORE_STACK) or "full" in title)
+        return verdict(TOP if on_target else SENT)
+    # An AI position is worth a look on its title alone: the owner applied to "AI Engineer" and
+    # "Agentic AI Engineer" whose text named neither Python nor a framework.
+    if stack or len(bonus) >= 2 or _contains_any(title, AI_TITLE_WORDS):
+        return verdict(REVIEW)
+    if len(description) < MIN_DESCRIPTION and title:
+        # The page did not load (a bot check, a timeout): the title passed every rule, so the
+        # owner judges it — "no stack match" here used to hide plain "Full Stack Developer".
+        warnings.append(WARN_NO_DESCRIPTION)
+        return verdict(REVIEW)
+    return Verdict(REJECTED, score, stack, bonus, reason="no stack match", years=years, english=english)
 
 
 class JobFilter:
@@ -250,7 +337,7 @@ class JobFilter:
         self.job_storage = job_storage
 
     def prefilter_all(self) -> list[Job]:
-        """Reject by title and company. Returns the vacancies worth opening."""
+        """Reject by the list card. Returns the vacancies worth opening."""
         survivors = []
         for job in self.job_storage.jobs:
             reason = reject_before_opening(job)
@@ -258,25 +345,21 @@ class JobFilter:
                 job.moderation, job.relevance_score, job.filter_reason = REJECTED, 0, reason
             else:
                 survivors.append(job)
-        logger.info("Title filter: %d of %d left", len(survivors), len(self.job_storage.jobs))
+        logger.info("Card filter: %d of %d left", len(survivors), len(self.job_storage.jobs))
         return survivors
 
     def classify_all(self) -> None:
-        counts = {SENT: 0, REVIEW: 0, REJECTED: 0}
+        counts = {TOP: 0, SENT: 0, REVIEW: 0, REJECTED: 0}
         for job in self.job_storage.jobs:
             verdict = evaluate(job)
-            job.moderation = verdict.moderation
-            job.relevance_score = verdict.score
-            job.matched_stack = verdict.stack
-            job.matched_bonus = verdict.bonus
-            job.required_years = verdict.years
-            job.filter_reason = verdict.reason
+            apply_verdict(job, verdict)
             counts[verdict.moderation] += 1
         # Messages go out best first: the tier, then the score inside it.
-        self.job_storage.jobs.sort(key=lambda j: (TIER_ORDER.get(j.moderation or REJECTED, 2), -j.relevance_score))
+        self.job_storage.jobs.sort(key=lambda j: (TIER_ORDER.get(j.moderation or REJECTED, 3), -j.relevance_score))
         logger.info(
-            "Classified %d jobs: your stack=%d partial=%d rejected=%d",
+            "Classified %d jobs: on target=%d your stack=%d partial=%d rejected=%d",
             len(self.job_storage.jobs),
+            counts[TOP],
             counts[SENT],
             counts[REVIEW],
             counts[REJECTED],
@@ -286,3 +369,14 @@ class JobFilter:
     def classify_job(job: Job) -> tuple[str, int]:
         verdict = evaluate(job)
         return verdict.moderation, verdict.score
+
+
+def apply_verdict(job: Job, verdict: Verdict) -> None:
+    job.moderation = verdict.moderation
+    job.relevance_score = verdict.score
+    job.matched_stack = verdict.stack
+    job.matched_bonus = verdict.bonus
+    job.required_years = verdict.years if verdict.years is not None else job.required_years
+    job.english = verdict.english or job.english
+    job.warnings = verdict.warnings
+    job.filter_reason = verdict.reason
