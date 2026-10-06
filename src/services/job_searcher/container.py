@@ -121,3 +121,27 @@ class JobStorage:
         logger.info("Total new jobs: %d", len(self.jobs))
         for job in self.jobs:
             logger.debug("  %s", job)
+
+
+async def normalize_stored_dates() -> int:
+    """Turn the dates stored as the site's text ("2 дні тому") into datetimes, once.
+
+    Robota.ua and HappyMonday dates were kept as text until 06.10.2026; read against the moment
+    the vacancy was found, they become the same kind of date as the rest. Text that is not a
+    relative date is left alone. Returns how many were fixed.
+    """
+    from src.services.job_searcher.extract import relative_date
+
+    fixed = 0
+    try:
+        async for doc in jobs_collection.find({"date": {"$type": "string"}}, {"date": 1, "found_at": 1}):
+            found_at = doc.get("found_at")
+            date = relative_date(doc["date"], found_at) if isinstance(found_at, datetime) else None
+            if date is not None:
+                await jobs_collection.update_one({"_id": doc["_id"]}, {"$set": {"date": date}})
+                fixed += 1
+    except Exception as e:
+        logger.warning("Could not normalize stored dates: %s", e)
+    if fixed:
+        logger.info("Stored dates turned from text into dates: %d", fixed)
+    return fixed

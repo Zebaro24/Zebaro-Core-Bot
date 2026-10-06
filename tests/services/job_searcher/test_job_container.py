@@ -144,3 +144,28 @@ def test_add_job_keeps_jobs_without_an_id():
     storage.add_job(Job(title="Dev2"))
 
     assert len(storage.jobs) == 2
+
+
+@pytest.mark.asyncio
+async def test_text_dates_become_dates_counted_from_when_the_vacancy_was_found(mocker):
+    from datetime import datetime, timedelta
+
+    from src.services.job_searcher import container
+
+    found = datetime(2026, 10, 1, 10)
+    docs = [
+        {"_id": 1, "date": "2 дні тому", "found_at": found},
+        {"_id": 2, "date": "Гаряча вакансія", "found_at": found},  # not a date: left alone
+    ]
+
+    async def cursor():
+        for doc in docs:
+            yield doc
+
+    collection = MagicMock()
+    collection.find = MagicMock(return_value=cursor())
+    collection.update_one = AsyncMock()
+    mocker.patch.object(container, "jobs_collection", collection)
+
+    assert await container.normalize_stored_dates() == 1
+    collection.update_one.assert_awaited_once_with({"_id": 1}, {"$set": {"date": found - timedelta(days=2)}})

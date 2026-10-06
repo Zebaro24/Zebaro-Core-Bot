@@ -30,6 +30,9 @@ class JobSearcherService(BaseService):
         self._scheduler = scheduler
 
     async def on_enable(self) -> None:
+        from src.services.job_searcher.container import normalize_stored_dates
+
+        await normalize_stored_dates()
         for job_id in _JOB_IDS:
             job = self._scheduler.get_job(job_id)
             if job:
