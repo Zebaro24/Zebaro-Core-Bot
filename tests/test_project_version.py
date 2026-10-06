@@ -14,12 +14,12 @@ def _load(name: str, path: Path):
 
 
 def test_the_version_lives_only_in_pyproject():
-    # The other tests replace src.config with a mock, so the real file is loaded by path.
-    config = _load("real_config", ROOT / "src" / "config.py")
+    # By path: src.version stays importable without the settings' environment (CI has none).
+    version = _load("real_version", ROOT / "src" / "version.py")
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
     declared = re.search(r'^version = "([\d.]+)"', pyproject, re.M)
-    assert declared and config.project_version() == declared.group(1)
+    assert declared and version.project_version() == declared.group(1)
     assert not (ROOT / "VERSION").exists()
     assert not re.search(r'version: str = "\d', (ROOT / "src" / "config.py").read_text(encoding="utf-8"))
 

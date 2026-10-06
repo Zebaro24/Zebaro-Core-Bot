@@ -1,19 +1,7 @@
-import tomllib
-from pathlib import Path
-
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
-
-
-def project_version() -> str:
-    """The version from pyproject.toml — the one place it lives (the image ships the file)."""
-    try:
-        with PYPROJECT.open("rb") as f:
-            return str(tomllib.load(f)["tool"]["poetry"]["version"])
-    except (OSError, KeyError, tomllib.TOMLDecodeError):
-        return "0.0.0"
+from src.version import project_version
 
 
 class Settings(BaseSettings):
