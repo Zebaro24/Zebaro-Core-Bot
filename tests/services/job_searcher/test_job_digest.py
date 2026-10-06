@@ -163,3 +163,13 @@ def test_the_owner_is_marked_on_the_charts():
     market = format_market_rich(_digest())
 
     assert "до B1" in market and "← ты" in market
+
+
+def test_a_search_never_lands_on_both_lists_or_under_a_thumbs_up_at_zero():
+    good = [_doc(user_status="applied", search_url="https://djinni.co/jobs/keyword-python/")] * 8
+    dead = [_doc(user_status="not_interested", search_url="https://djinni.co/jobs/keyword-react/")] * 8
+
+    searches = my_stats([], [], good + dead, [], NOW, [])["searches"]
+
+    assert [s["label"] for s in searches["best"]] == ["Djinni · python"]
+    assert [s["label"] for s in searches["worst"]] == ["Djinni · react"]

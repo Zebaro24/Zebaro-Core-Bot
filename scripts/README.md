@@ -6,12 +6,12 @@
 
 | Скрипт             | Что делает                                                                                                                                                         |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `gate.py`          | **Единственный чекер.** poetry-lock, black, isort, flake8, mypy, bandit, pip-audit, pytest. Ровно то же самое гоняет CI и CD перед деплоем. Руками чекеры не зовём |
+| `gate.py`          | **Единственный чекер.** poetry-lock, ruff format, ruff check, mypy, pip-audit, pytest. Ровно то же самое гоняет CI и CD перед деплоем. Руками чекеры не зовём |
 | `release.py`       | Готовит релиз: версия → зеркала в `pyproject.toml` и `src/config.py` → `CHANGELOG` → коммит → тег → одноразовое одобрение. **Не пушит**                            |
 | `approve.py`       | Выписывает одноразовый маркер, который разрешает `git push` или пуш тега. Живёт 15 минут, тратится один раз                                                        |
 | `dev.bat`          | Локально: `dev` (бот), `dev infra` / `dev stop` (Mongo + Playwright в Docker), `dev gate`, `dev install`                                                           |
 | `prod.bat`         | Прод по SSH: `prod health`, `prod ps`, `prod logs [c] [since]`, `prod state`, `prod restart <c>`, `prod` (шелл)                                                    |
-| `job_stats.py`     | Статистика поиска вакансий с прода по HTTPS: `job_stats.py [--days N]`, `review`, `job <id>`, `search`, `applied` (отклики с описаниями для ИИ, `--out файл.md`), `--json`. Токен из `JOB_STATS_API_TOKEN` или `~/.zebaro/zebaro-core-bot-secrets.env` |
+| `job_stats.py`     | Статистика поиска вакансий с прода по HTTPS: `job_stats.py [--days N]`, `review`, `job <id>`, `search`, `applied` (отклики с описаниями для ИИ, `--out файл.md`), `searches`, `digest`, `audit`, `fields`, `replay` (через `poetry run`), `--json`. Токен из `JOB_STATS_API_TOKEN` или `~/.zebaro/zebaro-core-bot-secrets.env` |
 | `start-claude.bat` | Открыть Claude Code в корне проекта через Windows Terminal (там Shift+Enter даёт перенос строки). Двойной клик или ярлык на панели задач                            |
 
 ## Шпаргалка
@@ -21,7 +21,7 @@ python scripts/gate.py                     # всё, ровно как CI
 python scripts/gate.py --lint              # линт и типы, без тестов — быстро, по ходу работы
 python scripts/gate.py --tests             # только тесты
 python scripts/gate.py --strict            # + покрытие (перед релизом, так гоняет CI)
-python scripts/gate.py --fix               # сначала black + isort, потом гейт
+python scripts/gate.py --fix               # сначала ruff check --fix + ruff format, потом гейт
 python scripts/gate.py --only pytest -- tests/interfaces/test_telegram_webhook.py
 python scripts/gate.py --list              # какие проверки вообще есть
 

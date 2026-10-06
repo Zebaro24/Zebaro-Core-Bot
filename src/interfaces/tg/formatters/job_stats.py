@@ -208,7 +208,7 @@ def _my_insight(item: dict[str, Any]) -> str:
             "отмечай причины у «нет», фильтр по ним подстроится."
         )
     if kind == "main_gap":
-        reason = MISMATCH_REASONS.get(item["reason"], item["reason"])
+        reason = html.escape(MISMATCH_REASONS.get(item["reason"], str(item["reason"])))
         years = f" (просят в среднем {item['years']} г.)" if item["reason"] == "experience" and item["years"] else ""
         return f"🧩 Чаще всего не проходишь по пункту «<b>{reason}</b>» — {_pct(item['share'])}{years}."
     if kind == "filter_miss":
@@ -301,9 +301,9 @@ def format_me_rich(digest: dict[str, Any]) -> str:
         line = " · ".join(f"{t['name']} {t['share']:.0%}" for t in me["applied_tech"])
         parts.append(f"<p>💼 Твой профиль по откликам: {html.escape(line)}</p>")
     if searches := me["searches"]:
-        best = "<br>".join(f"👍 {html.escape(s['label'])} — {s['rate']:.0%} из {s['n']}" for s in searches["best"])
-        worst = "<br>".join(f"👎 {html.escape(s['label'])} — {s['rate']:.0%} из {s['n']}" for s in searches["worst"])
-        parts.append(f"<h4>🔎 Поиски · 4 недели</h4><p>{best}<br>{worst}</p>")
+        lines = [f"👍 {html.escape(s['label'])} — {s['rate']:.0%} из {s['n']}" for s in searches["best"]]
+        lines += [f"👎 {html.escape(s['label'])} — {s['rate']:.0%} из {s['n']}" for s in searches["worst"]]
+        parts.append("<h4>🔎 Поиски · 4 недели</h4><p>" + "<br>".join(lines) + "</p>")
 
     insights = [text for item in digest.get("my_insights") or [] if (text := _my_insight(item))]
     if insights:

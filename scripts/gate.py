@@ -28,6 +28,7 @@ Usage
 
 Exit code is non-zero if any selected check failed. Stdlib only.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -50,6 +51,8 @@ for _stream in (sys.stdout, sys.stderr):
 
 ROOT = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PATHS = ["src", "tests"]
+# ruff reads scripts/ too: the tooling is code that ships in the repo (mypy stays on src and tests).
+LINT_PATHS = [*PATHS, "scripts"]
 
 
 class Spec(NamedTuple):
@@ -64,20 +67,28 @@ CHECKS = [
     Spec("poetry-lock", ["poetry", "check", "--lock"], "lint", False),
     # ruff took over black, isort, flake8 (+bugbear) and bandit (06.10.2026): one fast tool,
     # one config in pyproject.toml.
-    Spec("ruff-format", ["ruff", "format", "--check", *PATHS], "lint", False),
-    Spec("ruff", ["ruff", "check", "--output-format", "concise", *PATHS], "lint", False),
+    Spec("ruff-format", ["ruff", "format", "--check", *LINT_PATHS], "lint", False),
+    Spec("ruff", ["ruff", "check", "--output-format", "concise", *LINT_PATHS], "lint", False),
     Spec("mypy", ["mypy", *PATHS], "lint", True),
     # Needs the network (advisory database). A new CVE can turn this red without any
     # change on our side — that is the point of it, not a flake.
     Spec("pip-audit", ["pip-audit", "--progress-spinner", "off"], "security", True),
     Spec("pytest", ["pytest", "-q", "-p", "no:cacheprovider", "--color=no"], "tests", True),
 ]
-STRICT_PYTEST = ["pytest", "-q", "-p", "no:cacheprovider", "--color=no",
-                 "--cov=src", "--cov-report=term-missing", "--cov-report=xml"]
+STRICT_PYTEST = [
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "--color=no",
+    "--cov=src",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+]
 # check --fix first: sorting imports can leave lines the formatter then rewraps.
 FIXERS = [
-    ("ruff check --fix", ["ruff", "check", "--fix", "--quiet", *PATHS]),
-    ("ruff format", ["ruff", "format", "--quiet", *PATHS]),
+    ("ruff check --fix", ["ruff", "check", "--fix", "--quiet", *LINT_PATHS]),
+    ("ruff format", ["ruff", "format", "--quiet", *LINT_PATHS]),
 ]
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -91,9 +102,16 @@ def sh(argv: list[str]) -> tuple[int, str]:
         return 127, f"not found: {argv[0]} — install it (poetry install) and retry."
     try:
         # PYTHONIOENCODING: without it a failing test's Cyrillic message arrives as mojibake.
-        p = subprocess.run([exe, *argv[1:]], cwd=ROOT, capture_output=True, text=True,
-                           env={**os.environ, "PYTHONIOENCODING": "utf-8"},
-                           encoding="utf-8", errors="replace", timeout=1200)
+        p = subprocess.run(
+            [exe, *argv[1:]],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            encoding="utf-8",
+            errors="replace",
+            timeout=1200,
+        )
         return p.returncode, ANSI.sub("", (p.stdout or "") + (p.stderr or ""))
     except OSError as e:
         return 127, f"could not start {argv[0]}: {e}"

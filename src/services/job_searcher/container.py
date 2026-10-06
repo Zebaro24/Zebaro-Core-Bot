@@ -123,6 +123,10 @@ class JobStorage:
             logger.debug("  %s", job)
 
 
+# Once per process: the scan is cheap (~1000 documents), but a /services toggle runs on_enable again.
+_dates_normalized = False
+
+
 async def normalize_stored_dates() -> int:
     """Turn the dates stored as the site's text ("2 дні тому") into datetimes, once.
 
@@ -132,6 +136,10 @@ async def normalize_stored_dates() -> int:
     """
     from src.services.job_searcher.extract import relative_date
 
+    global _dates_normalized
+    if _dates_normalized:
+        return 0
+    _dates_normalized = True
     fixed = 0
     try:
         async for doc in jobs_collection.find({"date": {"$type": "string"}}, {"date": 1, "found_at": 1}):

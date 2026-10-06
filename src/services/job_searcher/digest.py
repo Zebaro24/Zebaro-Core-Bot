@@ -318,7 +318,10 @@ def my_stats(
     # The filter promised a fit and he could not apply: a rule to fix.
     promised = [doc for doc in this_week if doc.get("moderation") in ("top", "sent")]
     promised_mismatch = [doc for doc in promised if doc.get("user_status") in ("mismatch", "blocked")]
-    promised_reasons = Counter(doc.get("status_reason") or "site" for doc in promised_mismatch)
+    promised_reasons = Counter(
+        "site" if doc.get("user_status") == "blocked" else doc.get("status_reason") or "other"
+        for doc in promised_mismatch
+    )
     old = [doc for doc in pending if (now - doc["found_at"]).days >= PENDING_OLD_DAYS]
     hours = [
         (doc["status_updated_at"] - doc["found_at"]).total_seconds() / 3600
@@ -335,9 +338,7 @@ def my_stats(
         "pending": {"count": len(pending), "old": len(old)},
         "by_platform": platforms,
         "by_tier_rate": by_tier,
-        "searches": (
-            {"best": searches[:3], "worst": searches[max(3, len(searches) - 3) :][::-1]} if len(searches) >= 2 else None
-        ),
+        "searches": _best_and_worst(searches),
         "dead_searches": [s["label"] for s in searches if s["rate"] == 0.0],
         "mismatch_reasons": dict(mismatch_reasons.most_common()),
         "mismatch_years_median": round(median(mismatch_years)) if mismatch_years else None,
@@ -358,6 +359,18 @@ def my_stats(
         if len(applied) >= MIN_FOR_SHARE
         else [],
     }
+
+
+def _best_and_worst(searches: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]] | None:
+    """The best searches are the ones that brought applications; the worst, the bottom of the rest.
+
+    Never the same search on both lists, and never a 0% search under a thumbs-up.
+    """
+    if len(searches) < 2:
+        return None
+    best = [s for s in searches if s["rate"] > 0][:3]
+    worst = [s for s in searches if s not in best][-3:][::-1]
+    return {"best": best, "worst": worst}
 
 
 def my_insights(me: dict[str, Any], market: dict[str, Any]) -> list[dict[str, Any]]:

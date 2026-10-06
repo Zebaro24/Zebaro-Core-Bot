@@ -14,6 +14,7 @@ granted for one change can never be spent on the next one.
 Usage:  python scripts/approve.py --push
 Stdlib only.
 """
+
 from __future__ import annotations
 
 import argparse
