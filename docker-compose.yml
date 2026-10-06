@@ -23,7 +23,9 @@ services:
     image: mcr.microsoft.com/playwright:v1.63.0-noble
     container_name: zebaro-core-playwright
     restart: "no"
-    command: npx playwright@1.63.0 run-server --port 9222
+    # --host 0.0.0.0: since 1.63 run-server listens on localhost only by default, and the bot in
+    # its own container got "Playwright unavailable" on every run (06.10.2026).
+    command: npx playwright@1.63.0 run-server --port 9222 --host 0.0.0.0
     expose:
       - "9222"
 
