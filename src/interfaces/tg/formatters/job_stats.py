@@ -52,7 +52,7 @@ def _bar(share: float, cells: int = _BAR) -> str:
     filled = max(0, min(cells, round(share * cells)))
     if share > 0 and filled == 0:
         filled = 1  # a thin sliver: "some", not "none"
-    return "█" * filled + "░" * (cells - filled)
+    return "▰" * filled + "▱" * (cells - filled)  # the same bars as /server_speed
 
 
 def _chart(rows: list[tuple[str, float, str]], mark: str | None = None) -> str:
