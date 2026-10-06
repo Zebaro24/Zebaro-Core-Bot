@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     app_name: str = "Zebaro-Core-Bot"
     description: str = ""
     author: str = "Zebaro (zebaro.dev)"
-    version: str = "0.13.0"
+    version: str = "0.13.1"
 
     debug: bool = False
 
