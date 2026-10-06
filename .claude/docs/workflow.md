@@ -30,8 +30,8 @@
 1. `/release` → договорились о `patch` / `minor` / `major`.
 2. `## Unreleased` в `CHANGELOG.md` заполнен и закоммичен.
 3. `python scripts/gate.py --strict`.
-4. `python scripts/release.py --bump <kind> --dry-run`, затем без `--dry-run`: `VERSION`,
-   зеркала, `CHANGELOG`, коммит `chore(release): vX.Y.Z`, локальный тег, маркеры.
+4. `python scripts/release.py --bump <kind> --dry-run`, затем без `--dry-run`: версия
+   в `pyproject.toml`, `CHANGELOG`, коммит `chore(release): vX.Y.Z`, локальный тег, маркеры.
 5. «Го» → `git push origin main`, `git push origin vX.Y.Z`.
 6. CD: гейт ещё раз → сборка образа в GHCR → `docker compose up -d` на сервере.
 7. Проверка: `gh run list`, `scripts\prod.bat health` (новая версия в ответе),

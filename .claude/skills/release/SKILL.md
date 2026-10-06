@@ -27,8 +27,8 @@ this task).
 
 4. **Preview:** `python scripts/release.py --bump <kind> --dry-run`.
 
-5. **Prepare:** `python scripts/release.py --bump <kind>` — VERSION, mirrors in
-   `pyproject.toml` and `src/config.py`, stamps the CHANGELOG section, commits
+5. **Prepare:** `python scripts/release.py --bump <kind>` — the version in
+   `pyproject.toml` (the only place it lives; `src/config.py` reads it), stamps the CHANGELOG section, commits
    `chore(release): vX.Y.Z`, tags locally, mints both approvals. **It does not push.**
 
 6. **Ask for the final go**, unless it was already given for this task. Say plainly: the

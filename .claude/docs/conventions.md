@@ -40,8 +40,8 @@ python scripts/gate.py --fix      # ruff check --fix + ruff format, потом �
 
 ## Версии
 
-Одна, в `VERSION`. `release.py` зеркалит её в `pyproject.toml` и `src/config.py` (её
-отдаёт `/health`). Тег `vX.Y.Z` — единственное, что деплоит.
+Одна, в `pyproject.toml`. `src/config.py` читает её оттуда (её отдаёт `/health`),
+`release.py` поднимает её там же. Других копий нет. Тег `vX.Y.Z` — единственное, что деплоит.
 
 - `patch` — починили; `minor` — добавили; `major` — сломали совместимость (почти никогда).
 

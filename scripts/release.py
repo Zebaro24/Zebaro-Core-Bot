@@ -6,14 +6,14 @@ runs the gate, builds the image, pushes it to GHCR and restarts the compose
 stack on server.zebaro.dev. So this is a slow, owner-triggered step, and it does
 NOT push — the push is a separate, visible action.
 
-`VERSION` at the root is the source of truth; this script mirrors it into
-`pyproject.toml` and `src/config.py` (the version `/health` reports), so they
+The version lives in one place, `pyproject.toml`; `src/config.py` reads it from there for
+`/health`, so
 cannot drift.
 
 What it does:
   1. checks the tree is clean, the branch is main and `## Unreleased` in
      CHANGELOG.md actually says something,
-  2. bumps VERSION and mirrors it,
+  2. bumps the version in pyproject.toml,
   3. stamps `## Unreleased` as `## vX.Y.Z — date` and opens a new empty one,
   4. commits `chore(release): vX.Y.Z` and tags locally,
   5. mints the one-shot markers .approve-push and .approve-release,
@@ -46,15 +46,12 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 ROOT = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERSION_FILE = os.path.join(ROOT, "VERSION")
+PYPROJECT = os.path.join(ROOT, "pyproject.toml")
 CHANGELOG = os.path.join(ROOT, "CHANGELOG.md")
 UNRELEASED = re.compile(r"^## Unreleased[ \t]*\n(.*?)(?=^## |\Z)", re.M | re.S)
 
-# Files that must always agree with VERSION.
-MIRRORS = [
-    ("pyproject.toml", re.compile(r'(^version\s*=\s*")(\d+\.\d+\.\d+)(")', re.M)),
-    ("src/config.py", re.compile(r'(^\s*version:\s*str\s*=\s*")(\d+\.\d+\.\d+)(")', re.M)),
-]
+# The first `version = "X.Y.Z"` of pyproject.toml: [tool.poetry]'s.
+VERSION_LINE = re.compile(r'(^version\s*=\s*")(\d+\.\d+\.\d+)(")', re.M)
 
 
 def git(args: list[str]) -> tuple[int, str]:
@@ -64,32 +61,22 @@ def git(args: list[str]) -> tuple[int, str]:
 
 def read_version() -> tuple[int, int, int]:
     try:
-        with open(VERSION_FILE, encoding="utf-8") as f:
-            raw = f.read().strip().lstrip("v")
+        with open(PYPROJECT, encoding="utf-8") as f:
+            m = VERSION_LINE.search(f.read())
     except OSError:
         return (0, 0, 0)
-    parts = raw.split(".")
-    if len(parts) != 3 or not all(p.isdigit() for p in parts):
+    if not m:
         return (0, 0, 0)
-    return (int(parts[0]), int(parts[1]), int(parts[2]))
+    major, minor, patch = m.group(2).split(".")
+    return (int(major), int(minor), int(patch))
 
 
-def mirror(new: str) -> list[str]:
-    touched = []
-    for rel, pattern in MIRRORS:
-        path = os.path.join(ROOT, rel)
-        if not os.path.isfile(path):
-            continue
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-        if not pattern.search(text):
-            print(f"  ! {rel}: версия не найдена по шаблону — поправь руками")
-            continue
-        text = pattern.sub(lambda m: f"{m.group(1)}{new}{m.group(3)}", text, count=1)
-        with open(path, "w", encoding="utf-8", newline="\n") as f:
-            f.write(text)
-        touched.append(rel)
-    return touched
+def write_version(new: str) -> None:
+    with open(PYPROJECT, encoding="utf-8") as f:
+        text = f.read()
+    text = VERSION_LINE.sub(lambda m: f"{m.group(1)}{new}{m.group(3)}", text, count=1)
+    with open(PYPROJECT, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
 
 
 def unreleased_notes() -> str | None:
@@ -163,13 +150,11 @@ def main() -> int:
         return 2
 
     if args.dry_run:
-        print("  (dry-run) поднял бы VERSION, зеркала, CHANGELOG, коммит, тег, маркеры.")
+        print("  (dry-run) поднял бы версию в pyproject.toml, CHANGELOG, коммит, тег, маркеры.")
         print(f"  затем:  git push origin main && git push origin {tag}")
         return 0
 
-    with open(VERSION_FILE, "w", encoding="utf-8", newline="\n") as f:
-        f.write(new + "\n")
-    touched = mirror(new)
+    write_version(new)
     stamp_changelog(new)
 
     for step in (
@@ -188,7 +173,7 @@ def main() -> int:
         with open(path, "w", encoding="utf-8") as f:
             f.write(tag)
 
-    print(f"  ✓ VERSION, {', '.join(touched) or 'зеркал нет'}, CHANGELOG, коммит, тег.")
+    print("  ✓ pyproject.toml, CHANGELOG, коммит, тег.")
     print("  ✓ одобрение выписано (одноразовое, живёт 15 минут).")
     print("  Выкатывать после «го»:")
     print("    git push origin main")

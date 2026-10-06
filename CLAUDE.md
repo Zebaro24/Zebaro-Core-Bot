@@ -42,7 +42,7 @@ Entry point: `python -m src.main` (`scripts\dev.bat`).
 ```
 src/
 ├── main.py                   # asyncio.gather: db + tg + webhooks (+ ds if enabled)
-├── config.py                 # pydantic-settings singleton; version mirrored from VERSION
+├── config.py                 # pydantic-settings singleton; version read from pyproject.toml
 ├── core/
 │   ├── base_service.py       # BaseService ABC: on_enable / on_disable
 │   ├── base_infrastructure.py
