@@ -148,8 +148,18 @@ async def normalize_stored_dates() -> int:
             if date is not None:
                 await jobs_collection.update_one({"_id": doc["_id"]}, {"$set": {"date": date}})
                 fixed += 1
+        # v0.13.0 stored Work.ua's salary note as the company of every card with a salary. The
+        # real name is gone; no company is better than one that groups unrelated vacancies.
+        result = await jobs_collection.update_many(
+            {"platform_name": "Work.ua", "company": _WORK_UA_SALARY_NOTE}, {"$set": {"company": None}}
+        )
+        if result.modified_count:
+            logger.info("Work.ua companies that were the salary note, cleared: %d", result.modified_count)
     except Exception as e:
         logger.warning("Could not normalize stored dates: %s", e)
     if fixed:
         logger.info("Stored dates turned from text into dates: %d", fixed)
     return fixed
+
+
+_WORK_UA_SALARY_NOTE = "Після всіх відрахувань"

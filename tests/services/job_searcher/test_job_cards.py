@@ -98,12 +98,6 @@ def test_robota_ua_relative_date_becomes_a_date():
     assert abs((datetime.now() - timedelta(days=2) - date).total_seconds()) < 60
 
 
-def test_work_ua_company_skips_the_separator():
-    card = _card("<div><div><span><span>·</span></span><span><span>ITCraft</span></span></div></div>", "div")
-
-    assert WorkUAListeners().get_company(card) == "ITCraft"
-
-
 def test_happymonday_company_falls_back_to_the_block_and_the_title():
     block = _card('<div class="job_card"><div class="job_card_company">Acme</div></div>', "div.job_card")
     titled = _card(
@@ -119,3 +113,37 @@ def test_no_fluff_jobs_title_loses_the_new_badge():
     card = _card('<a id="1" href="/job/x"><h3>Full Stack DeveloperНОВОЕ</h3></a>', "a")
 
     assert NoFluffJobsListeners().get_title(card) == "Full Stack Developer"
+
+
+WORK_UA_CARD = """
+<div class="card job-link">
+  <div><h2 class="my-0"><a href="/jobs/7428097/">Junior Full-stack Developer (React, Node.js)</a></h2></div>
+  <div><div class="text-indent">
+    <span class="glyphicon" title="Зарплата"></span><span class="strong-600">30 000 – 70 000 грн</span>
+    <span class="text-default-7">·</span>
+    <span class="js-salary-deduction"><span class="glyphicon" title="Зарплата після всіх відрахувань"></span>
+      <span class="strong-600">Після всіх відрахувань</span></span>
+  </div></div>
+  <div class="mt-sm">
+    <div class="text-indent"><span class="glyphicon" title="Дані про компанію"></span>
+      <span class="mr-xs"><span class="strong-600">UncleSolutions</span></span></div>
+    <div class="text-indent"><span class="glyphicon" title="Адреса роботи"></span><span>Дистанційно</span></div>
+    <div class="text-indent"><span class="glyphicon" title="Умови й вимоги"></span>
+      <span>Досвід від {years} · Стандартний графік: 5/2</span></div>
+  </div>
+</div>
+"""
+
+
+def test_work_ua_reads_each_line_by_its_icon_not_the_salary_note():
+    card = _card(WORK_UA_CARD.format(years="1 року"), "div.job-link")
+    listeners = WorkUAListeners()
+
+    assert listeners.get_company(card) == "UncleSolutions"
+    assert listeners.get_details(card) == {"salary": "30 000 – 70 000 грн", "work_format": "remote"}
+
+
+def test_work_ua_card_years_count_only_when_they_rule_the_vacancy_out():
+    card = _card(WORK_UA_CARD.format(years="5 років"), "div.job-link")
+
+    assert WorkUAListeners().get_details(card)["required_years"] == 5

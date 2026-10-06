@@ -165,7 +165,12 @@ async def test_text_dates_become_dates_counted_from_when_the_vacancy_was_found(m
     collection = MagicMock()
     collection.find = MagicMock(return_value=cursor())
     collection.update_one = AsyncMock()
+    collection.update_many = AsyncMock(return_value=MagicMock(modified_count=3))
     mocker.patch.object(container, "jobs_collection", collection)
 
     assert await container.normalize_stored_dates() == 1
     collection.update_one.assert_awaited_once_with({"_id": 1}, {"$set": {"date": found - timedelta(days=2)}})
+    # Work.ua's salary note stored as a company is cleared too.
+    collection.update_many.assert_awaited_once_with(
+        {"platform_name": "Work.ua", "company": "Після всіх відрахувань"}, {"$set": {"company": None}}
+    )
