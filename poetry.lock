@@ -2830,18 +2830,6 @@ files = [
 ]
 
 [[package]]
-name = "speedtest-cli"
-version = "2.1.3"
-description = "Command line interface for testing internet bandwidth using speedtest.net"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "speedtest-cli-2.1.3.tar.gz", hash = "sha256:5e2773233cedb5fa3d8120eb7f97bcc4974b5221b254d33ff16e2f1d413d90f0"},
-    {file = "speedtest_cli-2.1.3-py2.py3-none-any.whl", hash = "sha256:75ff32c91af9ac1ce2b905476d6e92bd9eb2c0783f9e7d1939d74605c7d0b9ea"},
-]
-
-[[package]]
 name = "starlette"
 version = "1.6.0"
 description = "The little ASGI library that shines."
@@ -3182,4 +3170,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.15"
-content-hash = "c1b5641e25fa66e52deaa374a2dac020959c90ed7c070716b274dfd51a6bc0a6"
+content-hash = "d350bf9eaa2ede22c0fcf5cfc6f9b3fbe663ef72f34004b3ac0e5f22761421c0"
