@@ -115,7 +115,7 @@ async def _run_job_notification(bot: Bot) -> int:
     await group_duplicates(job_storage.jobs, ids)
 
     sent = 0
-    for job, job_id in zip(job_storage.jobs, ids):
+    for job, job_id in zip(job_storage.jobs, ids, strict=True):
         if job.moderation == REJECTED or job.user_status == DUPLICATE:
             continue
         if await _send_job(bot, job, _get_reply_markup(job, job_id)):

@@ -20,10 +20,10 @@ services:
     # Версия должна совпадать с Python-пакетом playwright из poetry.lock (major.minor),
     # иначе клиент получает 428 "Playwright version mismatch". Проверяется тестом
     # tests/test_playwright_version.py.
-    image: mcr.microsoft.com/playwright:v1.59.0-noble
+    image: mcr.microsoft.com/playwright:v1.63.0-noble
     container_name: zebaro-core-playwright
     restart: "no"
-    command: npx playwright@1.59.0 run-server --port 9222
+    command: npx playwright@1.63.0 run-server --port 9222
     expose:
       - "9222"
 

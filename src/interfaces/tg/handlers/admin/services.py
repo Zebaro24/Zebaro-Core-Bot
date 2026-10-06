@@ -15,6 +15,7 @@ from src.interfaces.tg.middlewares.admin import AdminMiddleware
 logger = logging.getLogger("tg.handlers.admin.services")
 
 router = Router()
+_restart_tasks: set[asyncio.Task[None]] = set()
 router.message.middleware(AdminMiddleware())
 router.callback_query.middleware(AdminMiddleware())
 
@@ -200,7 +201,8 @@ async def services_refresh_callback(callback: CallbackQuery, callback_data: Serv
 @router.callback_query(BotRestart.filter())
 async def bot_restart_callback(callback: CallbackQuery) -> None:
     await callback.answer("⚡ Перезапускаю... держись!", show_alert=True)
-    asyncio.create_task(_do_restart())
+    # Kept: an unreferenced task may be collected before it runs.
+    _restart_tasks.add(asyncio.create_task(_do_restart()))
 
 
 async def _do_restart() -> None:

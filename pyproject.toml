@@ -22,89 +22,87 @@ discord-py = "^2.7"
 pydantic-settings = "^2.14"
 
 # --- Database ---
-pymongo = "^4.17"
+pymongo = "^4.18.2"
 
 # --- Task scheduling ---
-apscheduler = "^3.11"
+apscheduler = "^3.11.3"
 
 # --- Web scraping ---
-playwright = "^1.58"
+playwright = "^1.63.0"
 playwright-stealth = "^2.0"
-beautifulsoup4 = "^4.14.3"
+beautifulsoup4 = "^4.15.0"
 
 # --- HTTP / Webhooks ---
-uvicorn = "^0.46"
-fastapi = "^0.136"
-requests = "^2.32"
+uvicorn = "^0.54.0"
+fastapi = "^0.142.2"
+requests = "^2.34.2"
 httpx = "^0.28"
 
 # --- Docker management ---
-docker = "^7.1"
+docker = "^7.2.0"
 
 # ---------------------------------------------------------------------------
 # Development dependencies
 # ---------------------------------------------------------------------------
 [tool.poetry.group.dev.dependencies]
 
-# --- Linting & formatting ---
-black = "^26.3"
-isort = "^8.0"
-flake8 = "^7.3"
-flake8-bugbear = "^25.11"
-flake8-pyproject = "^1.2"
+# --- Linting & formatting (ruff: formatter, import order, flake8 + bugbear, bandit rules) ---
+ruff = "^0.16.10"
 
 # --- Type checking ---
-mypy = "^1.20"
+mypy = "^2.4.0"
 
 # --- Testing ---
-pytest = "^9.0"
-pytest-mock = "^3.15"
+pytest = "^9.1.1"
+pytest-mock = "^3.16.0"
 pytest-cov = "^7.1"
-pytest-asyncio = "^1.2"
+pytest-asyncio = "^1.4.0"
 
-# --- Security scanning ---
-bandit = "^1.9"
+# --- Security scanning (code patterns are ruff's S rules) ---
+pip-audit = "^2.10.1"
 
 # ===========================================================================
 # Tool configuration
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
-# Black
+# Ruff — one tool for what black, isort, flake8 (+bugbear) and bandit did
 # ---------------------------------------------------------------------------
-pip-audit = "^2.10.1"
-[tool.black]
+[tool.ruff]
 line-length = 120
-target-version = ["py311"]
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  \.eggs
-  | \.git
-  | \.venv
-  | build
-  | dist
-)/
-'''
+target-version = "py311"
+extend-exclude = ["mongo_db", "_temp", "_ideas"]
 
-# ---------------------------------------------------------------------------
-# isort
-# ---------------------------------------------------------------------------
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 120
-known_first_party = ["src"]
-sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+[tool.ruff.lint]
+select = [
+    "E", "W", "F",  # pycodestyle, pyflakes — flake8
+    "I",            # import order — isort
+    "B",            # bugbear
+    "S",            # bandit
+    "UP",           # pyupgrade: syntax of the Python we run
+    "C4",           # comprehensions
+    "SIM",          # simplifications
+    "RUF",          # ruff's own
+]
+ignore = [
+    "E203",                       # whitespace before ':' — the formatter's slices
+    "RUF001", "RUF002", "RUF003", # Cyrillic letters look like Latin ones: the bot speaks Russian
+    "S101",                       # assert — tests and type narrowing
+    "S104",                       # binding to 0.0.0.0 inside the container
+    "SIM105",                     # contextlib.suppress over try/except/pass: a matter of taste
+    "RUF012",                     # list constants on classes (infra_deps): never mutated
+    "C408",                       # dict(a=1) where it reads better than a literal
+]
 
-# ---------------------------------------------------------------------------
-# Flake8
-# ---------------------------------------------------------------------------
-[tool.flake8]
-max-line-length = 120
-extend-ignore = ["E203", "W503"]
-exclude = [".git", "__pycache__", ".venv", "venv", "build", "dist", "*.egg-info"]
-per-file-ignores = ["__init__.py:F401"]
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**" = ["S", "B011"]
+# The gate and the release script run tools by design; job_stats opens a fixed https base; a
+# script's cleanup may swallow its own failure.
+"scripts/**" = ["S603", "S607", "S310", "S110"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
 
 # ---------------------------------------------------------------------------
 # MyPy
@@ -167,10 +165,3 @@ exclude_lines = [
     "class .*\\bProtocol\\b",
     "@(abc\\.)?abstractmethod"
 ]
-
-# ---------------------------------------------------------------------------
-# Bandit
-# ---------------------------------------------------------------------------
-[tool.bandit]
-exclude_dirs = ["tests", "docs"]
-skips = ["B101", "B104"]

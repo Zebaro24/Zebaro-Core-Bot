@@ -31,4 +31,4 @@ class NoFluffJobsListeners(BaseListeners):
         return str(val) if val is not None else None
 
     def get_link(self, element: Tag) -> str:
-        return f"https://nofluffjobs.com{str(element.get('href', ''))}"
+        return f"https://nofluffjobs.com{element.get('href', '')!s}"

@@ -116,7 +116,7 @@ async def _find_jobs(
         return [to_jsonable(doc) async for doc in cursor]
     except Exception as e:
         logger.warning("DB unavailable for job query: %s", e)
-        raise HTTPException(status_code=503, detail="Job storage unavailable")
+        raise HTTPException(status_code=503, detail="Job storage unavailable") from None
 
 
 @router.get("/job/{job_id}")
@@ -158,13 +158,13 @@ async def redirect_to_job(job_id: str) -> RedirectResponse:
     try:
         object_id = ObjectId(job_id)
     except InvalidId:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise HTTPException(status_code=404, detail="Job not found") from None
 
     try:
         doc = await jobs_collection.find_one_and_update({"_id": object_id}, {"$inc": {"click_count": 1}})
     except Exception as e:
         logger.warning("DB unavailable for job redirect: %s", e)
-        raise HTTPException(status_code=503, detail="Job storage unavailable")
+        raise HTTPException(status_code=503, detail="Job storage unavailable") from None
 
     if not doc:
         raise HTTPException(status_code=404, detail="Job not found")

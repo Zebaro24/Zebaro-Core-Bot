@@ -62,7 +62,7 @@ def fetch(path: str) -> Any:
         headers={"Authorization": f"Bearer {load_token()}", "User-Agent": USER_AGENT, "Accept": "application/json"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310 - fixed https base
+        with urllib.request.urlopen(request, timeout=30) as response:  # fixed https base
             return json.load(response)
     except urllib.error.HTTPError as e:
         hints = {
@@ -90,7 +90,10 @@ def fetch_all(params: dict[str, Any], cap: int = 5000) -> list[dict[str, Any]]:
 def table(rows: list[list[Any]], headers: list[str]) -> str:
     cells = [headers] + [[str(c) for c in row] for row in rows]
     widths = [max(len(row[i]) for row in cells) for i in range(len(headers))]
-    lines = ["  ".join(c.ljust(w) if i == 0 else c.rjust(w) for i, (c, w) in enumerate(zip(row, widths))) for row in cells]
+    lines = [
+        "  ".join(c.ljust(w) if i == 0 else c.rjust(w) for i, (c, w) in enumerate(zip(row, widths, strict=True)))
+        for row in cells
+    ]
     lines.insert(1, "  ".join("-" * w for w in widths))
     return "\n".join(lines)
 
@@ -112,7 +115,7 @@ def print_weekly(stats: dict[str, Any]) -> None:
     print()
     keys = ["found", "sent", "review", "applied", "not_interested", "blocked", "clicks"]
     rows = [[p["platform"]] + [p.get(k, 0) for k in keys] for p in stats["by_platform"]]
-    print(table(rows, ["platform"] + keys))
+    print(table(rows, ["platform", *keys]))
     print()
     print(counter("Статусы", stats["by_status"]))
     print(counter("Причины отсева", stats["by_reason"]))
@@ -273,7 +276,7 @@ def replay(days: int) -> None:
     print(f"Вакансий: {len(docs)} за {days} дн.\n")
     tiers = ["top", "sent", "review", "rejected_by_filter"]
     statuses = sorted({status for status, _ in counts})
-    print(table([[s] + [counts.get((s, t), 0) for t in tiers] for s in statuses], ["status"] + tiers))
+    print(table([[s] + [counts.get((s, t), 0) for t in tiers] for s in statuses], ["status", *tiers]))
     print(f"\nОтказов, которые фильтр теперь отсеял бы сам: {caught}")
     print(f"Откликов, которые фильтр теперь отсеял бы: {len(lost)}")
     for reason, doc in lost:

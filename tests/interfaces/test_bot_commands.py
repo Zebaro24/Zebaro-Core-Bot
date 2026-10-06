@@ -6,7 +6,7 @@ import pytest
 if "src.config" not in sys.modules:
     sys.modules["src.config"] = MagicMock(settings=MagicMock())
 
-from src.interfaces.tg import commands  # noqa: E402
+from src.interfaces.tg import commands
 
 
 @pytest.fixture

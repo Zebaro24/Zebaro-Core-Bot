@@ -9,12 +9,12 @@ if "src.config" not in sys.modules:
 if "src.db.client" not in sys.modules:
     sys.modules["src.db.client"] = MagicMock(jobs_collection=MagicMock(), start_db=AsyncMock())
 
-from src.interfaces.tg.formatters.job_stats import (  # noqa: E402
+from src.interfaces.tg.formatters.job_stats import (
     format_digest_plain,
     format_market_rich,
     format_me_rich,
 )
-from src.services.job_searcher.digest import market_stats, my_stats, salary_value, search_label  # noqa: E402
+from src.services.job_searcher.digest import market_stats, my_stats, salary_value, search_label
 
 NOW = datetime(2026, 10, 6, 12)
 

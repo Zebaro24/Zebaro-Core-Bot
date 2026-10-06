@@ -18,7 +18,7 @@ class SiteContact(BaseModel):
     message: str = Field(min_length=10, max_length=2000)
     locale: Literal["en", "uk"] = "en"
     sender: str = Field(pattern=r"^[0-9a-f]{16}$")  # sha256(IP)[:16] — never the IP itself
-    sentAt: datetime  # noqa: N815 — the site's field name
+    sentAt: datetime
 
 
 class ContactRateLimit:

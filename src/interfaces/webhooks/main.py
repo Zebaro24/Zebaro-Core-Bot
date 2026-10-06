@@ -38,6 +38,6 @@ async def health() -> dict[str, str]:
 
 async def start_webhooks() -> None:
     logger.info("Starting webhook server on :8000")
-    config = uvicorn.Config(app, host="0.0.0.0", log_config=None)  # nosec
+    config = uvicorn.Config(app, host="0.0.0.0", log_config=None)  # the container's port
     server = uvicorn.Server(config)
     await server.serve()

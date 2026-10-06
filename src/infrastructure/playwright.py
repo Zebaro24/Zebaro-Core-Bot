@@ -54,7 +54,7 @@ class PlaywrightInfra(BaseInfrastructure):
         host = parsed.hostname or "localhost"
         port = parsed.port or 9222
         try:
-            reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=2.0)
+            _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout=2.0)
             writer.close()
             await writer.wait_closed()
             return True

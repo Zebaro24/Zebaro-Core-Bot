@@ -149,7 +149,7 @@ async def group_duplicates(jobs: list[Job], job_ids: list[str | None]) -> None:
 
     Runs after the batch is saved: the copies need their Mongo ids for the link buttons.
     """
-    pairs = [(job, job_id) for job, job_id in zip(jobs, job_ids) if job.moderation != "rejected_by_filter"]
+    pairs = [(job, job_id) for job, job_id in zip(jobs, job_ids, strict=True) if job.moderation != "rejected_by_filter"]
     if not pairs:
         return
 

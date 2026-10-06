@@ -116,9 +116,9 @@ def format_me_rich(digest: dict[str, Any]) -> str:
 
     if me["by_platform"]:
         rows = "".join(
-            f"<tr><td>{html.escape(p['platform'])}</td><td align=\"center\">{p['decided']}</td>"
-            f"<td align=\"center\">{p['applied']}</td><td align=\"center\">{_pct(p['rate'])}</td>"
-            f"<td align=\"center\">{p['blocked'] or ''}</td></tr>"
+            f'<tr><td>{html.escape(p["platform"])}</td><td align="center">{p["decided"]}</td>'
+            f'<td align="center">{p["applied"]}</td><td align="center">{_pct(p["rate"])}</td>'
+            f'<td align="center">{p["blocked"] or ""}</td></tr>'
             for p in me["by_platform"]
         )
         parts.append(
@@ -143,12 +143,11 @@ def format_me_rich(digest: dict[str, Any]) -> str:
             + (f"<br>В таких вакансиях просят в среднем {years} г. опыта" if years else "")
             + "</p>"
         )
-    if misses := me["filter_misses"]:
-        if misses["mismatch"]:
-            parts.append(
-                f"<p>⚠️ Фильтр ошибся: из {misses['promised']} 🔥 ты не прошёл по <b>{misses['mismatch']}</b> — "
-                "причины выше, их стоит научить фильтр видеть</p>"
-            )
+    if (misses := me["filter_misses"]) and misses["mismatch"]:
+        parts.append(
+            f"<p>⚠️ Фильтр ошибся: из {misses['promised']} 🔥 ты не прошёл по <b>{misses['mismatch']}</b> — "
+            "причины выше, их стоит научить фильтр видеть</p>"
+        )
     if me["not_interested_reasons"]:
         parts.append(f"<p>👎 Не интересно: {_shares(me['not_interested_reasons'], REJECT_REASONS)}</p>")
     silent = digest.get("silent_sources") or []

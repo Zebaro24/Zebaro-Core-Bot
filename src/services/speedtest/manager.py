@@ -9,6 +9,7 @@ dependency, and the progress is real bytes.
 
 import logging
 import time
+from itertools import pairwise
 from statistics import median
 from typing import Any
 
@@ -86,7 +87,7 @@ class SpeedTestManager:
         times = times[1:] or times
         server: dict[str, object] = self.results["server"]
         server["latency"] = median(times)
-        self.results["jitter"] = median(abs(a - b) for a, b in zip(times, times[1:])) if len(times) > 1 else 0.0
+        self.results["jitter"] = median(abs(a - b) for a, b in pairwise(times)) if len(times) > 1 else 0.0
         return server
 
     def _tick(self, phase: str, started: float, sent: int) -> None:

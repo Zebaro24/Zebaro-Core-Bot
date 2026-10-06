@@ -20,8 +20,8 @@ class ServiceManager:
     _instance: "ServiceManager | None" = None
 
     def __init__(self) -> None:
-        self._services: dict[str, "BaseService"] = {}
-        self._infrastructure: dict[str, "BaseInfrastructure"] = {}
+        self._services: dict[str, BaseService] = {}
+        self._infrastructure: dict[str, BaseInfrastructure] = {}
         self._state: dict = {"infrastructure": {}, "services": {}}
 
     @classmethod

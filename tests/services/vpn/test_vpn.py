@@ -9,11 +9,11 @@ if "src.config" not in sys.modules:
 if "src.db.client" not in sys.modules:
     sys.modules["src.db.client"] = MagicMock()
 
-from src.interfaces.tg.formatters.vpn import format_vpn_card, format_vpn_list, status_emoji  # noqa: E402
-from src.interfaces.tg.handlers.admin.vpn import parse_new  # noqa: E402
-from src.services.vpn import addressing, installer, traffic  # noqa: E402
-from src.services.vpn.client import VpnClient, WgEasy  # noqa: E402
-from src.services.vpn.profiles import profiles, slug, tunnel_name  # noqa: E402
+from src.interfaces.tg.formatters.vpn import format_vpn_card, format_vpn_list, status_emoji
+from src.interfaces.tg.handlers.admin.vpn import parse_new
+from src.services.vpn import addressing, installer, traffic
+from src.services.vpn.client import VpnClient, WgEasy
+from src.services.vpn.profiles import profiles, slug, tunnel_name
 
 NOW = datetime(2026, 9, 24, 12, 0, tzinfo=UTC)
 CONFIG = """[Interface]

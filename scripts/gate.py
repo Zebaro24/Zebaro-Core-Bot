@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """Zebaro-Core-Bot quality gate — the single checker, locally and in CI.
 
-Never run black / isort / flake8 / mypy / bandit / pip-audit / pytest by hand:
+Never run ruff / mypy / pip-audit / pytest by hand:
 this script is the one source of truth and exactly what CI runs. A green that
 came from a hand-picked subset is not the green CI will give.
 
 Checks (group)
   poetry-lock  poetry check --lock        lock file matches pyproject   (lint)
-  black        black --check              formatting                    (lint)
-  isort        isort --check-only         import order                  (lint)
-  flake8       flake8                     style and simple bugs         (lint)
+  ruff-format  ruff format --check        formatting                    (lint)
+  ruff         ruff check                 import order, style, bugs and
+                                          insecure code patterns (S)    (lint)
   mypy         mypy src tests             types                         (lint)
-  bandit       bandit -r src              insecure code patterns        (security)
   pip-audit    pip-audit                  known CVEs in dependencies    (security)
   pytest       pytest                     tests; --strict adds coverage (tests)
 
@@ -19,11 +18,11 @@ Usage
   python scripts/gate.py                   # everything, same as CI
   python scripts/gate.py --lint            # lint and types only (fast, while working)
   python scripts/gate.py --tests           # tests only
-  python scripts/gate.py --security        # bandit + pip-audit
+  python scripts/gate.py --security        # pip-audit (code patterns are ruff's S rules)
   python scripts/gate.py --strict          # everything, tests with coverage (release, CI)
   python scripts/gate.py --only mypy
   python scripts/gate.py --only pytest -- tests/interfaces/test_telegram_webhook.py
-  python scripts/gate.py --fix             # apply black + isort, then run the gate
+  python scripts/gate.py --fix             # ruff format + ruff check --fix, then the gate
   python scripts/gate.py --jobs 1          # one at a time, honest per-check timings
   python scripts/gate.py --list
 
@@ -63,11 +62,11 @@ class Spec(NamedTuple):
 CHECKS = [
     # First: a lock file out of sync with pyproject breaks the Docker build, not a check.
     Spec("poetry-lock", ["poetry", "check", "--lock"], "lint", False),
-    Spec("black", ["black", "--check", *PATHS], "lint", False),
-    Spec("isort", ["isort", "--check-only", *PATHS], "lint", False),
-    Spec("flake8", ["flake8", *PATHS], "lint", False),
+    # ruff took over black, isort, flake8 (+bugbear) and bandit (06.10.2026): one fast tool,
+    # one config in pyproject.toml.
+    Spec("ruff-format", ["ruff", "format", "--check", *PATHS], "lint", False),
+    Spec("ruff", ["ruff", "check", "--output-format", "concise", *PATHS], "lint", False),
     Spec("mypy", ["mypy", *PATHS], "lint", True),
-    Spec("bandit", ["bandit", "-r", "src", "-q", "-c", "pyproject.toml"], "security", False),
     # Needs the network (advisory database). A new CVE can turn this red without any
     # change on our side — that is the point of it, not a flake.
     Spec("pip-audit", ["pip-audit", "--progress-spinner", "off"], "security", True),
@@ -75,7 +74,11 @@ CHECKS = [
 ]
 STRICT_PYTEST = ["pytest", "-q", "-p", "no:cacheprovider", "--color=no",
                  "--cov=src", "--cov-report=term-missing", "--cov-report=xml"]
-FIXERS = [("black", ["black", "--quiet", *PATHS]), ("isort", ["isort", "--quiet", *PATHS])]
+# check --fix first: sorting imports can leave lines the formatter then rewraps.
+FIXERS = [
+    ("ruff check --fix", ["ruff", "check", "--fix", "--quiet", *PATHS]),
+    ("ruff format", ["ruff", "format", "--quiet", *PATHS]),
+]
 
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -136,7 +139,7 @@ def dur(seconds: float) -> str:
         return f"{seconds:.1f}s"
     if seconds < 60:
         return f"{seconds:.0f}s"
-    m, s = divmod(int(round(seconds)), 60)
+    m, s = divmod(round(seconds), 60)
     return f"{m}:{s:02d}"
 
 
@@ -180,10 +183,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Zebaro-Core-Bot quality gate")
     ap.add_argument("--lint", action="store_true", help="lint and types only")
     ap.add_argument("--tests", action="store_true", help="tests only")
-    ap.add_argument("--security", action="store_true", help="bandit and pip-audit only")
+    ap.add_argument("--security", action="store_true", help="pip-audit only (code patterns are in ruff)")
     ap.add_argument("--strict", action="store_true", help="tests with coverage (+ coverage.xml)")
     ap.add_argument("--only", default="", help="comma-separated check names")
-    ap.add_argument("--fix", action="store_true", help="apply black and isort first")
+    ap.add_argument("--fix", action="store_true", help="apply ruff's fixes and formatting first")
     ap.add_argument("--jobs", type=int, default=min(4, os.cpu_count() or 2))
     ap.add_argument("--list", action="store_true")
     ap.add_argument("extra", nargs="*", help="arguments after -- go to the single --only check")

@@ -1,5 +1,5 @@
 import logging
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message, TelegramObject, User
@@ -21,9 +21,7 @@ class DockerMiddleware(BaseMiddleware):
         data: dict,
     ):
         user: User | None = None
-        if isinstance(event, Message):
-            user = event.from_user
-        elif isinstance(event, CallbackQuery):
+        if isinstance(event, (Message, CallbackQuery)):
             user = event.from_user
 
         access_ids = settings.telegram_docker_access_ids or []

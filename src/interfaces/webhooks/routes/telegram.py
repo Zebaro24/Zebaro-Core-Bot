@@ -33,12 +33,12 @@ async def telegram_webhook(request: Request) -> Response:
     try:
         data = await request.json()
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        raise HTTPException(status_code=400, detail="Invalid JSON") from None
 
     try:
         update = Update.model_validate(data)
     except Exception:
-        raise HTTPException(status_code=422, detail="Invalid update payload")
+        raise HTTPException(status_code=422, detail="Invalid update payload") from None
 
     # Answer at once and handle the update in the background. Telegram does not send
     # the next update until this one is answered, so a long handler (a job search takes

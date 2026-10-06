@@ -1,5 +1,5 @@
 import logging
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message, TelegramObject, User
@@ -17,9 +17,7 @@ class AdminMiddleware(BaseMiddleware):
         data: dict,
     ):
         user: User | None = None
-        if isinstance(event, Message):
-            user = event.from_user
-        elif isinstance(event, CallbackQuery):
+        if isinstance(event, (Message, CallbackQuery)):
             user = event.from_user
 
         if user is not None and user.id != settings.telegram_admin_id:

@@ -28,10 +28,10 @@
 python scripts/gate.py            # всё
 python scripts/gate.py --lint     # линт и типы по ходу работы
 python scripts/gate.py --strict   # + покрытие, перед релизом
-python scripts/gate.py --fix      # black + isort, потом гейт
+python scripts/gate.py --fix      # ruff check --fix + ruff format, потом гейт
 ```
 
-**Не зови black / isort / flake8 / mypy / bandit / pip-audit / pytest напрямую.** Если
+**Не зови ruff / mypy / pip-audit / pytest напрямую.** Если
 проверка идёт мимо гейта, твоё «зелено» перестаёт совпадать с зелёным CI. Нужен один тест —
 `--only pytest -- путь::тест`.
 

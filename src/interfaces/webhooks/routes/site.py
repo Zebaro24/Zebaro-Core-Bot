@@ -71,7 +71,7 @@ async def site_contact(request: Request) -> dict[str, bool]:
     except Exception:
         # Never the message itself in logs — only that it failed and for whom (a hash).
         logger.exception("Site contact from %s was not delivered", body.sender)
-        raise HTTPException(status_code=503, detail="Telegram refused the message")
+        raise HTTPException(status_code=503, detail="Telegram refused the message") from None
 
     logger.info("Site contact delivered: sender=%s locale=%s length=%d", body.sender, body.locale, len(body.message))
     return {"ok": True}

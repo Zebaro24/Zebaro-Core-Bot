@@ -5,7 +5,7 @@ user-invocable: true
 allowed-tools: Bash, Read
 ---
 
-One checker, one command. Never call black / isort / flake8 / mypy / bandit / pip-audit /
+One checker, one command. Never call ruff / mypy / pip-audit /
 pytest by hand — a green that CI did not produce is not a green.
 
 1. **Pick the scope from where you are**, not from habit:
@@ -18,7 +18,7 @@ pytest by hand — a green that CI did not produce is not a green.
    | touched dependencies                    | `python scripts/gate.py --security`     |
    | one test                                | `--only pytest -- tests/path::test_name` |
 
-2. **Formatting red?** `python scripts/gate.py --fix` applies black and isort, then run the
+2. **Formatting red?** `python scripts/gate.py --fix` applies ruff's fixes and formatting, then run the
    gate again. That is the reason `--fix` exists: so fixing formatting never needs a
    checker called around the gate.
 

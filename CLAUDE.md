@@ -17,8 +17,8 @@ Discord-бот, FastAPI для вебхуков GitHub/Telegram, уведомл�
 - Владелец сказал **`release`** / **`deploy`** → `/release`: строгий гейт → версия →
   тег `vX.Y.Z` → CD (ещё раз гейт) → сервер.
 
-**Проверки — только `python scripts/gate.py`.** Не зови black / isort / flake8 / mypy /
-bandit / pip-audit / pytest руками: проверка мимо гейта — это «зелено», которое не совпадает
+**Проверки — только `python scripts/gate.py`.** Не зови ruff / mypy / pip-audit / pytest
+руками: проверка мимо гейта — это «зелено», которое не совпадает
 с CI. Один тест — `--only pytest -- путь::тест`, форматирование — `--fix`.
 
 **Автор коммитов — человек.** Ни `Co-Authored-By`, ни упоминаний ассистента и его вендора —
@@ -93,7 +93,7 @@ _ideas/  _temp/               # вне git: находки и черновики
 python scripts/gate.py                 # ЕДИНСТВЕННЫЙ чекер (~15 с), ровно как CI
 python scripts/gate.py --lint          # по ходу работы
 python scripts/gate.py --strict        # перед релизом: + покрытие
-python scripts/gate.py --fix           # black + isort, потом гейт
+python scripts/gate.py --fix           # ruff check --fix + ruff format, потом гейт
 python scripts/release.py --bump minor --dry-run
 ```
 

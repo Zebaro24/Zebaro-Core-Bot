@@ -76,8 +76,7 @@ def test_your_stack_message_says_why_and_folds_the_description():
     assert text.startswith("<h3>🔥 Full Stack Developer</h3>")
     assert "<p><b>Acme</b> · Dou · 17.09.2026</p>" in text
     assert (
-        "<p>🔥 <b>Бэк + фронт</b> — <mark>Python</mark>, <mark>FastAPI</mark> · <mark>React</mark>"
-        "<br>➕ TypeScript</p>"
+        "<p>🔥 <b>Бэк + фронт</b> — <mark>Python</mark>, <mark>FastAPI</mark> · <mark>React</mark><br>➕ TypeScript</p>"
     ) in text
     assert "<hr/><blockquote>We build a data product. Requirements 3+ years with Python" in text
     assert "<details><summary>📄 Описание полностью</summary><p>We build" in text

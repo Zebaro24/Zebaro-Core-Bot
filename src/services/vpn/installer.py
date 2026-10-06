@@ -10,7 +10,7 @@ Dockerfile. Without them — a local run — the EXE is simply not offered.
 """
 
 import shutil
-import subprocess  # nosec B404 — only 7z, with arguments the bot builds itself
+import subprocess  # only 7z, with arguments the bot builds itself
 import tempfile
 from pathlib import Path
 
@@ -81,9 +81,9 @@ def build_exe(full: Profile, lan: Profile, activate: Profile | None = None) -> b
             shutil.copyfile(_assets() / _msi(arch), work / _msi(arch))
 
         files = ["install.bat", full.filename, lan.filename, *map(_msi, ARCHITECTURES)]
-        subprocess.run(  # nosec B603 B607 — fixed binary, no shell, names built above
+        subprocess.run(  # noqa: S603 — fixed binary, no shell, names built above
             # -mx=1: the MSIs are compressed already; a harder pass only costs time.
-            ["7z", "a", "-t7z", "-mx=1", "-bso0", "-bsp0", "payload.7z", *files],
+            ["7z", "a", "-t7z", "-mx=1", "-bso0", "-bsp0", "payload.7z", *files],  # noqa: S607 — 7z from the image
             cwd=work,
             check=True,
             timeout=_BUILD_TIMEOUT_S,

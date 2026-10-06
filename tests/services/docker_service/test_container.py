@@ -100,17 +100,17 @@ def test_project_name_falls_back_to_the_container_name(docker_container):
 
 def test_start_stop_restart(docker_container):
     docker_container.start()
-    docker_container.container.start.assert_called_once()  # noqa
+    docker_container.container.start.assert_called_once()
 
     docker_container.stop()
-    docker_container.container.stop.assert_called_once()  # noqa
+    docker_container.container.stop.assert_called_once()
 
     docker_container.restart()
-    docker_container.container.restart.assert_called_once()  # noqa
+    docker_container.container.restart.assert_called_once()
 
 
 def test_get_log(docker_container):
     log_text = docker_container.get_log(tail=5000)
     assert "test log line 1" in log_text
     assert isinstance(log_text, str)
-    docker_container.container.logs.assert_called_with(tail=5000)  # noqa
+    docker_container.container.logs.assert_called_with(tail=5000)

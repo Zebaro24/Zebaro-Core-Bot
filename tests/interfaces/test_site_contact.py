@@ -8,14 +8,14 @@ import pytest
 if "src.config" not in sys.modules:
     sys.modules["src.config"] = MagicMock(settings=MagicMock())
 
-import httpx  # noqa: E402
-from fastapi import FastAPI  # noqa: E402
-from pydantic import ValidationError  # noqa: E402
+import httpx
+from fastapi import FastAPI
+from pydantic import ValidationError
 
-from src.interfaces.tg.formatters.site_contact import site_contact_to_html  # noqa: E402
-from src.interfaces.tg.keyboards.site_contact import get_site_contact_kb  # noqa: E402
-from src.interfaces.webhooks.routes import site  # noqa: E402
-from src.services.site_contact import ContactRateLimit, SiteContact  # noqa: E402
+from src.interfaces.tg.formatters.site_contact import site_contact_to_html
+from src.interfaces.tg.keyboards.site_contact import get_site_contact_kb
+from src.interfaces.webhooks.routes import site
+from src.services.site_contact import ContactRateLimit, SiteContact
 
 TOKEN = "site-secret"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}

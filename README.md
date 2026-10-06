@@ -5,7 +5,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.135-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Aiogram](https://img.shields.io/badge/Aiogram-3.x-2CA5E0?logo=telegram&logoColor=white)](https://docs.aiogram.dev/)
 [![discord.py](https://img.shields.io/badge/discord.py-2.x-5865F2?logo=discord&logoColor=white)](https://discordpy.readthedocs.io/)
-[![Playwright](https://img.shields.io/badge/Playwright-1.59-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
+[![Playwright](https://img.shields.io/badge/Playwright-1.63-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
 [![MongoDB](https://img.shields.io/badge/MongoDB-4.4-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/)
 [![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
 
@@ -65,7 +65,7 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 | Docker | docker SDK for Python |
 | Database | MongoDB (PyMongo) |
 | Config | pydantic-settings |
-| Tooling | Poetry, black, isort, flake8, mypy, bandit, pip-audit — all through `scripts/gate.py` |
+| Tooling | Poetry, ruff (format + lint + security rules), mypy, pip-audit — all through `scripts/gate.py` |
 | Testing | pytest, pytest-asyncio, pytest-cov |
 
 ---
@@ -122,10 +122,10 @@ With `DEBUG=True` the Telegram bot uses polling; the webhooks API is on `http://
 One command runs every check — the same one CI runs and CD runs before deploying:
 
 ```bash
-python scripts/gate.py            # poetry-lock, black, isort, flake8, mypy, bandit, pip-audit, pytest
+python scripts/gate.py            # poetry-lock, ruff format, ruff check, mypy, pip-audit, pytest
 python scripts/gate.py --lint     # fast: lint and types only
 python scripts/gate.py --strict   # tests with coverage
-python scripts/gate.py --fix      # apply black + isort first
+python scripts/gate.py --fix      # apply ruff's fixes and formatting first
 ```
 
 See `scripts/README.md` for the release and production helpers.

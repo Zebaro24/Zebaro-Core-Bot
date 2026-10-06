@@ -34,7 +34,7 @@ async def start_command(message: Message) -> None:
         await sleep(0.5)
 
     await message.answer(
-        "📌 <b>Доступные команды:</b>\n" "/get_chat_id - Узнать Chat ID и Thread ID 🆔\n",
+        "📌 <b>Доступные команды:</b>\n/get_chat_id - Узнать Chat ID и Thread ID 🆔\n",
         message_effect_id="5159385139981059251",
     )
 

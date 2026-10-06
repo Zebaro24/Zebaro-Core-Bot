@@ -40,7 +40,7 @@ the bug is incomplete.
 ## What you return
 
 Blockers first, then majors, then a short list of minors. Each finding: what, `file:line`,
-why it matters in one sentence, and the fix. Skip praise, skip what black/isort/flake8
+why it matters in one sentence, and the fix. Skip praise, skip what ruff
 already settle, skip anything you are not reasonably sure about.
 
 If the change is good, say so in one line and name what you checked. You do not edit.

@@ -10,8 +10,8 @@ if "src.config" not in sys.modules:
 if "src.db.client" not in sys.modules:
     sys.modules["src.db.client"] = MagicMock(jobs_collection=MagicMock(), start_db=AsyncMock())
 
-from src.interfaces.tg.handlers.callbacks import job as callback  # noqa: E402
-from src.interfaces.tg.keyboards.job import JobActionCallback  # noqa: E402
+from src.interfaces.tg.handlers.callbacks import job as callback
+from src.interfaces.tg.keyboards.job import JobActionCallback
 
 
 def _async_cursor(docs):

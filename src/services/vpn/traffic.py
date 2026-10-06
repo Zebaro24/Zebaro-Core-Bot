@@ -73,12 +73,16 @@ async def snapshot(clients: list[VpnClient], now: datetime | None = None) -> Eve
             )
             if known_since_creation:
                 events.first_connected.append(client)
-        if client.expires_at and client.enabled and now < client.expires_at <= now + EXPIRY_NOTICE:
-            # A string: Mongo hands datetimes back without a timezone, and a naive one never
-            # equals the aware one from wg-easy — the notice would repeat every snapshot.
-            if state.get("expiry_noticed_for") != client.expires_at.isoformat():
-                update["expiry_noticed_for"] = client.expires_at.isoformat()
-                events.expiring.append(client)
+        # A string: Mongo hands datetimes back without a timezone, and a naive one never
+        # equals the aware one from wg-easy — the notice would repeat every snapshot.
+        if (
+            client.expires_at
+            and client.enabled
+            and now < client.expires_at <= now + EXPIRY_NOTICE
+            and state.get("expiry_noticed_for") != client.expires_at.isoformat()
+        ):
+            update["expiry_noticed_for"] = client.expires_at.isoformat()
+            events.expiring.append(client)
         await vpn_clients_collection.update_one({"_id": client.id}, {"$set": update}, upsert=True)
         if rx or tx:
             await vpn_daily_collection.update_one(

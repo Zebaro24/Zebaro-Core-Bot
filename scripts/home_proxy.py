@@ -81,7 +81,7 @@ def make_handler(auth: str, allowed_peers: set[str] = ALLOWED_PEERS, allowed_por
             writer.close()
             return
         lines = head.decode("latin-1").split("\r\n")
-        method, target, *_ = lines[0].split(" ") + ["", ""]
+        method, target, *_ = [*lines[0].split(" "), "", ""]
         headers = {k.strip().lower(): v.strip() for k, _, v in (line.partition(":") for line in lines[1:] if line)}
 
         # Chromium sends the login only after a 407 that asks for it.
@@ -123,7 +123,8 @@ async def serve(url: str) -> None:
                 waiting_logged = True
             await asyncio.sleep(RETRY_S)
             continue
-        log.info("listening on %s:%s — only %s, only CONNECT :443", parsed.hostname, parsed.port, ", ".join(ALLOWED_PEERS))
+        peers = ", ".join(ALLOWED_PEERS)
+        log.info("listening on %s:%s — only %s, only CONNECT :443", parsed.hostname, parsed.port, peers)
         async with server:
             await server.serve_forever()
 

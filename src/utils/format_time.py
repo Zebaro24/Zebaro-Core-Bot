@@ -6,10 +6,10 @@ def format_duration(seconds: int) -> str | None:
     hours, seconds = divmod(seconds, 3600)
     minutes, seconds = divmod(seconds, 60)
     if days > 0:
-        return "%dd %dh" % (days, hours)
+        return f"{days:d}d {hours:d}h"
     elif hours > 0:
-        return "%dh %dm" % (hours, minutes)
+        return f"{hours:d}h {minutes:d}m"
     elif minutes > 0:
-        return "%dm %ds" % (minutes, seconds)
+        return f"{minutes:d}m {seconds:d}s"
     else:
-        return "%ds" % (seconds,)
+        return f"{seconds:d}s"

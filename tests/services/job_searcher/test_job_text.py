@@ -32,10 +32,7 @@ def test_element_text_keeps_structure():
     text = element_text(_first(markup))
 
     assert text == (
-        "We are looking for an experienced developer.\n\n"
-        "Requirements\n\n"
-        "• 7+ years\n• Python\n\n"
-        "Line one\nLine two"
+        "We are looking for an experienced developer.\n\nRequirements\n\n• 7+ years\n• Python\n\nLine one\nLine two"
     )
 
 

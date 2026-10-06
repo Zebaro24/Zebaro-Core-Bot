@@ -72,10 +72,8 @@ def format_vpn_card(
 ) -> str:
     now = now or datetime.now(UTC)
     kind = addressing.kind(client.host_number)
-    if client.expires_at:
-        expiry = f"до {client.expires_at.astimezone():%d.%m.%Y %H:%M}"  # local time, like the rest
-    else:
-        expiry = "бессрочно"
+    # Local time, like the rest.
+    expiry = f"до {client.expires_at.astimezone():%d.%m.%Y %H:%M}" if client.expires_at else "бессрочно"
     rows = [
         ("Статус", f"{status_emoji(client, now)} " + ("включён" if client.enabled else "выключен")),
         ("IP", f"<b>{escape(client.ipv4)}</b>" + (f" · {kind}" if kind else "")),
