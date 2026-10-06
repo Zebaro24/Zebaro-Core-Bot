@@ -16,7 +16,7 @@ _FORMATS = {"remote": "Удалённо", "office_or_remote": "Офис или �
 _WARNINGS = {
     "english": "просят английский B2",
     "ukraine": "в тексте про нахождение в Украине",
-    "no_description": "описание не загрузилось — сужу по названию",
+    "no_description": "стек не проверен — сужу только по названию",
 }
 
 # Rich messages allow 32768 characters including markup; the longest real descriptions are

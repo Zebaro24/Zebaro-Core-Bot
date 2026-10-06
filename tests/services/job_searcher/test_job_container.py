@@ -157,19 +157,23 @@ async def test_text_dates_become_dates_counted_from_when_the_vacancy_was_found(m
         {"_id": 1, "date": "2 дні тому", "found_at": found},
         {"_id": 2, "date": "Гаряча вакансія", "found_at": found},  # not a date: left alone
     ]
+    links = [{"_id": 3, "link": "https://www.robota.ua/company1/vacancy2"}]
 
-    async def cursor():
-        for doc in docs:
-            yield doc
+    async def cursor(items):
+        for item in items:
+            yield item
 
     collection = MagicMock()
-    collection.find = MagicMock(return_value=cursor())
+    collection.find = MagicMock(side_effect=[cursor(docs), cursor(links)])
     collection.update_one = AsyncMock()
     collection.update_many = AsyncMock(return_value=MagicMock(modified_count=3))
     mocker.patch.object(container, "jobs_collection", collection)
 
     assert await container.normalize_stored_dates() == 1
-    collection.update_one.assert_awaited_once_with({"_id": 1}, {"$set": {"date": found - timedelta(days=2)}})
+    collection.update_one.assert_any_await({"_id": 1}, {"$set": {"date": found - timedelta(days=2)}})
+    # Robota.ua links lose the "www." that now answers 404.
+    collection.update_one.assert_any_await({"_id": 3}, {"$set": {"link": "https://robota.ua/company1/vacancy2"}})
+    assert collection.update_one.await_count == 2
     # Work.ua's salary note stored as a company is cleared too.
     collection.update_many.assert_awaited_once_with(
         {"platform_name": "Work.ua", "company": "Після всіх відрахувань"}, {"$set": {"company": None}}

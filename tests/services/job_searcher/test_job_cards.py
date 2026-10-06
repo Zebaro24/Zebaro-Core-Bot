@@ -147,3 +147,9 @@ def test_work_ua_card_years_count_only_when_they_rule_the_vacancy_out():
     card = _card(WORK_UA_CARD.format(years="5 років"), "div.job-link")
 
     assert WorkUAListeners().get_details(card)["required_years"] == 5
+
+
+def test_robota_ua_links_go_without_www():
+    card = _card('<div><a href="/company1020/vacancy10927041">x</a></div>', "div")
+
+    assert RobotaUAListeners().get_link(card) == "https://robota.ua/company1020/vacancy10927041"

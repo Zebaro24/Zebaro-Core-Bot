@@ -5,6 +5,8 @@ from bs4 import Tag
 from src.services.job_searcher import extract
 from src.services.job_searcher.listeners.base import BaseListeners
 
+ROBOTA_UA = "https://robota.ua"
+
 
 class RobotaUAListeners(BaseListeners):
     platform_name = "Robota.ua"
@@ -36,4 +38,6 @@ class RobotaUAListeners(BaseListeners):
         el = element.select_one(self.link)
         if not el:
             raise ValueError("No link found in Robota.ua element")
-        return f"https://www.robota.ua{el.get('href')}"
+        # No "www": www.robota.ua answers 404 for every vacancy page (06.10.2026) — the button led
+        # nowhere and the description never loaded.
+        return f"{ROBOTA_UA}{el.get('href')}"

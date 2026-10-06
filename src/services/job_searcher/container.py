@@ -148,6 +148,11 @@ async def normalize_stored_dates() -> int:
             if date is not None:
                 await jobs_collection.update_one({"_id": doc["_id"]}, {"$set": {"date": date}})
                 fixed += 1
+        # Robota.ua links were stored with "www.", which now answers 404: the vacancy buttons
+        # already in the chat go through /jobs/r/<id>, so fixing the stored link fixes them.
+        async for doc in jobs_collection.find({"link": {"$regex": r"^https://www\.robota\.ua/"}}, {"link": 1}):
+            link = doc["link"].replace("https://www.robota.ua/", "https://robota.ua/", 1)
+            await jobs_collection.update_one({"_id": doc["_id"]}, {"$set": {"link": link}})
         # v0.13.0 stored Work.ua's salary note as the company of every card with a salary. The
         # real name is gone; no company is better than one that groups unrelated vacancies.
         result = await jobs_collection.update_many(
