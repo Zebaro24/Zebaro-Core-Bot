@@ -10,6 +10,7 @@ from src.core.service_manager import ServiceManager
 from src.infrastructure.mongodb import MongoDBInfra
 from src.infrastructure.playwright import PlaywrightInfra
 from src.interfaces.ds.service import DiscordService
+from src.interfaces.tg.commands import set_commands
 from src.interfaces.tg.handlers import get_chat_id, start
 from src.interfaces.tg.handlers.admin import (
     get_job_openings,
@@ -85,6 +86,7 @@ async def start_bot() -> None:
     setup_telegram_webhook(bot, dp)
 
     await bot.delete_webhook(drop_pending_updates=True)
+    await set_commands(bot)
 
     try:
         if settings.debug:
