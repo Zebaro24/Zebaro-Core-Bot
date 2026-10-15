@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 from datetime import date, datetime
+from html import escape
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -217,7 +218,7 @@ async def _dispatch(
             member = await s.get(Member, member_id)
         if member:
             await message.answer(
-                f"Ссылка для <b>{member.name}</b> — перешли её, человек нажмёт «Start» и будет получать "
+                f"Ссылка для <b>{escape(member.name)}</b> — перешли её, человек нажмёт «Start» и будет получать "
                 f"напоминания:\n{await _invite_link(bot, member)}"
             )
     elif action in ("notify_on", "notify_off"):
@@ -341,8 +342,9 @@ async def _resolve_sender(message: Message, action: str, member_id: int, key: st
             await repo.assign_alias(s, name, member_id)
             text = f"✅ {name} → {member_obj.name}"
         rest = await repo.unknown_senders(s)
-    await message.edit_text(f"{message.html_text}\n\n{text}") if message.text else None
-    if rest and message.rich_message is not None:
+    if message.text:  # the "чьи это деньги?" notice: note the answer, drop the buttons
+        await message.edit_text(f"{message.html_text}\n\n{escape(text)}")
+    else:  # the senders screen: show who is left
         await show_rich(message, fmt.format_senders(rest), get_spotify_senders_kb([n for n, _, _ in rest]))
     return text
 
@@ -363,7 +365,7 @@ async def adjust_form(message: Message, state: FSMContext) -> None:
     async with session() as s, s.begin():
         await repo.add_adjustment(s, member_id, amount, note)
     await state.clear()
-    await message.answer(f"📝 Записал {fmt.uah(amount, sign=True)}" + (f" · {note}" if note else ""))
+    await message.answer(f"📝 Записал {fmt.uah(amount, sign=True)}" + (f" · {escape(note)}" if note else ""))
     sent = await message.answer("…")
     await _member_screen(sent, member_id)
 
@@ -405,7 +407,7 @@ async def add_form(message: Message, state: FSMContext) -> None:
     async with session() as s, s.begin():
         member = await repo.add_member(s, name, today())
     await state.clear()
-    await message.answer(f"➕ {member.name} в подписке с сегодняшнего дня.")
+    await message.answer(f"➕ {escape(member.name)} в подписке с сегодняшнего дня.")
     sent = await message.answer("…")
     await _member_screen(sent, member.id)
 

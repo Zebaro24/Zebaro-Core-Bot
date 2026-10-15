@@ -7,6 +7,7 @@ owner's report names them instead.
 """
 
 import logging
+from html import escape
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
@@ -153,7 +154,7 @@ async def remind_before(bot: Bot, snap: Snapshot, period: str, force: bool = Fal
     if owner_claim:
         text = fmt.notice_owner_before(snap, short)
         if missed:
-            text += "\n⚠️ Не смог написать: " + ", ".join(m.name for m in missed) + " — перешли сам."
+            text += "\n⚠️ Не смог написать: " + ", ".join(escape(m.name) for m in missed) + " — перешли сам."
         await _to_owner(bot, text)
     return missed
 

@@ -5,6 +5,7 @@ everyone else, and a plain /start would swallow the invite's ``sp_<code>`` paylo
 """
 
 import logging
+from html import escape
 
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
@@ -71,10 +72,12 @@ async def invite(message: Message, command: CommandObject, bot: Bot) -> None:
     except Exception as e:
         logger.info("Could not set the member menu: %s", e)
     await message.answer(
-        f"🎧 Привет, {name}! Теперь я напомню перед списанием Spotify Family (12-го) и скажу, "
+        f"🎧 Привет, {escape(name)}! Теперь я напомню перед списанием Spotify Family (12-го) и скажу, "
         "когда твой перевод дошёл. Баланс в любой момент — /spotify."
     )
-    await bot.send_message(settings.telegram_admin_id, f"🔗 {name} подключился к боту.", disable_notification=True)
+    await bot.send_message(
+        settings.telegram_admin_id, f"🔗 {escape(name)} подключился к боту.", disable_notification=True
+    )
     async with session() as s:
         linked = await s.get(Member, member.id)
     if linked:
