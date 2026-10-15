@@ -50,6 +50,11 @@ async def handle(bot: Bot, result: sync.Ingested) -> None:
     """New items from the webhook or the poll → the people concerned."""
     if not (result.topups or result.unknown or result.charges):
         return
+    async with session() as s:
+        if not await repo.get_state(s, repo.HISTORY):
+            # The history is still loading: nobody is filed yet, every sender would look
+            # unknown and every charge new. The load reports once it is done.
+            return
     snap = await snapshot()
     by_id = {m.id: m for m in snap.members}
     for transaction in result.topups:
@@ -244,9 +249,9 @@ async def spotify_bootstrap(bot: Bot) -> None:
         async with session() as s, s.begin():
             founders = [m for m in await repo.members(s) if not m.is_owner]
             senders = await repo.unknown_senders(s)
-            # Nobody changed since the start: every sender is a founder — but never past the
-            # plan's six, and never on top of members someone already added by hand.
-            if not founders and len(senders) < ledger.MAX_MEMBERS:
+            # Nobody changed since the start: every sender not filed yet is a founder — as long
+            # as the plan stays within its six (the owner is one of them).
+            if 1 + len(founders) + len(senders) <= ledger.MAX_MEMBERS:
                 for name, _, _ in senders:
                     await repo.add_member(s, name, since, alias=name)
     except Exception as e:

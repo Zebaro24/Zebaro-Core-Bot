@@ -119,11 +119,12 @@ async def _join_day(s: AsyncSession, name: str) -> date:
     history = await repo.get_state(s, repo.HISTORY)
     first = await repo.first_topup(s, name)
     first_day = ledger.local_day(first, tz()) if first else today()
-    if history:
-        since = date.fromisoformat(history["since"])
-        if (first_day - since).days <= _FOUNDER_DAYS:
-            return since
-    return first_day
+    start = history["since"] if history else str(settings.spotify_since or "")
+    try:
+        since = date.fromisoformat(start)
+    except ValueError:
+        return first_day
+    return since if (first_day - since).days <= _FOUNDER_DAYS else first_day
 
 
 async def _invite_link(bot: Bot, member: Member) -> str:
@@ -325,6 +326,11 @@ async def _resolve_sender(message: Message, action: str, member_id: int, key: st
     if name is None:
         return "Этот отправитель уже разобран"
     async with session() as s, s.begin():
+        # A stale "чьи это деньги?" notice pressed after the sender was filed: no second member.
+        owner_of = (await repo.aliases(s)).get(name)
+        if action == "sender_new" and owner_of is not None:
+            filed = await s.get(Member, owner_of)
+            return f"Уже разобран: {name} → {filed.name if filed else '?'}"
         if action == "sender_skip":
             await repo.assign_alias(s, name, None)
             text = f"🚫 {name} — не учитываю"
