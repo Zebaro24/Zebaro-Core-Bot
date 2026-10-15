@@ -23,6 +23,10 @@ pydantic-settings = "^2.14"
 
 # --- Database ---
 pymongo = "^4.18.2"
+# SQL through the ORM: SQLite now, Postgres later by changing DATABASE_URL; Alembic migrations.
+sqlalchemy = {version = "^2.0", extras = ["asyncio"]}
+aiosqlite = "^0.21"
+alembic = "^1.16"
 
 # --- Task scheduling ---
 apscheduler = "^3.11.3"

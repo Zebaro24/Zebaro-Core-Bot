@@ -47,7 +47,7 @@ src/
 │   ├── base_service.py       # BaseService ABC: on_enable / on_disable
 │   ├── base_infrastructure.py
 │   └── service_manager.py    # Singleton; state persisted to services.json
-├── db/                       # MongoDB (AsyncMongoClient) + collections
+├── db/                       # MongoDB (AsyncMongoClient) + collections; sql.py — SQLAlchemy (SQLite→Postgres)
 ├── scheduler/                # APScheduler singleton, timezone from TZ
 ├── infrastructure/           # mongodb.py, playwright.py — start/stop Docker containers
 ├── services/
@@ -55,6 +55,7 @@ src/
 │   ├── github/               # GithubManager (instance-level dicts!), service, webhook, event_handler
 │   ├── job_searcher/         # container, extract, filter (tiers), dedup, stats, digest, parser, urls, listeners/
 │   ├── site_contact.py       # zebaro.dev contact form: model + rate limit
+│   ├── spotify/              # family plan: monobank client, sync, ledger (pure), schedule, report
 │   ├── vpn/                  # wg-easy API client, addresses 10.0.0.x, profiles, traffic, installer/ (EXE)
 │   └── speedtest/            # SpeedTestManager (speed.cloudflare.com over httpx)
 ├── interfaces/
@@ -85,6 +86,7 @@ _ideas/  _temp/               # вне git: находки и черновики
 - **Scheduler runs in local time** (`TZ`, default `Europe/Berlin`), not UTC.
 - **Playwright**: the Python package in `poetry.lock` and the image in `docker-compose.yml` move together (major.minor) — `tests/test_playwright_version.py` checks it.
 - **VPN**: wg-easy runs with `network_mode: host` (10.0.0.1 = the server), API on `172.17.0.1:51821` (bot reaches it as `host.docker.internal`); the bot owns wg-easy's firewall hooks (`HOOK_POST_UP` in `services/vpn/client.py`): `iptables-nft`, because `iptables` in the image is legacy and the host is nftables, plus a DROP that keeps VPN peers off the panel. `GET /api/client/{id}` has no handshake/traffic: read clients from the list. `WG_VERSION` in `services/vpn/installer.py` and `ARG WG_VERSION` in `Dockerfile` move together — `tests/test_vpn_installer_version.py`. `install.bat` is shipped with CRLF (built in code).
+- **SQL**: new storage goes to SQLAlchemy models + an Alembic revision (`migrations/`, `render_as_batch` for SQLite); the bot upgrades to head at start; `tests/services/spotify` checks migrations match the models. Money in kopecks, time as Unix int.
 - **Tests replace `src.config` with a mock at import time** — never read `settings` at module level in a way a `MagicMock` breaks.
 
 ## Команды

@@ -26,6 +26,7 @@ ADMIN = [
     BotCommand(command="get_job_openings", description="Поиск новых вакансий"),
     BotCommand(command="job_stats", description="Статистика поиска: /job_stats 30"),
     BotCommand(command="vpn", description="Люди в VPN: онлайн, трафик, файлы"),
+    BotCommand(command="spotify", description="Spotify Family: банка, долги, напоминания"),
     BotCommand(command="services", description="Сервисы и инфраструктура"),
     BotCommand(command="mongo", description="База MongoDB"),
 ]

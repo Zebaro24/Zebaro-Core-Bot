@@ -21,6 +21,7 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 - Admin utilities: chat ID, server health, MongoDB stats
 - Docker control: `/server_status` — projects and containers as tables, two-column paged buttons, start/stop/restart, logs
 - VPN: `/vpn` — WireGuard (wg-easy) clients with online status and traffic; add with a chosen address (`10.0.0.<n>`), enable/disable, access expiry, rename, readdress, delete; sends two named profiles (full / LAN) or a one-file Windows installer
+- Spotify Family: `/spotify` — the family plan paid from a Monobank jar: who paid, who owes, "paid until", corrections by hand, stats; members join by an invite link and get their own `/spotify`
 - Service manager: enable/disable services and infrastructure at runtime via `/services`
 - Job notifications: scheduled digests from multiple sources, stats on demand via `/job_stats`
 
@@ -46,6 +47,13 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 - Addresses: `.2–.9` the owner's devices, `.10–.99` chosen per person, `.100+` automatic; DNS is AdGuard (ads blocked)
 - The Windows installer is a 7-Zip SFX: installs WireGuard 1.1.1 only when missing or older, imports `Zebaro-<Name>` and `Zebaro-<Name>-LAN`, switches one on unless another VPN is active
 - Traffic history survives counter resets (Mongo); first-connection and access-expiry notices; weekly table on Fridays
+
+**Spotify Family (Monobank)**
+- The jar's top-ups (`Від: <name>`) and the Spotify charges on the card come in by Monobank's webhook (`/webhook/monobank/<secret>`) and an hourly statement poll; the whole history loads from a chosen date
+- Each charge is split equally among the members active that day (kopecks left over go to the owner); balances are recomputed from the full history, so a corrected join date fixes every number
+- Unknown senders are asked about once: a member's other name, a new member, or not counted
+- Three days and one day before the charge: members short of their share get a reminder with a top-up link, the owner gets the jar and the card balance ("withdraw X from the jar" / "short of X"); after the charge — debtors at once and three days later; a price change in dollars is flagged
+- Stored in SQL (SQLAlchemy + Alembic, SQLite in `state/`), not Mongo — the start of the move to Postgres
 
 **Infrastructure management**
 - MongoDB and Playwright containers started/stopped on demand
@@ -148,6 +156,9 @@ See `scripts/README.md` for the release and production helpers.
 | `WG_PASSWORD` | yes for compose | — | wg-easy admin password (12+ chars); the bot gets it as `WG_EASY_PASSWORD` |
 | `HOME_PROXY_URL` | no | empty (boards go direct) | `http://user:pass@10.0.0.2:8899` — HTTP proxy on the owner's PC in the VPN; Work.ua, Robota.ua and HappyMonday are opened through it (they block the server's IP) and skipped in 2 s when it is off |
 | `WG_HOST` | no | `server.zebaro.dev` | Endpoint clients connect to; must resolve straight to the server (no Cloudflare proxy) |
+| `MONOBANK_TOKEN` | no | empty (Spotify idle) | Monobank personal API token (api.monobank.ua) |
+| `MONOBANK_WEBHOOK_SECRET` | no | empty (no webhook, poll only) | Path secret of `/webhook/monobank/<secret>` — personal webhooks are not signed |
+| `DATABASE_URL` | no | `sqlite+aiosqlite:///zebaro.db` | SQL database; compose: `state/zebaro.db`; later `postgresql+asyncpg://…` |
 | `TZ` | no | `Europe/Berlin` | Scheduler timezone (and log time in Docker) |
 | `SERVICES_STATE_FILE` | no | `services.json` | Where `/services` toggles are saved |
 | `MONGO_URI` | no | `mongodb://localhost:27017/zebaro_core` | MongoDB connection string |

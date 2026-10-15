@@ -102,6 +102,8 @@ jobs:
             export SITE_CONTACT_TOKEN=${{ secrets.SITE_CONTACT_TOKEN }}
             export WG_PASSWORD='${{ secrets.WG_PASSWORD }}'
             export HOME_PROXY_URL='${{ secrets.HOME_PROXY_URL }}'
+            export MONOBANK_TOKEN='${{ secrets.MONOBANK_TOKEN }}'
+            export MONOBANK_WEBHOOK_SECRET='${{ secrets.MONOBANK_WEBHOOK_SECRET }}'
             
             docker compose -p zebaro-core up -d --pull always
             docker image prune -f

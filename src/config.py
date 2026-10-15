@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     vpn_installer_dir: str = "/opt/vpn-installer"
 
     mongo_uri: str = "mongodb://localhost:27017/zebaro_core"
+    # SQL through SQLAlchemy (src/db/sql.py): SQLite now, Postgres later by changing this URL.
+    database_url: str = "sqlite+aiosqlite:///zebaro.db"
+
+    # Monobank personal API (the Spotify family jar). Empty token — the service stays idle.
+    monobank_token: str = ""
+    # Path secret of /webhook/monobank/<secret>: Monobank's personal webhooks are not signed.
+    monobank_webhook_secret: str = ""
 
     playwright_ws_endpoint: str = "ws://localhost:9222"
 

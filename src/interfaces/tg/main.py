@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.bot import DefaultBotProperties
@@ -11,7 +11,7 @@ from src.infrastructure.mongodb import MongoDBInfra
 from src.infrastructure.playwright import PlaywrightInfra
 from src.interfaces.ds.service import DiscordService
 from src.interfaces.tg.commands import set_commands
-from src.interfaces.tg.handlers import get_chat_id, start
+from src.interfaces.tg.handlers import get_chat_id, spotify_member, start
 from src.interfaces.tg.handlers.admin import (
     get_job_openings,
     job_stats,
@@ -19,11 +19,13 @@ from src.interfaces.tg.handlers.admin import (
     server_speed,
     server_status,
     services,
+    spotify,
     vpn,
 )
 from src.interfaces.tg.handlers.callbacks import docker, job
 from src.interfaces.tg.notification.job_notification import job_notification
 from src.interfaces.tg.notification.job_stats_notification import job_stats_notification
+from src.interfaces.tg.notification.spotify_notification import ensure_webhook, spotify_poll, spotify_tick
 from src.interfaces.tg.notification.vpn_notification import vpn_watch, vpn_weekly
 from src.interfaces.webhooks.setup import get_url_webhook_github, get_url_webhook_telegram, setup_telegram_webhook
 from src.scheduler import scheduler
@@ -33,6 +35,16 @@ from src.services.job_searcher.service import (
     WEEKLY_DIGEST_ID,
     JobSearcherService,
     search_job_id,
+)
+from src.services.spotify.schedule import EVENING, MORNING
+from src.services.spotify.service import (
+    EVENING_HOUR,
+    EVENING_JOB_ID,
+    MORNING_HOUR,
+    MORNING_JOB_ID,
+    POLL_JOB_ID,
+    POLL_MINUTE,
+    SpotifyService,
 )
 from src.services.vpn.service import WATCH_JOB_ID, WATCH_MINUTES, WEEKLY_JOB_ID, VpnService
 
@@ -47,6 +59,8 @@ async def start_bot() -> None:
     dp = Dispatcher()
 
     # Routers
+    # Before /start (the invite is /start sp_<code>) and the admin routers (they refuse others).
+    dp.include_router(spotify_member.router)
     dp.include_router(start.router)
     dp.include_router(get_chat_id.router)
     dp.include_router(server_status.router)
@@ -57,6 +71,7 @@ async def start_bot() -> None:
     dp.include_router(get_job_openings.router)
     dp.include_router(job_stats.router)
     dp.include_router(vpn.router)
+    dp.include_router(spotify.router)
     dp.include_router(services.router)
 
     # Scheduler jobs (added with IDs so they can be paused/resumed)
@@ -68,6 +83,11 @@ async def start_bot() -> None:
         vpn_watch, "interval", minutes=WATCH_MINUTES, args=[bot], id=WATCH_JOB_ID, next_run_time=datetime.now()
     )
     scheduler.add_job(vpn_weekly, "cron", day_of_week="fri", hour=18, minute=5, args=[bot], id=WEEKLY_JOB_ID)
+    scheduler.add_job(spotify_poll, "cron", minute=POLL_MINUTE, args=[bot], id=POLL_JOB_ID)
+    scheduler.add_job(spotify_tick, "cron", hour=MORNING_HOUR, args=[bot, MORNING], id=MORNING_JOB_ID)
+    scheduler.add_job(spotify_tick, "cron", hour=EVENING_HOUR, args=[bot, EVENING], id=EVENING_JOB_ID)
+    # Once, when the web server is surely up: Monobank checks the URL the moment it is set.
+    scheduler.add_job(ensure_webhook, "date", run_date=datetime.now() + timedelta(seconds=30), args=[bot])
 
     # Register infrastructure and services with ServiceManager
     sm = ServiceManager.get_instance()
@@ -77,6 +97,7 @@ async def start_bot() -> None:
     sm.register_service(GithubService(bot, get_url_webhook_github()))
     sm.register_service(DiscordService())
     sm.register_service(VpnService(scheduler))
+    sm.register_service(SpotifyService(scheduler))
 
     # Apply saved state: start/stop containers, enable/disable services
     await sm.apply_state()

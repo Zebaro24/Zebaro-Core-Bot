@@ -63,6 +63,8 @@ Thumbs.db
 # Runtime state (created by ServiceManager on first toggle)
 services.json
 state/
+# Local SQLite (DATABASE_URL); in Docker it lives in state/
+/zebaro.db*
 
 # Dev version
 docker-compose.override.yml

@@ -48,6 +48,10 @@ services:
       - SITE_CONTACT_TOKEN
       - WG_EASY_PASSWORD=${WG_PASSWORD:-}
       - HOME_PROXY_URL
+      - MONOBANK_TOKEN
+      - MONOBANK_WEBHOOK_SECRET
+      # SQLite в смонтированной state/ — переживает пересборку контейнера.
+      - DATABASE_URL=sqlite+aiosqlite:////app/state/zebaro.db
       - TZ=Europe/Berlin
       - SERVICES_STATE_FILE=/app/state/services.json
     # API wg-easy живёт в сети хоста на мосту Docker (172.17.0.1) — отсюда он host.docker.internal.

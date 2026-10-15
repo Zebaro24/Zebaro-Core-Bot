@@ -3,6 +3,7 @@ import logging
 
 from src.core.service_manager import ServiceManager
 from src.db import start_db
+from src.db.sql import migrate
 from src.interfaces.ds.main import start_bot as start_ds
 from src.interfaces.tg.main import start_bot as start_tg
 from src.interfaces.webhooks.main import start_webhooks
@@ -22,6 +23,12 @@ async def main() -> None:
     ServiceManager.get_instance().load_state()
 
     start_scheduler()
+
+    # Before the bot: services read SQL as soon as they are enabled.
+    try:
+        await migrate()
+    except Exception:
+        logging.exception("SQL migration failed, the services on SQL will not work")
 
     tasks: list = [
         start_db(),
