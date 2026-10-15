@@ -49,7 +49,7 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 - Traffic history survives counter resets (Mongo); first-connection and access-expiry notices; weekly table on Fridays
 
 **Spotify Family (Monobank)**
-- The jar's top-ups (`Від: <name>`) and the Spotify charges on the card come in by Monobank's webhook (`/webhook/monobank/<secret>`) and an hourly statement poll; the whole history loads from a chosen date
+- The jar's top-ups (`Від: <name>`) and the Spotify charges on the card come in by Monobank's webhook (`/webhook/monobank/<secret>`) and a daily statement poll (09:40, before the reminders; «Обновить» polls on demand); the whole history loads from a chosen date
 - Each charge is split equally among the members active that day (kopecks left over go to the owner); balances are recomputed from the full history, so a corrected join date fixes every number
 - Unknown senders are asked about once: a member's other name, a new member, or not counted
 - Three days and one day before the charge: members short of their share get a reminder with a top-up link, the owner gets the jar and the card balance ("withdraw X from the jar" / "short of X"); after the charge — debtors at once and three days later; a price change in dollars is flagged

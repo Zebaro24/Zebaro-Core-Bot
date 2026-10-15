@@ -101,7 +101,7 @@ def _short(snap: Snapshot) -> list[Member]:
 
 
 async def spotify_poll(bot: Bot) -> None:
-    """Hourly: whatever the webhook missed."""
+    """Daily (and «Обновить»): whatever the webhook missed."""
     if not monobank.configured():
         return
     try:
@@ -206,4 +206,5 @@ async def ensure_webhook(bot: Bot) -> None:
         logger.info("Monobank webhook set")
     except monobank.MonobankError as e:
         logger.warning("Monobank webhook not set: %s", e)
-        await _to_owner(bot, f"🎧 Не смог подключить вебхук Monobank: {e}. Работаю опросом раз в час.", quiet=True)
+        text = f"🎧 Не смог подключить вебхук Monobank: {escape(str(e))}. Обновляюсь раз в день и по «Обновить»."
+        await _to_owner(bot, text, quiet=True)

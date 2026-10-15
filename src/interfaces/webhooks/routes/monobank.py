@@ -2,7 +2,7 @@
 
 Personal webhooks are not signed, so the URL carries a secret. Monobank checks the URL with
 a GET when it is set, and switches the webhook off after a few unanswered POSTs — hence a
-200 at once, even with the service off (the hourly poll picks the item up later then), and
+200 at once, even with the service off (the daily poll picks the item up later then), and
 the work in a background task.
 """
 

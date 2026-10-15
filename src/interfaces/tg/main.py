@@ -42,6 +42,7 @@ from src.services.spotify.service import (
     EVENING_JOB_ID,
     MORNING_HOUR,
     MORNING_JOB_ID,
+    POLL_HOUR,
     POLL_JOB_ID,
     POLL_MINUTE,
     SpotifyService,
@@ -83,7 +84,7 @@ async def start_bot() -> None:
         vpn_watch, "interval", minutes=WATCH_MINUTES, args=[bot], id=WATCH_JOB_ID, next_run_time=datetime.now()
     )
     scheduler.add_job(vpn_weekly, "cron", day_of_week="fri", hour=18, minute=5, args=[bot], id=WEEKLY_JOB_ID)
-    scheduler.add_job(spotify_poll, "cron", minute=POLL_MINUTE, args=[bot], id=POLL_JOB_ID)
+    scheduler.add_job(spotify_poll, "cron", hour=POLL_HOUR, minute=POLL_MINUTE, args=[bot], id=POLL_JOB_ID)
     scheduler.add_job(spotify_tick, "cron", hour=MORNING_HOUR, args=[bot, MORNING], id=MORNING_JOB_ID)
     scheduler.add_job(spotify_tick, "cron", hour=EVENING_HOUR, args=[bot, EVENING], id=EVENING_JOB_ID)
     # Once, when the web server is surely up: Monobank checks the URL the moment it is set.

@@ -1,4 +1,4 @@
-"""Monobank → the tables: the webhook's single items, the hourly poll, the full reload.
+"""Monobank → the tables: the webhook's single items, the daily poll, the full reload.
 
 All three go through ``ingest``: an item already stored is updated in place (a hold that
 settled), never counted twice, so the webhook and the poll may overlap freely.

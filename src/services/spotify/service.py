@@ -6,9 +6,11 @@ from src.core.base_service import BaseService
 
 logger = logging.getLogger("services.spotify")
 
-# Hourly statement poll — the webhook's safety net; at :17 to stay clear of the hour's other jobs.
+# Daily statement poll — the webhook's safety net, not a feed: two statement requests a day.
+# Before the morning reminders, so they work from fresh numbers; "Обновить" polls on demand.
 POLL_JOB_ID = "spotify_poll"
-POLL_MINUTE = 17
+POLL_HOUR = 9
+POLL_MINUTE = 40
 # Reminders: before the charge (three days ahead, the day before) and the follow-up to debtors.
 MORNING_JOB_ID = "spotify_morning"
 MORNING_HOUR = 10
