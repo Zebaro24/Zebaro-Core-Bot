@@ -158,6 +158,7 @@ See `scripts/README.md` for the release and production helpers.
 | `WG_HOST` | no | `server.zebaro.dev` | Endpoint clients connect to; must resolve straight to the server (no Cloudflare proxy) |
 | `MONOBANK_TOKEN` | no | empty (Spotify idle) | Monobank personal API token (api.monobank.ua) |
 | `MONOBANK_WEBHOOK_SECRET` | no | empty (no webhook, poll only) | Path secret of `/webhook/monobank/<secret>` — personal webhooks are not signed |
+| `MONOBANK_JAR_ID`, `MONOBANK_CARD_ID`, `SPOTIFY_SINCE` | no | empty (set up in `/spotify`) | With all three the first start sets itself up: the jar and the card, the whole history since that date (`YYYY-MM-DD`), the jar's senders as members |
 | `DATABASE_URL` | no | `sqlite+aiosqlite:///zebaro.db` | SQL database; compose: `state/zebaro.db`; later `postgresql+asyncpg://…` |
 | `TZ` | no | `Europe/Berlin` | Scheduler timezone (and log time in Docker) |
 | `SERVICES_STATE_FILE` | no | `services.json` | Where `/services` toggles are saved |

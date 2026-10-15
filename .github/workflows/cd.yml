@@ -104,6 +104,9 @@ jobs:
             export HOME_PROXY_URL='${{ secrets.HOME_PROXY_URL }}'
             export MONOBANK_TOKEN='${{ secrets.MONOBANK_TOKEN }}'
             export MONOBANK_WEBHOOK_SECRET='${{ secrets.MONOBANK_WEBHOOK_SECRET }}'
+            export MONOBANK_JAR_ID=${{ vars.MONOBANK_JAR_ID }}
+            export MONOBANK_CARD_ID=${{ vars.MONOBANK_CARD_ID }}
+            export SPOTIFY_SINCE=${{ vars.SPOTIFY_SINCE }}
             
             docker compose -p zebaro-core up -d --pull always
             docker image prune -f

@@ -50,6 +50,9 @@ services:
       - HOME_PROXY_URL
       - MONOBANK_TOKEN
       - MONOBANK_WEBHOOK_SECRET
+      - MONOBANK_JAR_ID
+      - MONOBANK_CARD_ID
+      - SPOTIFY_SINCE
       # SQLite в смонтированной state/ — переживает пересборку контейнера.
       - DATABASE_URL=sqlite+aiosqlite:////app/state/zebaro.db
       - TZ=Europe/Berlin

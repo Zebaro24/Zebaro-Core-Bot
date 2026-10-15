@@ -25,7 +25,12 @@ from src.interfaces.tg.handlers.admin import (
 from src.interfaces.tg.handlers.callbacks import docker, job
 from src.interfaces.tg.notification.job_notification import job_notification
 from src.interfaces.tg.notification.job_stats_notification import job_stats_notification
-from src.interfaces.tg.notification.spotify_notification import ensure_webhook, spotify_poll, spotify_tick
+from src.interfaces.tg.notification.spotify_notification import (
+    ensure_webhook,
+    spotify_bootstrap,
+    spotify_poll,
+    spotify_tick,
+)
 from src.interfaces.tg.notification.vpn_notification import vpn_watch, vpn_weekly
 from src.interfaces.webhooks.setup import get_url_webhook_github, get_url_webhook_telegram, setup_telegram_webhook
 from src.scheduler import scheduler
@@ -89,6 +94,8 @@ async def start_bot() -> None:
     scheduler.add_job(spotify_tick, "cron", hour=EVENING_HOUR, args=[bot, EVENING], id=EVENING_JOB_ID)
     # Once, when the web server is surely up: Monobank checks the URL the moment it is set.
     scheduler.add_job(ensure_webhook, "date", run_date=datetime.now() + timedelta(seconds=30), args=[bot])
+    # After the webhook check: both use client-info, which answers once a minute.
+    scheduler.add_job(spotify_bootstrap, "date", run_date=datetime.now() + timedelta(seconds=100), args=[bot])
 
     # Register infrastructure and services with ServiceManager
     sm = ServiceManager.get_instance()

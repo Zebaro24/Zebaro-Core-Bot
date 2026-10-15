@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     monobank_token: str = ""
     # Path secret of /webhook/monobank/<secret>: Monobank's personal webhooks are not signed.
     monobank_webhook_secret: str = ""
+    # First start: the jar and the card to use and the plan's first charge (YYYY-MM-DD). With all
+    # three the bot sets itself up and loads the whole history; empty — set up in /spotify.
+    monobank_jar_id: str = ""
+    monobank_card_id: str = ""
+    spotify_since: str = ""
 
     playwright_ws_endpoint: str = "ws://localhost:9222"
 

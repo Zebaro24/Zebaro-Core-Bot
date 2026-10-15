@@ -7,6 +7,7 @@ owner's report names them instead.
 """
 
 import logging
+from datetime import date
 from html import escape
 
 from aiogram import Bot
@@ -208,3 +209,54 @@ async def ensure_webhook(bot: Bot) -> None:
         logger.warning("Monobank webhook not set: %s", e)
         text = f"🎧 Не смог подключить вебхук Monobank: {escape(str(e))}. Обновляюсь раз в день и по «Обновить»."
         await _to_owner(bot, text, quiet=True)
+
+
+async def spotify_bootstrap(bot: Bot) -> None:
+    """First start with MONOBANK_JAR_ID / MONOBANK_CARD_ID / SPOTIFY_SINCE: set up, load the
+    whole history, make the jar's senders members (the plan's founders), report to the owner.
+
+    Runs once: afterwards the history mark is set. A restart in the middle starts the load over —
+    harmless, ingest never counts an item twice.
+    """
+    if not (monobank.configured() and settings.monobank_jar_id and settings.monobank_card_id):
+        return
+    try:
+        since = date.fromisoformat(str(settings.spotify_since))
+    except ValueError:
+        return
+    async with session() as s:
+        if await repo.get_state(s, repo.HISTORY):
+            return
+    try:
+        info = await monobank.client_info()
+        jar = next((a for a in monobank.parse_accounts(info) if a.id == settings.monobank_jar_id), None)
+        async with session() as s, s.begin():
+            await repo.set_state(s, repo.JAR, settings.monobank_jar_id)
+            await repo.set_state(s, repo.JAR_SEND, jar.send_id if jar else "")
+            await repo.set_state(s, repo.CARD, settings.monobank_card_id)
+            owner = await repo.owner(s)
+            if owner is None:
+                await repo.add_member(s, "Я", since, is_owner=True)
+            elif owner.joined_on > since:
+                owner.joined_on = since
+        await _to_owner(bot, f"🎧 Настраиваю Spotify: загружаю историю с {since:%d.%m.%Y} — это 1–2 часа.", quiet=True)
+        result = await sync.reload_history(since)
+        async with session() as s, s.begin():
+            founders = [m for m in await repo.members(s) if not m.is_owner]
+            senders = await repo.unknown_senders(s)
+            # Nobody changed since the start: every sender is a founder — but never past the
+            # plan's six, and never on top of members someone already added by hand.
+            if not founders and len(senders) < ledger.MAX_MEMBERS:
+                for name, _, _ in senders:
+                    await repo.add_member(s, name, since, alias=name)
+    except Exception as e:
+        logger.exception("Spotify bootstrap failed")
+        await _to_owner(bot, f"🎧 Настройка Spotify оборвалась: {escape(str(e))[:200]}. Повторю при следующем старте.")
+        return
+    snap = await snapshot(money=True)
+    paid = sum(c.amount for c in result.charges)
+    await _to_owner(
+        bot,
+        f"🎧 Spotify готов: {len(result.charges)} списаний на {fmt.uah(paid)}, участников "
+        f"{len(snap.members) - 1}. Сводка — /spotify. Разошли приглашения: человек → «🔗 Приглашение».",
+    )

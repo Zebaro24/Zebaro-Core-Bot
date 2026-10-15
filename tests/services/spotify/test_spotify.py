@@ -328,3 +328,50 @@ async def test_monobank_webhook_route(monkeypatch):
 def test_local_day_uses_the_timezone():
     moment = int(datetime(2026, 10, 11, 23, 30, tzinfo=UTC).timestamp())
     assert ledger.local_day(moment, TZ) == date(2026, 10, 12)
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_sets_up_loads_history_and_adds_founders(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from src.interfaces.tg.notification import spotify_notification as notify
+    from src.services.spotify import monobank
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'boot.db'}")
+    async with engine.begin() as connection:
+        await connection.run_sync(sql.Base.metadata.create_all)
+    monkeypatch.setattr(sql, "_engine", engine)
+    monkeypatch.setattr(sql, "_sessions", async_sessionmaker(engine, expire_on_commit=False))
+    for key, value in {
+        "monobank_token": "t",
+        "monobank_jar_id": "jar",
+        "monobank_card_id": "card",
+        "spotify_since": "2022-08-12",
+        "telegram_admin_id": 1,
+        "tz": "Europe/Berlin",
+    }.items():
+        monkeypatch.setattr(notify.settings, key, value, raising=False)
+    info = {"accounts": [], "jars": [{"id": "jar", "title": "J", "currencyCode": 980, "balance": 0, "sendId": "jar/x"}]}
+    monkeypatch.setattr(monobank, "client_info", AsyncMock(return_value=info))
+    monkeypatch.setattr(monobank, "rate", AsyncMock(return_value=45.0))
+
+    async def statement(account, start, end):
+        if account == "jar":
+            return [_item("a", 6000, "Від: Олена"), _item("b", 6000, "Від: Петро")]
+        return [_item("x", -36146, "Spotify", operationAmount=-799, currencyCode=840, mcc=5815)]
+
+    monkeypatch.setattr(monobank, "statement", statement)
+    bot = MagicMock(send_message=AsyncMock())
+    try:
+        await notify.spotify_bootstrap(bot)
+        async with sql.session() as s:
+            names = sorted(m.name for m in await repo.members(s))
+            assert names == ["Олена", "Петро", "Я"]
+            assert await repo.get_state(s, repo.JAR_SEND) == "jar/x"
+            assert (await repo.get_state(s, repo.HISTORY))["since"] == "2022-08-12"
+        assert "готов" in bot.send_message.await_args.args[1]
+        bot.send_message.reset_mock()
+        await notify.spotify_bootstrap(bot)  # once only
+        bot.send_message.assert_not_awaited()
+    finally:
+        await engine.dispose()
