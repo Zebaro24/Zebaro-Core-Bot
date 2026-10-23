@@ -14,6 +14,14 @@ the others become link buttons. Against the history:
 * the group is still unanswered → the repeat is sent with 🔁 and when it came first.
 
 Repeats that are not sent are stored with user_status "duplicate" and never counted.
+
+Every vacancy sent also carries the company's history (22.10.2026): the other vacancies of the
+same company the owner answered or opened in the last HISTORY_DAYS, so a renamed repost
+("AI Builder / Full-Stack" → "AI Builder / Python+React") or a second position at a company he
+already applied to is visible before he sends the CV again. The match is looser there than for
+hiding a repeat — a wrong note costs nothing, a wrong hide costs a vacancy.
+
+A company the owner muted ("🔕" among the "not interested" reasons) is never sent again.
 """
 
 import logging
@@ -30,7 +38,12 @@ logger = logging.getLogger("job_searcher.dedup")
 
 # Title likeness once the company matched. High on purpose: a false match hides a vacancy.
 SIMILARITY_THRESHOLD = 0.85
-LOOKBACK_DAYS = 30
+# An answered vacancy reposted after a month is still the one he answered (was 30 days).
+LOOKBACK_DAYS = 120
+HISTORY_DAYS = 180
+# For the history note only: "Shopify Full-Stack Developer" / "Full-Stack Developer (Shopify)".
+SOFT_SIMILARITY = 0.6
+MUTED = "muted"  # the status_reason of a "not interested" that mutes the whole company
 
 # Which copy of a vacancy is the one to open. Djinni is last: its experience gate refuses an
 # application the other boards would take for the same position.
@@ -73,14 +86,23 @@ def same_vacancy(a_title: str | None, a_company: str | None, b_title: str | None
         return False
     company_a, company_b = _normalize_company(a_company), _normalize_company(b_company)
     if company_a or company_b:
-        same_company = company_a == company_b or (
-            bool(company_a and company_b) and (company_a in company_b or company_b in company_a)
-        )
-        if not same_company:
+        if not same_company(a_company, b_company):
             return False
     elif title_a != title_b:
         return False  # no company on either side: only an exact title is safe
-    return title_a == title_b or SequenceMatcher(None, title_a, title_b).ratio() >= SIMILARITY_THRESHOLD
+    return title_a == title_b or _title_likeness(title_a, title_b) >= SIMILARITY_THRESHOLD
+
+
+def same_company(a_company: str | None, b_company: str | None) -> bool:
+    """Both named and the same up to "LLC" / "ТОВ", or one name inside the other."""
+    company_a, company_b = _normalize_company(a_company), _normalize_company(b_company)
+    if not company_a or not company_b:
+        return False
+    return company_a == company_b or company_a in company_b or company_b in company_a
+
+
+def _title_likeness(a_title: str | None, b_title: str | None) -> float:
+    return SequenceMatcher(None, _normalize_title(a_title), _normalize_title(b_title)).ratio()
 
 
 def _rank(platform: str | None) -> float:
@@ -116,28 +138,72 @@ def _clusters(pairs: list[tuple[Job, str | None]]) -> list[list[tuple[Job, str |
 
 
 async def _recent_docs(exclude: set[str]) -> list[dict[str, Any]]:
-    since = datetime.utcnow() - timedelta(days=LOOKBACK_DAYS)
-    docs = jobs_collection.find({"found_at": {"$gte": since}, "moderation": {"$ne": "rejected_by_filter"}})
-    return [doc async for doc in docs if str(doc.get("_id")) not in exclude]
+    """The sent vacancies of the last HISTORY_DAYS, newest first, without their texts."""
+    since = datetime.utcnow() - timedelta(days=HISTORY_DAYS)
+    docs = jobs_collection.find(
+        {"found_at": {"$gte": since}, "moderation": {"$ne": "rejected_by_filter"}}, {"description": 0}
+    )
+    found = [doc async for doc in docs if str(doc.get("_id")) not in exclude]
+    return sorted(found, key=lambda doc: doc.get("found_at") or datetime.min, reverse=True)
+
+
+def _is_recent(doc: dict[str, Any]) -> bool:
+    found_at = doc.get("found_at")
+    return isinstance(found_at, datetime) and found_at >= datetime.utcnow() - timedelta(days=LOOKBACK_DAYS)
+
+
+def _company_history(primary: Job, recent: list[dict[str, Any]], own_root: str | None) -> list[dict]:
+    """One entry per earlier vacancy of the company that the owner answered or at least opened."""
+    entries: dict[str, dict] = {}
+    for doc in recent:
+        root = group_root(doc)
+        if root == own_root or not same_company(primary.company, doc.get("company")):
+            continue
+        status = doc.get("user_status")
+        opened = status == PENDING and bool(doc.get("click_count"))
+        if not opened and status not in (*DECIDED, BLOCKED):
+            continue
+        # The answer outranks a click on another copy of the same vacancy.
+        if root in entries and entries[root]["status"] != PENDING:
+            continue
+        entries[root] = {
+            "title": doc.get("title"),
+            "status": status,
+            "at": doc.get("status_updated_at") or doc.get("found_at"),
+            "platform": doc.get("platform_name"),
+            "similar": _title_likeness(primary.title, doc.get("title")) >= SOFT_SIMILARITY,
+        }
+    # The likely same vacancy first, then the newest.
+    return sorted(
+        entries.values(),
+        key=lambda e: (not e["similar"], -(e["at"].timestamp() if isinstance(e["at"], datetime) else 0)),
+    )
 
 
 def _apply_history(cluster: list[tuple[Job, str | None]], recent: list[dict[str, Any]]) -> None:
     primary = cluster[0][0]
     earlier = next(
-        (doc for doc in recent if same_vacancy(primary.title, primary.company, doc.get("title"), doc.get("company"))),
+        (
+            doc
+            for doc in recent
+            if _is_recent(doc) and same_vacancy(primary.title, primary.company, doc.get("title"), doc.get("company"))
+        ),
         None,
     )
+    primary.company_history = _company_history(primary, recent, group_root(earlier) if earlier else None)
     if earlier is None:
         return
 
     root = group_root(earlier)
-    state, blocked_on = group_state([doc for doc in recent if group_root(doc) == root])
+    group = [doc for doc in recent if group_root(doc) == root]
+    state, blocked_on = group_state(group)
     for job, _ in cluster:
         job.group_id = root
     primary.similar_to = str(earlier["_id"])
     primary.similar_to_platform = earlier.get("platform_name")
     primary.similar_seen_at = earlier.get("found_at")
     primary.similar_status = state
+    primary.similar_clicked = any(doc.get("click_count") for doc in group)
 
     # Answered already, or only more copies on the site that refused him: nothing new to see.
     if state == "decided" or (state == BLOCKED and primary.platform_name in blocked_on):
@@ -195,8 +261,31 @@ async def _store(pairs: list[tuple[Job, str | None]]) -> None:
                         "similar_to_platform": job.similar_to_platform,
                         "similar_seen_at": job.similar_seen_at,
                         "similar_status": job.similar_status,
+                        "similar_clicked": job.similar_clicked,
+                        "company_history": job.company_history,
                     }
                 },
             )
         except Exception as e:
             logger.warning("Could not store the group of %s: %s", job, e)
+
+
+async def muted_companies() -> set[str]:
+    """The companies the owner asked never to be sent again."""
+    try:
+        return {company for company in await jobs_collection.distinct("company", {"status_reason": MUTED}) if company}
+    except Exception as e:
+        logger.warning("DB unavailable for the muted companies, sending them all: %s", e)
+        return set()
+
+
+def reject_muted(jobs: list[Job], muted: set[str]) -> int:
+    """Reject this run's vacancies of a muted company. Returns how many."""
+    # The exact name, not the loose match of the history note: muting "NIX" must not hide Phoenix.
+    names = {_normalize_company(name) for name in muted} - {""}
+    count = 0
+    for job in jobs:
+        if job.moderation != "rejected_by_filter" and _normalize_company(job.company) in names:
+            job.moderation, job.filter_reason = "rejected_by_filter", "muted company"
+            count += 1
+    return count

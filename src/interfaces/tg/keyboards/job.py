@@ -6,7 +6,9 @@ from src.config import settings
 
 class JobActionCallback(CallbackData, prefix="job"):
     # "apply" | "mismatch" / "reject" (with a reason: the answer; without: open the reasons) |
-    # "back" (the reasons → the main buttons) | "block" (old messages: "the site will not let me")
+    # "back" (the reasons → the main buttons) | "block" (old messages: "the site will not let me") |
+    # "outcome" (after applying: what came of it, the reason field) | "open" (a vacancy of the 👀
+    # summary as its own message)
     action: str
     job_id: str
     reason: str = ""
@@ -42,11 +44,21 @@ REJECT_REASONS = (
     ("domain", "🏭 Домен / компания"),
     ("conditions", "💸 Условия"),
     ("other", "🤷 Просто нет"),
+    # The company is never sent again (services/job_searcher/dedup.py, "muted").
+    ("muted", "🔕 Компанию не присылать"),
 )
 REASON_TEXTS = {
     "mismatch": dict(MISMATCH_REASONS),
     "reject": dict(REJECT_REASONS),
 }
+# What came of an application (22.10.2026): the digest counts how far each site and stack gets.
+OUTCOMES = (
+    ("reply", "📨 Ответили"),
+    ("interview", "🗓 Интервью"),
+    ("offer", "🎉 Оффер"),
+    ("rejected", "❌ Отказ"),
+)
+OUTCOME_TEXTS = dict(OUTCOMES)
 
 
 def get_job_link_kb(link: str) -> InlineKeyboardMarkup:
@@ -94,3 +106,26 @@ def get_job_reason_kb(job_id: str, action: str, copies: list[dict] | None = None
     rows = _link_rows(job_id, copies) + [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
     rows.append([_button("↩️ Назад", "back", job_id)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def get_job_outcome_kb(
+    job_id: str, copies: list[dict] | None = None, current: str | None = None
+) -> InlineKeyboardMarkup:
+    """After "applied": the link stays, and what came of it — pressed again as it moves on."""
+    buttons = [
+        _button(f"• {text}" if outcome == current else text, "outcome", job_id, outcome) for outcome, text in OUTCOMES
+    ]
+    rows = _link_rows(job_id, copies) + [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+SUMMARY_BUTTON_TITLE = 22
+
+
+def get_job_summary_kb(entries: list[tuple[int, str, str]]) -> InlineKeyboardMarkup:
+    """One button per vacancy of the 👀 summary: (number, title, id) → the vacancy in full."""
+    buttons = []
+    for number, title, job_id in entries:
+        short = title if len(title) <= SUMMARY_BUTTON_TITLE else title[: SUMMARY_BUTTON_TITLE - 1] + "…"
+        buttons.append(_button(f"{number}. {short}", "open", job_id))
+    return InlineKeyboardMarkup(inline_keyboard=[buttons[i : i + 2] for i in range(0, len(buttons), 2)])

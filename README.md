@@ -40,7 +40,10 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 - Headless browsing via Playwright Stealth (remote browser server, full Chromium in new headless mode)
 - Sources: DOU, Djinni, Robota.ua, Work.ua, NoFluffJobs, HappyMonday (BazaIT, Wellfound and Jooble listeners are kept but switched off); Djinni's card fields (work format, countries, years, English, salary, applicants) are read as they are
 - Work.ua, Robota.ua and HappyMonday block the server's datacenter IP; with `HOME_PROXY_URL` they go through the owner's PC over the VPN — `python scripts/home_proxy.py` there (stdlib only: CONNECT :443, only the server's address, only with the login)
-- Three tiers (on target / your stack / partial) with warnings, apply / mismatch / not-interested buttons with reasons, cross-site duplicate marks, a two-part weekly digest (market and own decisions)
+- Python is required: frontend, JS/TS full-stack and Node positions without it are filtered out (AI titles stay, marked)
+- Three tiers (on target / your stack / partial) with warnings, apply / mismatch / not-interested buttons with reasons; the partial tier arrives as one summary message with "open" buttons
+- The description highlights the stack and the red flags (another stack, 4+ years, senior, English above B1, office)
+- Cross-site duplicate marks, the company's history (other vacancies answered or opened there, 180 days), muting a company, outcomes after applying (reply / interview / offer / rejection), a two-part weekly digest (market and own decisions)
 
 **VPN (WireGuard via wg-easy)**
 - `zebaro-core-vpn` runs wg-easy in the host network: `10.0.0.1` is the server itself (Samba, the home PC at `10.0.0.2`)

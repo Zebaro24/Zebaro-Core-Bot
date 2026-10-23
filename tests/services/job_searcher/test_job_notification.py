@@ -121,3 +121,18 @@ async def test_job_notification_skips_while_another_search_is_running(mocker):
     run.assert_not_awaited()
 
     assert await notification.job_notification(MagicMock()) == 7
+
+
+@pytest.mark.asyncio
+async def test_the_review_tier_goes_out_as_summaries_of_twenty():
+    bot = MagicMock()
+    bot.send_rich_message = AsyncMock()
+    pairs = [(_job("review"), f"id{n}") for n in range(25)]
+
+    assert await notification._send_summary(bot, pairs) == 25
+
+    first, second = bot.send_rich_message.await_args_list
+    assert "Частичные совпадения — 25" in first.kwargs["rich_message"].html
+    assert first.kwargs["disable_notification"] is True
+    buttons = [b for row in second.kwargs["reply_markup"].inline_keyboard for b in row]
+    assert [b.text.split(".")[0] for b in buttons] == ["21", "22", "23", "24", "25"]

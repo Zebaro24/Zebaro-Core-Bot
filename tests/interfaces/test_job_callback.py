@@ -174,3 +174,96 @@ async def test_new_buttons_are_not_taken_by_the_legacy_filter():
 
     assert await LegacyJobCallback.filter()(raw) is False
     assert await JobActionCallback.filter()(raw)
+
+
+def _buttons(markup):
+    return [button for row in markup.inline_keyboard for button in row]
+
+
+@pytest.mark.asyncio
+async def test_an_application_keeps_the_outcome_buttons(collection):
+    doc = _doc("Dou")
+    _setup(collection, doc, [doc])
+
+    query = await _press("apply", doc)
+
+    markup = query.message.edit_text.await_args.kwargs["reply_markup"]
+    assert [b.text for b in _buttons(markup) if b.callback_data] == [
+        "📨 Ответили",
+        "🗓 Интервью",
+        "🎉 Оффер",
+        "❌ Отказ",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_an_outcome_is_stored_on_the_application_and_shown(collection):
+    doc = _doc("Dou", status="applied")
+    _setup(collection, doc, [doc])
+
+    query = await _press("outcome", doc, "interview")
+
+    query_filter, change = collection.find_one_and_update.await_args.args
+    assert query_filter["user_status"] == "applied"
+    assert change["$set"]["outcome"] == "interview"
+    assert "Откликнулся · 🗓 Интервью" in query.message.edit_text.await_args.args[0]
+    markup = query.message.edit_text.await_args.kwargs["reply_markup"]
+    assert "• 🗓 Интервью" in [b.text for b in _buttons(markup)]
+
+
+@pytest.mark.asyncio
+async def test_a_muted_company_is_a_not_interested_answer_with_its_reason(collection):
+    doc = _doc("Dou")
+    _setup(collection, doc, [doc])
+
+    query = await _press("reject", doc, "muted")
+
+    change = collection.find_one_and_update.await_args.args[1]["$set"]
+    assert change["user_status"] == "not_interested" and change["status_reason"] == "muted"
+    assert "компанию не присылать" in query.message.edit_text.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_open_sends_a_summary_vacancy_as_its_own_message(collection):
+    doc = {**_doc("Dou"), "company": "Acme", "moderation": "review"}
+    _setup(collection, doc, [doc])
+    query = _query()
+    query.message.answer_rich = AsyncMock()
+
+    await callback.job_action_callback(query, JobActionCallback(action="open", job_id=str(doc["_id"])))
+
+    sent = query.message.answer_rich.await_args.kwargs
+    assert "Python Developer" in sent["rich_message"].html
+    assert "✅ Откликнулся" in [b.text for b in _buttons(sent["reply_markup"])]
+
+
+@pytest.mark.asyncio
+async def test_the_same_outcome_pressed_twice_is_answered_quietly(collection):
+    from aiogram.exceptions import TelegramBadRequest
+
+    doc = _doc("Dou", status="applied")
+    _setup(collection, doc, [doc])
+    query = _query()
+    query.message.edit_text = AsyncMock(side_effect=TelegramBadRequest(MagicMock(), "message is not modified"))
+
+    await callback.job_action_callback(
+        query, JobActionCallback(action="outcome", job_id=str(doc["_id"]), reason="reply")
+    )
+
+    query.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_open_falls_back_to_plain_html_when_rich_is_refused(collection):
+    from aiogram.exceptions import TelegramBadRequest
+
+    doc = {**_doc("Dou"), "moderation": "review"}
+    _setup(collection, doc, [doc])
+    query = _query()
+    query.message.answer_rich = AsyncMock(side_effect=TelegramBadRequest(MagicMock(), "can't parse"))
+    query.message.answer = AsyncMock()
+
+    await callback.job_action_callback(query, JobActionCallback(action="open", job_id=str(doc["_id"])))
+
+    assert "Python Developer" in query.message.answer.await_args.args[0]
+    query.answer.assert_awaited_once()

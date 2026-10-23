@@ -5,23 +5,28 @@ Two passes, because the full description costs a page load:
 1. `prefilter_all` — the list card only: title, company, location, date and whatever the board
    shows apart from the text (Djinni's work format, countries, years and English; DOU's
    cities). Seniority that does not fit, internships, roles that are not development, a title
-   built on another main stack, military units, an office, a country list without Austria and
-   months-old postings are rejected here, and their vacancy pages are never opened.
+   built on another main stack or on the frontend alone, military units, an office, a country
+   list without Austria and months-old postings are rejected here, and their vacancy pages are
+   never opened.
 2. `classify_all` — after the parser fetched full descriptions. Reads what the card did not
    say out of the text (services/job_searcher/extract.py), rejects what asks for too much,
    then looks for the core stack and puts the vacancy into a tier.
 
+Python is required (22.10.2026): a vacancy that never names it is not sent, whatever else it
+has — frontend, JS/TS full-stack, Node backends. AI titles are the one exception: their texts
+often skip the language, and the owner applied to such.
+
 Tiers (stored in `Job.moderation`, the values stats and the API use):
-  "top"                 🔥🔥🔥 right on target: your stack on both sides, the level fits, and
-                        nothing in the conditions needs a second look
+  "top"                 🔥🔥🔥 right on target: your stack on both sides, or Python in the title;
+                        the level fits, and nothing in the conditions needs a second look
   "sent"                🔥 your stack: a backend core (Python / FastAPI) AND a frontend core
-                        (React / Next.js) both appear
-  "review"              👀 partial: at least one core technology, or two bonus ones
+                        (React / Next.js) both appear, or a Python position by its title
+  "review"              👀 partial: Python somewhere in the text, or an AI title without it
   "rejected_by_filter"  not sent; `Job.filter_reason` says why
 
 `Job.warnings` lists what may not fit and is worth a look before applying — B2 English,
-remote without "за кордоном", a line about living in Ukraine. A warning keeps a vacancy out of
-"top" but never rejects it.
+remote without "за кордоном", a line about living in Ukraine, Python only as a plus. A warning
+keeps a vacancy out of "top" but never rejects it.
 
 The owner's limits (06.10.2026): remote only, from Austria; English B1 (B2 in his Djinni
 profile); up to three years of experience asked.
@@ -65,6 +70,17 @@ BONUS_STACK: dict[str, tuple[str, ...]] = {
 
 AI_TITLE_WORDS = ("ai", "llm", "genai", "agentic", "ml", "machine learning")
 
+# Python is the base of every position the owner takes (22.10.2026): of the vacancies that did
+# not name it he applied to 17% (JS/Node full-stack, frontend), and to 3 of 35 lately.
+PYTHON_WORDS = ("python", "fastapi", "fast api", "django", "flask")
+# A title built on the frontend alone. Full-stack and backend titles are judged by the text.
+FRONTEND_TITLE_WORDS = (
+    "frontend", "front-end", "front end", "фронтенд", "фронт-енд", "react", "react.js", "reactjs",
+    "next.js", "nextjs", "javascript", "js", "typescript", "html", "css", "ui developer", "ui engineer",
+    "landing page", "landing pages",
+)  # fmt: skip
+_NOT_FRONTEND_ONLY = ("full", "fullstack", "full stack", "full-stack", "backend", "back-end", "back end")
+
 # Checked in the title only. The description of almost any vacancy mentions "senior engineers
 # on the team", so looking there would reject everything — extract.senior_in_description
 # looks only for "we are looking for a senior".
@@ -87,7 +103,10 @@ WRONG_ROLE_WORDS = (
     "sales", "manager", "менеджер", "product owner", "designer", "дизайнер", "business analyst",
     "systems analyst", "system analyst", "data analyst", "producer", "аналітик", "analytics engineer",
     "advocate", "consultant",
-    "content", "creator", "writer", "copywriter", "motion", "security", "customer success",
+    "content", "creator", "writer", "copywriter", "motion", "customer success",
+    # A security role, not a security domain: "Full-stack JS developer (Security domain)" is code.
+    "security engineer", "security analyst", "security specialist", "cybersecurity", "secops",
+    "pentester", "penetration tester", "soc analyst",
     "growth hacker", "engagement specialist", "бухгалтер", "accountant", "artist", "illustrator",
     "talent acquisition", "hr",
 )  # fmt: skip
@@ -155,6 +174,8 @@ WARN_ENGLISH = "english"  # B2 asked, the owner has B1
 WARN_ABROAD = "abroad"
 WARN_UKRAINE = "ukraine"  # the description talks about being in Ukraine
 WARN_NO_DESCRIPTION = "no_description"  # the page did not load: judged by the title alone
+WARN_NO_PYTHON = "no_python"  # an AI title whose text never names Python
+WARN_PYTHON_PLUS = "python_plus"  # Python only under "nice to have": the main stack is another
 
 # Keywords that need more than a word boundary.
 _SPECIAL_PATTERNS = {
@@ -171,6 +192,11 @@ def _pattern(keyword: str) -> str:
 
 def _contains(text: str, keyword: str) -> bool:
     return re.search(_pattern(keyword), text) is not None
+
+
+def keyword_pattern(keyword: str) -> str:
+    """The regex a keyword is matched with — the formatter highlights by the same rules."""
+    return _pattern(keyword)
 
 
 def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
@@ -203,10 +229,22 @@ def title_level(title: str | None) -> str | None:
     return "/".join(found) or None
 
 
+# "Right Hand to the CTO" reports to a lead; it is not one.
+_REPORTS_TO = re.compile(r"\b(?:to|for|with)\s+(?:the\s+|our\s+)?(?:cto|ceo|head|lead)\b")
+
+
+def frontend_title(title: str) -> bool:
+    """A frontend title with no Python, no backend side and no AI named in it."""
+    if any(_contains_any(title, words) for words in (PYTHON_WORDS, _NOT_FRONTEND_ONLY, AI_TITLE_WORDS)):
+        return False
+    return _contains_any(title, FRONTEND_TITLE_WORDS)
+
+
 def title_reject_reason(title: str | None, company: str | None) -> str | None:
     title = (title or "").lower()
     company = (company or "").lower()
-    has_middle = _contains_any(title, MIDDLE_WORDS)
+    # "Middle/Senior" and "Junior–Senior" still hire below a senior.
+    has_lower = _contains_any(title, MIDDLE_WORDS) or _contains_any(title, JUNIOR_WORDS)
 
     if _contains_any(title, MILITARY_WORDS) or _contains_any(company, MILITARY_WORDS):
         return "military"
@@ -216,13 +254,14 @@ def title_reject_reason(title: str | None, company: str | None) -> str | None:
         return "not a developer role"
     if _contains_any(title, OTHER_STACK_WORDS):
         return "other stack"
-    if _contains_any(title, LEAD_WORDS):
+    if _contains_any(_REPORTS_TO.sub("", title), LEAD_WORDS):
         return "lead"
-    # "Middle/Senior" still hires a middle — that stays.
-    if _contains_any(title, SENIOR_WORDS) and not has_middle:
+    if _contains_any(title, SENIOR_WORDS) and not has_lower:
         return "senior"
     if _contains_any(title, INTERN_WORDS):
         return "intern"
+    if frontend_title(title):
+        return "frontend"
     return None
 
 
@@ -312,6 +351,7 @@ def evaluate(job: Job) -> Verdict:
     bonus = _found(text, BONUS_STACK)
     backend = any(name in stack for name in BACKEND_CORE)
     frontend = any(name in stack for name in FRONTEND_CORE)
+    title_python = _contains_any(title, PYTHON_WORDS)
     # Backend first: frontend-only and Node + React positions come last in their tier — the
     # owner takes them, but they are not what he is after.
     score = 10 * len(stack) + 5 * len(_found(title, CORE_STACK)) + 2 * len(bonus) + (5 if backend else 0)
@@ -320,20 +360,35 @@ def evaluate(job: Job) -> Verdict:
     def verdict(moderation: str) -> Verdict:
         return Verdict(moderation, score, stack, bonus, years=years, english=english, warnings=warnings)
 
+    if len(description) < MIN_DESCRIPTION and title:
+        # The page did not load (a bot check, a timeout): years, level and office went unchecked,
+        # so the warning keeps it out of the top — and without Python in the title it is the
+        # owner's call, not a rejection ("no python" here used to hide plain "Full Stack Developer").
+        warnings.append(WARN_NO_DESCRIPTION)
+        if not _contains_any(text, PYTHON_WORDS):
+            return verdict(REVIEW)
+    if not _contains_any(text, PYTHON_WORDS):
+        # An AI position is worth a look on its title alone: the owner applied to "AI Engineer"
+        # and "Agentic AI Engineer" whose text named neither Python nor a framework.
+        if _contains_any(title, AI_TITLE_WORDS):
+            warnings.append(WARN_NO_PYTHON)
+            return verdict(REVIEW)
+        return Verdict(REJECTED, score, stack, bonus, reason="no python", years=years, english=english)
+
+    if not title_python and extract.only_as_plus(job.description, PYTHON_WORDS):
+        # "Node.js developer, Python is a plus": Python is there, but it is not the job.
+        warnings.append(WARN_PYTHON_PLUS)
+        return verdict(REVIEW)
+
+    blocking = [warning for warning in warnings if warning != WARN_ABROAD]
     if backend and frontend:
-        blocking = [warning for warning in warnings if warning != WARN_ABROAD]
         on_target = not blocking and _level_fits(job, years) and bool(_found(title, CORE_STACK) or "full" in title)
         return verdict(TOP if on_target else SENT)
-    # An AI position is worth a look on its title alone: the owner applied to "AI Engineer" and
-    # "Agentic AI Engineer" whose text named neither Python nor a framework.
-    if stack or len(bonus) >= 2 or _contains_any(title, AI_TITLE_WORDS):
-        return verdict(REVIEW)
-    if len(description) < MIN_DESCRIPTION and title:
-        # The page did not load (a bot check, a timeout): the title passed every rule, so the
-        # owner judges it — "no stack match" here used to hide plain "Full Stack Developer".
-        warnings.append(WARN_NO_DESCRIPTION)
-        return verdict(REVIEW)
-    return Verdict(REJECTED, score, stack, bonus, reason="no stack match", years=years, english=english)
+    # A Python position by its title: the owner applied to half of these — more than to the
+    # full-stack "your stack" tier — so it no longer waits among the partial matches.
+    if backend and title_python:
+        return verdict(TOP if not blocking and _level_fits(job, years) else SENT)
+    return verdict(REVIEW)
 
 
 class JobFilter:

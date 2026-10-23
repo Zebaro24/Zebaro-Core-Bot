@@ -126,3 +126,20 @@ def test_relative_date_without_a_date():
 def test_card_applicants():
     assert extract.card_applicants("227 відгуків") == 227
     assert extract.card_applicants("1878 переглядів") is None
+
+
+@pytest.mark.parametrize(
+    "description,plus_only",
+    [
+        ("Requirements:\n• Node.js\n\nNice to have:\n• Python", True),
+        ("Вимоги:\n• Node.js\n\nБуде плюсом:\n• Django", True),
+        ("• Node.js, React\n• Python would be a plus", True),
+        ("Requirements:\n• Python\n\nNice to have:\n• Python typing", False),
+        ("We use Python and React.", False),
+        ("Nice to have:\n• Go\n\nRequirements:\n• Python", False),  # a new heading closes the section
+        ("No language named here.", False),
+        ("Requirements:\n• Node.js\n\nNice to have:\nPython", True),  # an item without a bullet
+    ],
+)
+def test_only_as_plus(description, plus_only):
+    assert extract.only_as_plus(description, ("python", "django")) is plus_only

@@ -193,3 +193,44 @@ def test_group_state_and_root():
     assert group_state([_doc(status="pending")]) == ("pending", set())
     assert group_state([_doc("Djinni", status="blocked")]) == ("blocked", {"Djinni"})
     assert group_state([_doc(status="blocked"), _doc(status="applied")])[0] == "decided"
+
+
+@pytest.mark.asyncio
+async def test_the_company_history_lists_other_answered_or_opened_vacancies(collection):
+    applied = {**_doc("Dou", "applied", title="AI Builder / Full-Stack Engineer"), "status_updated_at": SEEN}
+    opened = {**_doc("Dou", "pending", title="Data Engineer"), "click_count": 2}
+    ignored = _doc("Dou", "pending", title="DevOps Engineer")  # sent, never opened
+    other_company = {**_doc("Dou", "applied", title="AI Builder"), "company": "Other"}
+    _history(collection, [applied, opened, ignored, other_company])
+    job = _job(title="AI Builder / Python+React Engineer")
+
+    await group_duplicates([job], _ids(1))
+
+    assert [(e["title"], e["status"], e["similar"]) for e in job.company_history] == [
+        ("AI Builder / Full-Stack Engineer", "applied", True),
+        ("Data Engineer", "pending", False),
+    ]
+    assert job.user_status == "pending"  # a note, never a reason to hide it
+    stored = collection.update_one.await_args.args[1]["$set"]
+    assert stored["company_history"] == job.company_history
+
+
+@pytest.mark.asyncio
+async def test_a_repeat_remembers_that_its_link_was_opened(collection):
+    _history(collection, [{**_doc("Djinni"), "click_count": 1}])
+    job = _job()
+
+    await group_duplicates([job], _ids(1))
+
+    assert job.similar_status == "pending" and job.similar_clicked is True
+    assert job.company_history == []  # its own group is the repeat line, not the history
+
+
+def test_muted_companies_are_rejected_whatever_the_suffix():
+    from src.services.job_searcher.dedup import reject_muted
+
+    jobs = [_job(company="Akvelon LLC"), _job(company="TechCorp"), _job(company=None), _job(company="Phoenix")]
+
+    assert reject_muted(jobs, {"Akvelon", "NIX"}) == 1  # muting NIX leaves Phoenix alone
+    assert jobs[0].moderation == "rejected_by_filter" and jobs[0].filter_reason == "muted company"
+    assert all(job.moderation == "sent" for job in jobs[1:])

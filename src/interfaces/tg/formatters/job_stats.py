@@ -25,7 +25,10 @@ REASONS = {
     "military": "воинская часть",
     "location": "другой континент",
     "stale": "висит больше двух месяцев",
-    "no stack match": "стек не совпал",
+    "no stack match": "стек не совпал (старое правило)",
+    "no python": "нет Python",
+    "frontend": "фронтенд без Python",
+    "muted company": "компания в 🔕",
 }
 MISMATCH_REASONS = {
     "experience": "опыт",
@@ -35,7 +38,10 @@ MISMATCH_REASONS = {
     "site": "сайт не пустил",
     "other": "другое",
 }
-REJECT_REASONS = {"role": "роль", "stack": "стек", "domain": "домен", "conditions": "условия", "other": "просто нет"}
+REJECT_REASONS = {
+    "role": "роль", "stack": "стек", "domain": "домен", "conditions": "условия", "other": "просто нет",
+    "muted": "компания в 🔕",
+}  # fmt: skip
 _FORMATS = {"remote": "удалённо", "office_or_remote": "офис / удалённо", "hybrid": "гибрид", "office": "офис"}
 # Words, not the fire emoji: inside <pre> one, two or three emoji break the column of bars.
 _TIERS = {"top": "в яблочко", "sent": "твой стек", "review": "частично"}
@@ -284,6 +290,25 @@ def format_me_rich(digest: dict[str, Any]) -> str:
             for p in platforms
         ]
         parts += ["<h4>🏁 Площадки — доля откликов</h4>", _chart(rows)]
+
+    if outcomes := me.get("outcomes"):
+        top = outcomes["applied"] or 1
+        rows = [
+            ("Откликнулся", 1.0, str(outcomes["applied"])),
+            ("Ответили", outcomes["replied"] / top, str(outcomes["replied"])),
+            ("Интервью", outcomes["interview"] / top, str(outcomes["interview"])),
+            ("Оффер", outcomes["offer"] / top, str(outcomes["offer"])),
+        ]
+        line = " · ".join(
+            f"{html.escape(p['platform'])} {p['replied']}/{p['applied']}"
+            for p in outcomes["by_platform"]
+            if p["applied"]
+        )
+        parts += [
+            "<h4>📨 После отклика · 4 недели</h4>",
+            _chart(rows),
+            f"<p>Ответили по площадкам: {line} · ❌ отказов {outcomes['rejected']}</p>",
+        ]
 
     tiers = me["by_tier_rate"]
     if any(rate is not None for rate in tiers.values()):

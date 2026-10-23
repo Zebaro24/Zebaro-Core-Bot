@@ -173,3 +173,29 @@ def test_a_search_never_lands_on_both_lists_or_under_a_thumbs_up_at_zero():
 
     assert [s["label"] for s in searches["best"]] == ["Djinni · python"]
     assert [s["label"] for s in searches["worst"]] == ["Djinni · react"]
+
+
+def test_what_came_of_the_applications_counts_each_step_with_the_ones_past_it():
+    applied = [
+        _doc(user_status="applied", status_updated_at=NOW, outcome="offer"),
+        _doc(user_status="applied", status_updated_at=NOW, outcome="interview"),
+        _doc(user_status="applied", status_updated_at=NOW, outcome="rejected", platform_name="Djinni"),
+        _doc(user_status="applied", status_updated_at=NOW),
+    ]
+
+    outcomes = my_stats(applied, [], applied, [], NOW, [])["outcomes"]
+
+    assert {key: outcomes[key] for key in ("applied", "replied", "interview", "offer", "rejected")} == {
+        "applied": 4, "replied": 2, "interview": 2, "offer": 1, "rejected": 1,
+    }  # fmt: skip
+    assert outcomes["by_platform"][0] == {"platform": "Dou", "applied": 3, "replied": 2, "interview": 2,
+                                          "offer": 1, "rejected": 0}  # fmt: skip
+    digest = {**_digest(), "me": my_stats(applied, [], applied, [], NOW, [])}
+    assert "После отклика" in format_me_rich(digest)
+
+
+def test_no_outcome_yet_shows_no_section():
+    applied = [_doc(user_status="applied", status_updated_at=NOW)]
+
+    assert my_stats(applied, [], applied, [], NOW, [])["outcomes"] is None
+    assert "После отклика" not in format_me_rich(_digest())

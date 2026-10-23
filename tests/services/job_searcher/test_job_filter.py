@@ -58,6 +58,11 @@ from src.services.job_searcher.filter import (
         ("AI Creative Producer", "Breeze", "not a developer role"),
         ("Python-розробник", "Військова частина А1234", "military"),
         ("Розробник у штурмова бригада", "TechCorp", "military"),
+        # Python is the base (22.10.2026): a frontend title without it is never opened.
+        ("Freelance Next.js Developer - Marketing Site & Landing Pages", "TechCorp", "frontend"),
+        ("Middle Frontend Engineer", "TechCorp", "frontend"),
+        ("React.js Developer", "TechCorp", "frontend"),
+        ("Middle+ TypeScript Developer (SaaS MVP, GCP)", "TechCorp", "frontend"),
     ],
 )
 def test_title_rejects(title, company, reason):
@@ -75,7 +80,11 @@ def test_title_rejects(title, company, reason):
         "Junior Python Developer",  # a strong junior with two years of work is the owner's level
         "Strong Junior Full Stack Developer",
         "Full Stack Developer in Marketing team",  # "marketing" is the team, not the role
-        "Freelance Next.js Developer - Marketing Site & Landing Pages",
+        "Python Developer (Junior–Senior) / Backend Engineer",  # a range down to junior
+        "Full-stack JS developer with backend focus (Security domain)",  # the domain, not the role
+        "Full-Stack Developer (Node.js / TypeScript) — Right Hand to the CTO",
+        "Full-Stack / Frontend Engineer — React, Next.js, TypeScript",  # the text decides
+        "Python Developer (React.js буде перевагою)",
         # Titles the owner answered — none of the new rules may catch them.
         "Middle JavaScript Full Stack Developer (Node + React)",  # JavaScript is not Java
         "Full-Stack Software Engineer (BE + FE / BE + Mobile)",
@@ -100,11 +109,14 @@ def test_titles_that_stay(title):
         ("Software Engineer", "We use Python and React", "sent", ["Python", "React"]),
         ("Full Stack Developer (Python / React / AWS)", "", "sent", ["Python", "React"]),
         ("Engineer", "FastAPI backend, Next.js frontend", "sent", ["FastAPI", "Next.js"]),
-        # 👀 partial: one side of the stack, or two bonus technologies
-        ("Python Developer", "Django, PostgreSQL", "review", ["Python"]),
-        ("Frontend Developer", "React and TypeScript", "review", ["React"]),
+        # 🔥 a Python position by its title
+        ("Python Developer", "Django, PostgreSQL", "sent", ["Python"]),
+        # 👀 partial: Python in the text, or an AI title
+        ("Backend Engineer", "Our services run on Python and Go. " * 6, "review", ["Python"]),
         ("AI Engineer", "LLM agents with LangChain on AWS", "review", []),
-        # nothing matches
+        # no Python: not sent
+        ("Frontend Developer", "React and TypeScript", "rejected_by_filter", []),
+        ("Full Stack Developer", "Node.js, React, TypeScript. " * 10, "rejected_by_filter", ["React"]),
         ("DevOps Engineer", "Kubernetes, Terraform, CI/CD. " * 10, "rejected_by_filter", []),
         ("Java Developer", "Spring Boot", "rejected_by_filter", []),
     ],
@@ -163,11 +175,11 @@ def test_classify_all_sets_fields_and_orders_best_first():
     JobFilter(storage).classify_all()
 
     assert len(storage.jobs) == len(jobs)
-    assert [job.moderation for job in storage.jobs][:2] == ["sent", "review"]
+    assert [job.moderation for job in storage.jobs][:2] == ["sent", "sent"]
     top = storage.jobs[0]
     assert top.matched_stack == ["Python", "FastAPI", "React"]
     assert top.filter_reason is None
-    assert {job.filter_reason for job in storage.jobs[2:]} == {"no stack match", "senior"}
+    assert {job.filter_reason for job in storage.jobs[2:]} == {"no python", "senior"}
 
 
 def test_classify_job_keeps_the_tuple_interface():
@@ -341,7 +353,7 @@ def test_plain_support_is_not_development_but_product_support_is():
 
     assert evaluate(Job(title="Technical Support Engineer", description=helpdesk)).reason == "not a developer role"
     assert evaluate(Job(title="Фахівець технічна підтримка", description=helpdesk)).reason == "not a developer role"
-    assert evaluate(Job(title="Technical (Python) Support Engineer", description=product)).moderation == "review"
+    assert evaluate(Job(title="Technical (Python) Support Engineer", description=product)).moderation == "sent"
 
 
 def test_a_page_that_did_not_load_is_judged_by_the_title_not_rejected():
@@ -354,10 +366,52 @@ def test_a_page_that_did_not_load_is_judged_by_the_title_not_rejected():
 def test_an_ai_title_is_worth_a_look_without_a_stack_in_the_text():
     description = "Build production systems with large models for our clients. " * 5
 
-    assert evaluate(Job(title="AI Engineer", description=description)).moderation == "review"
+    verdict = evaluate(Job(title="AI Engineer", description=description))
+
+    assert verdict.moderation == "review"
+    assert verdict.warnings == ["no_python"]
+
+
+def test_a_python_title_with_a_known_level_is_on_target_without_a_frontend():
+    job = Job(title="Middle Python Developer", description="FastAPI, PostgreSQL and Docker every day. " * 6)
+
+    assert evaluate(job).moderation == "top"
+
+
+def test_python_only_as_a_plus_is_a_partial_match_with_a_warning():
+    description = (
+        "Requirements:\n• 2+ years with Node.js and React\n• PostgreSQL\n\n"
+        "Nice to have:\n• Python, FastAPI\n\nWe offer:\n• Remote work and a long description. " * 3
+    )
+
+    verdict = evaluate(Job(title="Full Stack Developer", description=description))
+
+    assert verdict.moderation == "review"
+    assert "python_plus" in verdict.warnings
+
+
+def test_python_in_the_requirements_is_not_only_a_plus():
+    description = "Requirements:\n• Python and React\n\nNice to have:\n• Python 3.12 typing tricks\n" * 4
+
+    verdict = evaluate(Job(title="Full Stack Developer", description=description))
+
+    assert "python_plus" not in verdict.warnings
+    assert verdict.moderation in ("top", "sent")
 
 
 def test_the_card_figures_win_over_the_description():
     job = Job(title="Full Stack Developer", description="5+ years of experience\n" + _FULL, required_years=2)
 
     assert evaluate(job).reason is None
+
+
+def test_a_python_title_whose_page_did_not_load_is_never_on_target_and_says_why():
+    verdict = evaluate(Job(title="Middle Python Developer", description=""))
+
+    assert verdict.moderation == "sent"  # one fire by the title, not three: nothing was checked
+    assert verdict.warnings == ["no_description"]
+
+
+@pytest.mark.parametrize("title", ["AI Engineer (TypeScript)", "LLM Engineer / JavaScript"])
+def test_an_ai_title_naming_a_frontend_language_is_judged_by_the_text(title):
+    assert title_reject_reason(title, "TechCorp") is None

@@ -78,7 +78,7 @@ def test_your_stack_message_says_why_and_folds_the_description():
     assert (
         "<p>🔥 <b>Бэк + фронт</b> — <mark>Python</mark>, <mark>FastAPI</mark> · <mark>React</mark><br>➕ TypeScript</p>"
     ) in text
-    assert "<hr/><blockquote>We build a data product. Requirements 3+ years with Python" in text
+    assert "<hr/><blockquote>We build a data product. Requirements 3+ years with <mark>Python</mark>" in text
     assert "<details><summary>📄 Описание полностью</summary><p>We build" in text
     assert "<details open>" not in text
     assert "оценка" not in text  # an internal number for ordering, it told the owner nothing
@@ -182,3 +182,55 @@ def test_warnings_tell_what_to_check_before_applying():
     assert "за кордон не отмечен" in text  # a note in the conditions, not an alarm
     assert "кордон" not in text.split("⚠️")[1]
     assert "⚠️" in job_to_html(job)
+
+
+def test_the_description_marks_the_stack_and_the_red_flags():
+    from src.interfaces.tg.formatters.job import highlight
+
+    text = highlight("Python & FastAPI, Docker; 5+ years, Node.js, English C1, React Native, <b>")
+
+    assert "<mark>Python</mark> &amp; <mark>FastAPI</mark>" in text
+    assert "<b>Docker</b>" in text
+    assert "<u>5+ years</u>" in text and "<u>Node.js</u>" in text and "<u>C1</u>" in text
+    assert "<u>React Native</u>" in text  # not the React the owner writes
+    assert "&lt;b&gt;" in text  # the site's own text stays escaped
+
+
+def test_the_full_description_is_marked_but_a_plain_one_has_no_mark_tag():
+    rich = job_to_rich_html(_job())
+    plain = job_to_html(_job())
+
+    assert "<li>3+ years with <mark>Python</mark></li>" in rich
+    assert "<mark>" not in plain.split("Description:")[1]
+    assert "<b>Python</b>" in plain
+
+
+def test_the_company_history_is_shown_before_the_description():
+    history = [
+        {"title": "AI Builder / Full-Stack", "status": "applied", "at": datetime(2026, 9, 21), "similar": True},
+        {"title": "Middle Frontend Developer", "status": "not_interested", "at": datetime(2026, 9, 18)},
+    ]
+
+    text = job_to_rich_html(_job(company_history=history))
+
+    assert "📌 ✅ откликался 21.09: «AI Builder / Full-Stack» — похоже, это она же" in text
+    assert "📌 👎 отказался 18.09: «Middle Frontend Developer»" in text
+    assert text.index("📌") < text.index("<hr/>")
+
+
+def test_a_repeat_says_the_link_was_opened():
+    job = _job(similar_to="x", similar_to_platform="Djinni", similar_status="pending", similar_clicked=True)
+
+    assert "👁 ссылку уже открывал" in job_to_rich_html(job)
+
+
+def test_the_review_summary_numbers_the_vacancies_from_where_the_part_starts():
+    from src.interfaces.tg.formatters.job import review_summary_html
+
+    jobs = [_job(title="AI Engineer", warnings=["no_python"]), _job(title="Python Dev", company_history=[{}])]
+
+    text = review_summary_html(jobs, first_number=21, total=22)
+
+    assert text.startswith("<h3>👀 Частичные совпадения — 22</h3>")
+    assert "<p>21. <b>AI Engineer</b> — Acme · Dou · Python, FastAPI, React, TypeScript · ⚠️ Python" in text
+    assert "<p>22. <b>Python Dev</b>" in text and "📌 компания знакома" in text

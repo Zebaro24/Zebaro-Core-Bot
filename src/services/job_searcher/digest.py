@@ -30,7 +30,10 @@ logger = logging.getLogger("job_searcher.digest")
 
 SURFACED = ("top", "sent", "review")
 # Not his field: these say nothing about what *his* market wants.
-_OUTSIDE_FIELD = ("other stack", "not a developer role", "military", "company", "location")
+_OUTSIDE_FIELD = (
+    "other stack", "not a developer role", "military", "company", "location", "frontend", "no python",
+    "no stack match", "muted company",
+)  # fmt: skip
 DECISIONS = ("applied", "mismatch", "not_interested", "blocked")
 # Why a vacancy of his field is out of reach — his limits, as the filter names them.
 _REACH_REASONS = ("senior", "experience", "lead", "english", "office", "country")
@@ -276,6 +279,38 @@ def _funnel(found: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
+# How far an application got (the buttons under it after "applied"). Each step counts the
+# ones that went further too: an interview had a reply before it.
+_REPLIED = ("reply", "interview", "offer")
+_INTERVIEWED = ("interview", "offer")
+
+
+def outcome_stats(applied: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """What came of the applications of the window, overall and per site; None before any answer."""
+    if not any(doc.get("outcome") for doc in applied):
+        return None
+
+    def steps(docs: list[dict[str, Any]]) -> dict[str, int]:
+        outcomes = [doc.get("outcome") for doc in docs]
+        return {
+            "applied": len(docs),
+            "replied": sum(outcome in _REPLIED for outcome in outcomes),
+            "interview": sum(outcome in _INTERVIEWED for outcome in outcomes),
+            "offer": outcomes.count("offer"),
+            "rejected": outcomes.count("rejected"),
+        }
+
+    by_platform: dict[str, list[dict[str, Any]]] = {}
+    for doc in applied:
+        by_platform.setdefault(doc.get("platform_name") or "?", []).append(doc)
+    return {
+        **steps(applied),
+        "by_platform": [
+            {"platform": name, **steps(docs)} for name, docs in sorted(by_platform.items(), key=lambda i: -len(i[1]))
+        ],
+    }
+
+
 def my_stats(
     this_week: list[dict[str, Any]],
     last_week: list[dict[str, Any]],
@@ -337,6 +372,7 @@ def my_stats(
         "funnel": _funnel(found or []),
         "pending": {"count": len(pending), "old": len(old)},
         "by_platform": platforms,
+        "outcomes": outcome_stats(applied),
         "by_tier_rate": by_tier,
         "searches": _best_and_worst(searches),
         "dead_searches": [s["label"] for s in searches if s["rate"] == 0.0],

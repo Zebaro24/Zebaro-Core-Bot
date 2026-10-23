@@ -1,9 +1,18 @@
 import html
 import re
+from collections.abc import Callable
 from datetime import datetime
 
 from src.services.job_searcher.container import Job
-from src.services.job_searcher.filter import BACKEND_CORE, FRONTEND_CORE, title_level
+from src.services.job_searcher.filter import (
+    BACKEND_CORE,
+    BONUS_STACK,
+    CORE_STACK,
+    FRONTEND_CORE,
+    OTHER_STACK_WORDS,
+    keyword_pattern,
+    title_level,
+)
 from src.services.job_searcher.text import BULLET
 
 _TIERS = {
@@ -17,7 +26,53 @@ _WARNINGS = {
     "english": "просят английский B2",
     "ukraine": "в тексте про нахождение в Украине",
     "no_description": "стек не проверен — сужу только по названию",
+    "no_python": "Python в тексте не упомянут",
+    "python_plus": "Python только «будет плюсом» — основной стек другой",
 }
+
+# What the description says about the stack, marked where it says it (22.10.2026): the core
+# stack, the bonus one, and what may not fit — another main stack, 4+ years, senior, an English
+# above B1, an office.
+# Plain "go" and "lead" are English words first ("go live", "lead the feature") — left out.
+_FLAG_WORDS = (
+    *OTHER_STACK_WORDS, "node.js", "nodejs", "nestjs", "nest.js", "rust", "c++",
+    "senior", "team lead", "tech lead", "офіс", "office", "on-site", "onsite", "hybrid", "гібрид",
+)  # fmt: skip
+_FLAG_EXTRA = (
+    r"(?<!\d)(?:[4-9]|1\d)\s*\+?\s*(?:years?|yrs?|років|роки|рік|лет|года)",  # "5+ years", "від 4 років"
+    r"\b(?:b2|c1|c2|upper[- ]intermediate)\b",
+    r"\b(?:fluent|advanced)\s+english\b",
+)
+
+
+def _alternation(words: list[str]) -> str:
+    # Longest first: "team lead" before "lead", "react.js" before "react".
+    return "|".join(keyword_pattern(word) for word in sorted(set(words), key=len, reverse=True))
+
+
+_HIGHLIGHT = re.compile(
+    "(?P<core>{})|(?P<bonus>{})|(?P<flag>{})".format(
+        _alternation([word for words in CORE_STACK.values() for word in words]),
+        _alternation([word for words in BONUS_STACK.values() for word in words]),
+        "|".join([_alternation(list(_FLAG_WORDS)), *_FLAG_EXTRA]),
+    ),
+    re.IGNORECASE,
+)
+# Rich messages have <mark>; plain HTML does not.
+RICH_MARKS = {"core": "mark", "bonus": "b", "flag": "u"}
+PLAIN_MARKS = {"core": "b", "bonus": "i", "flag": "u"}
+
+
+def highlight(text: str, marks: dict[str, str] = RICH_MARKS) -> str:
+    """Escape the text and wrap every stack word and red flag in its tag."""
+    parts, end = [], 0
+    for match in _HIGHLIGHT.finditer(text):
+        tag = marks[match.lastgroup or "core"]
+        parts += [html.escape(text[end : match.start()]), f"<{tag}>{html.escape(match.group())}</{tag}>"]
+        end = match.end()
+    parts.append(html.escape(text[end:]))
+    return "".join(parts)
+
 
 # Rich messages allow 32768 characters including markup; the longest real descriptions are
 # ~6000. The cap only guards against a page that dumped its whole footer into the block.
@@ -61,12 +116,12 @@ def _looks_like_list(lines: list[str]) -> bool:
     return len(lines) >= _LIST_MIN_LINES and all(len(line) <= _LIST_LINE_MAX for line in lines)
 
 
-def _list_html(items: list[str], ordered: bool = False) -> str:
+def _list_html(items: list[str], ordered: bool = False, escape: Callable[[str], str] = html.escape) -> str:
     tag = "ol" if ordered else "ul"
-    return f"<{tag}>" + "".join(f"<li>{html.escape(item)}</li>" for item in items) + f"</{tag}>"
+    return f"<{tag}>" + "".join(f"<li>{escape(item)}</li>" for item in items) + f"</{tag}>"
 
 
-def _paragraph_blocks(paragraph: str) -> list[str]:
+def _paragraph_blocks(paragraph: str, escape: Callable[[str], str] = html.escape) -> list[str]:
     """One paragraph of a description as rich blocks: headings, lists and prose.
 
     Telegram sets headings and list items apart on their own, so the more of the original
@@ -81,14 +136,14 @@ def _paragraph_blocks(paragraph: str) -> list[str]:
         nonlocal ordered
         if prose:
             if len(prose) == 1 and _looks_like_heading(prose[0]):
-                blocks.append(f"<h4>{html.escape(prose[0])}</h4>")
+                blocks.append(f"<h4>{escape(prose[0])}</h4>")
             elif _looks_like_list(prose):
-                blocks.append(_list_html(prose))
+                blocks.append(_list_html(prose, escape=escape))
             else:
-                blocks.append("<p>" + "<br>".join(html.escape(line) for line in prose) + "</p>")
+                blocks.append("<p>" + "<br>".join(escape(line) for line in prose) + "</p>")
             prose.clear()
         if items:
-            blocks.append(_list_html(items, ordered))
+            blocks.append(_list_html(items, ordered, escape))
             items.clear()
         ordered = False
 
@@ -120,10 +175,16 @@ def _list_item(line: str) -> tuple[str | None, bool]:
     return None, False
 
 
-def description_to_rich_html(text: str, limit: int = RICH_DESCRIPTION_LIMIT) -> str:
-    """Paragraphs, lists and headings of a description (see services/job_searcher/text.py)."""
+def description_to_rich_html(text: str, limit: int = RICH_DESCRIPTION_LIMIT, marked: bool = False) -> str:
+    """Paragraphs, lists and headings of a description (see services/job_searcher/text.py).
+
+    `marked` highlights the stack and the red flags in the text (`highlight`).
+    """
+    escape = highlight if marked else html.escape
     return "".join(
-        block for paragraph in re.split(r"\n{2,}", _truncate(text, limit)) for block in _paragraph_blocks(paragraph)
+        block
+        for paragraph in re.split(r"\n{2,}", _truncate(text, limit))
+        for block in _paragraph_blocks(paragraph, escape)
     )
 
 
@@ -208,12 +269,36 @@ def repeat_line(job: Job) -> str | None:
         return None
     platform = html.escape(job.similar_to_platform)
     when = f" {job.similar_seen_at:%d.%m}" if isinstance(job.similar_seen_at, datetime) else ""
+    opened = " · 👁 ссылку уже открывал" if job.similar_clicked else ""
     if job.similar_status == "blocked":
-        return f"⛔ На {platform}{when} не пустило — это та же вакансия здесь"
+        return f"⛔ На {platform}{when} не пустило — это та же вакансия здесь{opened}"
     if job.similar_status == "pending":
-        return f"🔁 Уже присылал{when} с {platform} — без ответа, кнопки отметят обе"
+        return f"🔁 Уже присылал{when} с {platform} — без ответа, кнопки отметят обе{opened}"
     # Documents from before groups: only that a copy existed.
-    return f"🔁 Похоже, уже было на {platform}"
+    return f"🔁 Похоже, уже было на {platform}{opened}"
+
+
+_HISTORY_STATUS = {
+    "applied": "✅ откликался",
+    "not_interested": "👎 отказался",
+    "mismatch": "🚫 не прошёл",
+    "blocked": "⛔ сайт не пустил",
+    "pending": "👁 открывал",
+}
+HISTORY_SHOWN = 3
+
+
+def history_lines(job: Job) -> list[str]:
+    """What the owner did with this company's other vacancies (services/job_searcher/dedup.py)."""
+    lines = []
+    for entry in job.company_history[:HISTORY_SHOWN]:
+        status = _HISTORY_STATUS.get(entry.get("status") or "", "")
+        when = f" {entry['at']:%d.%m}" if isinstance(entry.get("at"), datetime) else ""
+        same = " — похоже, это она же" if entry.get("similar") else ""
+        lines.append(f"📌 {status}{when}: «{html.escape(entry.get('title') or '')}»{same}")
+    if len(job.company_history) > HISTORY_SHOWN:
+        lines.append(f"📌 …и ещё {len(job.company_history) - HISTORY_SHOWN} в этой компании")
+    return lines
 
 
 def job_status_html(emoji: str, text: str, when: datetime) -> str:
@@ -252,21 +337,55 @@ def job_to_rich_html(job: Job, status: str | None = None) -> str:
         if lines:
             parts.append("<p>" + "<br>".join(lines) + "</p>")
 
-    if repeat := repeat_line(job):
-        parts.append(f"<p>{repeat}</p>")
+    seen = [line for line in (repeat_line(job), *history_lines(job)) if line]
+    if seen:
+        parts.append("<p>" + "<br>".join(seen) + "</p>")
 
     parts.append("<hr/>")
 
     if job.description:
         # The same for every tier: a preview to decide by, the full text folded. Open descriptions
         # took a whole screen each and a batch became a wall (the owner's call, 17.09.2026).
-        parts.append(f"<blockquote>{html.escape(_preview(job.description))}</blockquote>")
-        body = description_to_rich_html(job.description)
+        parts.append(f"<blockquote>{highlight(_preview(job.description))}</blockquote>")
+        body = description_to_rich_html(job.description, marked=True)
         parts.append(f"<details><summary>📄 Описание полностью</summary>{body}</details>")
     else:
         parts.append("<p><i>Описание не подтянулось — открой его кнопкой «Вакансия» ниже.</i></p>")
 
     return "".join(parts)
+
+
+def _summary_item(job: Job, rich: bool) -> str:
+    """ "AI Engineer — Acme · Dou · Python, LLM · ⚠️ 1 · 📌" in one line."""
+    stack = [*job.matched_stack, *job.matched_bonus]
+    bits = [
+        html.escape(job.company) if job.company else None,
+        html.escape(job.platform_name or "") or None,
+        html.escape(", ".join(stack)) if stack else None,
+        "⚠️ " + html.escape(", ".join(_WARNINGS[w] for w in job.warnings if w in _WARNINGS))
+        if any(w in _WARNINGS for w in job.warnings)
+        else None,
+        "🔁" if job.similar_to else None,
+        "📌 компания знакома" if job.company_history else None,
+    ]
+    title = html.escape(job.title or "Без названия")
+    head = f"<b>{title}</b>" if rich else title
+    return head + " — " + " · ".join(bit for bit in bits if bit)
+
+
+def review_summary_html(jobs: list[Job], first_number: int = 1, total: int | None = None) -> str:
+    """The 👀 tier of a run as one message (22.10.2026): partial matches no longer arrive one by
+    one between the vacancies on target. A button under it opens any of them in full."""
+    total = total if total is not None else len(jobs)
+    # Numbered by hand, not <ol>: the numbers are the buttons', and a later part starts past 1.
+    items = "".join(f"<p>{n}. {_summary_item(job, rich=True)}</p>" for n, job in enumerate(jobs, first_number))
+    return f"<h3>👀 Частичные совпадения — {total}</h3>{items}"
+
+
+def review_summary_plain(jobs: list[Job], first_number: int = 1, total: int | None = None) -> str:
+    total = total if total is not None else len(jobs)
+    lines = [f"{n}. {_summary_item(job, rich=False)}" for n, job in enumerate(jobs, first_number)]
+    return f"👀 <b>Частичные совпадения — {total}</b>\n" + "\n".join(lines)
 
 
 def job_to_html(job: Job) -> str:
@@ -290,11 +409,13 @@ def job_to_html(job: Job) -> str:
         if why:
             text += "\n" + "\n".join(why)
 
-    if repeat := repeat_line(job):
-        text += f"\n{repeat}"
+    for line in (repeat_line(job), *history_lines(job)):
+        if line:
+            text += f"\n{line}"
 
     if job.description:
-        description_text = "\n".join(html.escape(_truncate(job.description, PLAIN_DESCRIPTION_LIMIT)).splitlines())
+        marked = highlight(_truncate(job.description, PLAIN_DESCRIPTION_LIMIT), PLAIN_MARKS)
+        description_text = "\n".join(marked.splitlines())
         text += f"\nDescription:\n<blockquote expandable>{description_text}</blockquote>"
 
     return text

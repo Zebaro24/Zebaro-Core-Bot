@@ -191,6 +191,44 @@ def senior_in_description(description: str | None) -> bool:
     return _SENIOR_INTRO.search(lowered) is not None and _LOWER_LEVEL.search(lowered) is None
 
 
+# --- nice to have -------------------------------------------------------------------------
+
+_PLUS = re.compile(
+    r"nice[- ]to[- ]have|would be (?:a )?(?:plus|bonus|advantage)|(?:is|as|will be) a plus|"
+    r"bonus points|an advantage|preferred|буде плюсом|буде перевагою|перевагою буде|плюсом буде|"
+    r"як перевага|як плюс|бажано|будет плюсом|будет преимуществом|преимуществом будет|желательно"
+)
+# A heading opens a section: "Nice to have:", "Буде плюсом", "What we offer".
+_HEADING_MAX = 80
+
+
+def _is_heading(line: str) -> bool:
+    return len(line) <= _HEADING_MAX and not line.startswith(("•", "-", "*")) and not line.endswith((".", ";", ","))
+
+
+def only_as_plus(description: str | None, keywords: tuple[str, ...]) -> bool:
+    """Every line naming a keyword is a "nice to have" one: under such a heading or saying so.
+
+    "Requirements: Node.js… Nice to have: Python" is a Node position with Python on the side.
+    False when no line names a keyword at all.
+    """
+    pattern = re.compile("|".join(rf"(?<![\w.]){re.escape(word)}(?![^\W\d_])" for word in keywords))
+    in_plus, found = False, False
+    for line in (raw.strip() for raw in (description or "").lower().split("\n")):
+        if not line:
+            continue
+        named = pattern.search(line) is not None
+        # A bare short "Python" under "Nice to have:" is an item written without a bullet, not a
+        # heading of its own: only a line ending in ":", saying "plus" or naming no keyword is one.
+        if _is_heading(line) and (line.endswith(":") or _PLUS.search(line) or not named):
+            in_plus = _PLUS.search(line) is not None
+        if named:
+            found = True
+            if not in_plus and _PLUS.search(line) is None:
+                return False
+    return found
+
+
 # --- numbers on the card ------------------------------------------------------------------
 
 _APPLICANTS = re.compile(r"(\d+)\s*(?:відгук|відгуки|відгуків|applications?|applicants?|откл)")

@@ -34,6 +34,10 @@ class Job:
     similar_to_platform: str | None = None  # платформа этой похожей вакансии (для бейджа в Telegram)
     similar_seen_at: datetime | None = None  # when that earlier copy was found
     similar_status: str | None = None  # the group's state then: "pending" | "blocked"
+    similar_clicked: bool = False  # the owner opened the link of that earlier copy
+    # The company's other vacancies the owner answered or opened, newest first:
+    # {title, status, at, platform, similar} — "similar" when the title is close to this one.
+    company_history: list[dict] = field(default_factory=list)
     group_id: str | None = None  # mongo _id of the first vacancy of this group
     copies: list[dict] = field(default_factory=list)  # the same vacancy on other sites: {platform, id}
     click_count: int = 0
@@ -54,6 +58,9 @@ class Job:
     # Why the owner said no: "experience" | "location" | "english" | "site" | "stack" (mismatch),
     # "role" | "stack" | "domain" | "conditions" | "other" (not_interested).
     status_reason: str | None = None
+    # After "applied": how it went — "reply" | "interview" | "offer" | "rejected".
+    outcome: str | None = None
+    outcome_at: datetime | None = None
 
     def __str__(self) -> str:
         return f"<{self.platform_name} - {self.title} - {self.company}>"
