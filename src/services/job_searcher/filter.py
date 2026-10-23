@@ -352,8 +352,7 @@ def evaluate(job: Job) -> Verdict:
     backend = any(name in stack for name in BACKEND_CORE)
     frontend = any(name in stack for name in FRONTEND_CORE)
     title_python = _contains_any(title, PYTHON_WORDS)
-    # Backend first: frontend-only and Node + React positions come last in their tier — the
-    # owner takes them, but they are not what he is after.
+    # Backend first: inside a tier the Python side and the title's stack decide the order.
     score = 10 * len(stack) + 5 * len(_found(title, CORE_STACK)) + 2 * len(bonus) + (5 if backend else 0)
     warnings = _warnings(job, description, english)
 
