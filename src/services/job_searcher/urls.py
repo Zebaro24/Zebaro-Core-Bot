@@ -35,13 +35,21 @@ urls = [
     # "python" anywhere in the text, not the Python category: the category held ten vacancies
     # in a month, the text search about seven a day — Django, full-stack, AI and data positions
     # filed under other categories (28.10.2026). Two pages: a weekend fills more than one.
-    # Over two weeks the other searches added to it: Data Engineer 7 Python vacancies,
-    # full-stack 3, AI titles that skip the language; React, Next.js and FastAPI nothing — gone.
+    # It is not quite full-text: over two weeks Data Engineer added 7 Python vacancies to it,
+    # full-stack 3, "AI engineer" 14 in three weeks. So the stack's own words keep their searches
+    # even in a quiet week (FastAPI, Next.js, Django). all_keywords is AND — "AI, LLM, agent"
+    # found one vacancy — so every word is a search of its own. A primary_keyword Djinni has no
+    # category for ("ML Engineer", "AI/ML") is ignored and shows every vacancy (28.10.2026).
     f"https://djinni.co/jobs/?all_keywords=python&{_DJINNI_FILTERS}",
     f"https://djinni.co/jobs/?all_keywords=python&{_DJINNI_FILTERS}&page=2",
     f"https://djinni.co/jobs/?primary_keyword=Data+Engineer&{_DJINNI_FILTERS}",
     f"https://djinni.co/jobs/keyword-fullstack/?{_DJINNI_FILTERS}",
-    f"https://djinni.co/jobs/?all_keywords=AI%2C+LLM%2C+agent&{_DJINNI_FILTERS}",
+    f"https://djinni.co/jobs/?all_keywords=FastAPI&{_DJINNI_FILTERS}",
+    f"https://djinni.co/jobs/?all_keywords=Django&{_DJINNI_FILTERS}",
+    f"https://djinni.co/jobs/?all_keywords=Next.js&{_DJINNI_FILTERS}",
+    f"https://djinni.co/jobs/?all_keywords=LLM&{_DJINNI_FILTERS}",
+    f"https://djinni.co/jobs/?all_keywords=AI+engineer&{_DJINNI_FILTERS}",
+    f"https://djinni.co/jobs/?all_keywords=AI+agents&{_DJINNI_FILTERS}",
     # Robota.ua — remote only (scheduleIds=3), Ukraine and abroad. Opened through the home PC.
     # "python", not "python-developer": 56 vacancies instead of a handful, "Data Engineer
     # (Python)" and Python full-stack among them; the full-stack search, 0 applications out of
@@ -52,8 +60,11 @@ urls = [
     # three of four answered with an application.
     "https://nofluffjobs.com/ua-ru/viddalena-robota?criteria=jobPosition%3D%27python%20developer%27",
     "https://nofluffjobs.com/ua-ru/viddalena-robota?criteria=jobPosition%3D%27fullstack%20developer%27",
-    # Work.ua — behind a Cloudflare check that only the home PC gets through.
-    "https://www.work.ua/jobs-remote-python+developer/",
+    # Work.ua — behind a Cloudflare check that only the home PC gets through. "python" finds all
+    # that "python developer" did and more; "AI engineer" adds AI backend positions. Its "data
+    # engineer" and "backend developer" are .NET, SQL and data entry — left out (28.10.2026).
+    "https://www.work.ua/jobs-remote-python/",
+    "https://www.work.ua/jobs-remote-ai+engineer/",
     "https://www.work.ua/jobs-remote-full+stack+developer/",
     "https://happymonday.ua/jobs-search/fullstack-developer",
     # LinkedIn's guest search — Ukrainian companies' postings that never reach DOU or Djinni.
