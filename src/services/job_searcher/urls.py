@@ -19,12 +19,13 @@ _LINKEDIN = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/sea
 _LINKEDIN_FILTERS = "location=Ukraine&f_WT=2&f_TPR=r86400&sortBy=DD"
 
 urls = [
-    # DOU — the main Ukrainian board, 46% of its vacancies answered with an application. Four
-    # categories: the backend half of the stack, the frontend half (React and Next.js live there),
-    # full-stack, and AI/ML. The ?relocation searches went on 06.10.2026: a relocation-only
-    # vacancy is an office abroad, and one that is also remote comes through ?remote.
+    # DOU — the main Ukrainian board, 46% of its vacancies answered with an application. Its
+    # search matches categories, not the text, so the categories Python work is filed under:
+    # Python, full-stack, AI/ML, data engineering. The first page holds 3–7 days of each — plenty
+    # with a run every hour. Front End went on 28.10.2026: Python is required, and of its 30
+    # vacancies in a month one got an application. The ?relocation searches went on 06.10.2026:
+    # a relocation-only vacancy is an office abroad, one that is also remote comes through ?remote.
     "https://jobs.dou.ua/vacancies/?remote&category=Python",
-    "https://jobs.dou.ua/vacancies/?remote&category=Front%20End",
     "https://jobs.dou.ua/vacancies/?remote&category=Fullstack",
     "https://jobs.dou.ua/vacancies/?remote&category=AI%2FML",
     "https://jobs.dou.ua/vacancies/?remote&category=Data%20Engineer",
@@ -34,18 +35,19 @@ urls = [
     # "python" anywhere in the text, not the Python category: the category held ten vacancies
     # in a month, the text search about seven a day — Django, full-stack, AI and data positions
     # filed under other categories (28.10.2026). Two pages: a weekend fills more than one.
+    # Over two weeks the other searches added to it: Data Engineer 7 Python vacancies,
+    # full-stack 3, AI titles that skip the language; React, Next.js and FastAPI nothing — gone.
     f"https://djinni.co/jobs/?all_keywords=python&{_DJINNI_FILTERS}",
     f"https://djinni.co/jobs/?all_keywords=python&{_DJINNI_FILTERS}&page=2",
     f"https://djinni.co/jobs/?primary_keyword=Data+Engineer&{_DJINNI_FILTERS}",
     f"https://djinni.co/jobs/keyword-fullstack/?{_DJINNI_FILTERS}",
-    f"https://djinni.co/jobs/keyword-react/?{_DJINNI_FILTERS}",
-    f"https://djinni.co/jobs/?all_keywords=FastAPI&{_DJINNI_FILTERS}",
-    f"https://djinni.co/jobs/?all_keywords=Next.js&{_DJINNI_FILTERS}",
     f"https://djinni.co/jobs/?all_keywords=AI%2C+LLM%2C+agent&{_DJINNI_FILTERS}",
     # Robota.ua — remote only (scheduleIds=3), Ukraine and abroad. Opened through the home PC.
-    "https://robota.ua/zapros/python-developer/ukraine/params;scheduleIds=3",
-    "https://robota.ua/zapros/python-developer/other_countries/params;scheduleIds=3",
-    "https://robota.ua/zapros/full-stack-developer/ukraine/params;scheduleIds=3",
+    # "python", not "python-developer": 56 vacancies instead of a handful, "Data Engineer
+    # (Python)" and Python full-stack among them; the full-stack search, 0 applications out of
+    # 23 in a month, went with it (28.10.2026).
+    "https://robota.ua/zapros/python/ukraine/params;scheduleIds=3",
+    "https://robota.ua/zapros/python/other_countries/params;scheduleIds=3",
     # No Fluff Jobs — the Ukrainian section of the Polish board, remote positions. Few, but
     # three of four answered with an application.
     "https://nofluffjobs.com/ua-ru/viddalena-robota?criteria=jobPosition%3D%27python%20developer%27",
