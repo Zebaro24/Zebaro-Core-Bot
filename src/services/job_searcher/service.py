@@ -7,9 +7,10 @@ from src.core.base_service import BaseService
 
 logger = logging.getLogger("services.job_searcher")
 
-# Local hours (TZ) of the scheduled searches. The morning one catches what was posted
-# overnight before it is an hour old and already has a queue of replies.
-SEARCH_HOURS = (10, 12, 14, 16)
+# Local hours (TZ) of the scheduled searches: every hour from 9 to 21 (28.10.2026, was 10–16
+# every two hours), so a vacancy reaches the chat within an hour of posting, before the queue
+# of replies. Each run opens only the pages of vacancies it has not seen yet.
+SEARCH_HOURS = tuple(range(9, 22))
 WEEKLY_DIGEST_ID = "job_weekly_digest"
 
 

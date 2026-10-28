@@ -47,7 +47,17 @@ MUTED = "muted"  # the status_reason of a "not interested" that mutes the whole 
 
 # Which copy of a vacancy is the one to open. Djinni is last: its experience gate refuses an
 # application the other boards would take for the same position.
-PLATFORM_PRIORITY = ("Dou", "Work.ua", "Robota.ua", "No Fluff Jobs", "HappyMonday", "BazaIT", "Wellfound", "Djinni")
+PLATFORM_PRIORITY = (
+    "Dou",
+    "Work.ua",
+    "Robota.ua",
+    "No Fluff Jobs",
+    "HappyMonday",
+    "BazaIT",
+    "Wellfound",
+    "LinkedIn",
+    "Djinni",
+)
 _UNKNOWN_RANK = PLATFORM_PRIORITY.index("Djinni") - 0.5
 
 # "mismatch" — he does not meet the requirements: as final as "not interested" for this group.

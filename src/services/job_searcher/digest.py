@@ -236,7 +236,7 @@ def market_insights(market: dict[str, Any]) -> list[dict[str, Any]]:
 _SITES = {
     "jobs.dou.ua": "DOU", "djinni.co": "Djinni", "www.work.ua": "Work.ua", "robota.ua": "Robota.ua",
     "nofluffjobs.com": "No Fluff Jobs", "happymonday.ua": "HappyMonday", "app.bazait.com": "BazaIT",
-    "wellfound.com": "Wellfound",
+    "wellfound.com": "Wellfound", "www.linkedin.com": "LinkedIn",
 }  # fmt: skip
 _PATH_NOISE = ("jobs", "vacancies", "zapros", "role", "l", "jobs-search", "search", "ua-ru", "viddalena-robota")
 
@@ -249,9 +249,11 @@ def search_label(url: str | None) -> str:
     site = _SITES.get(parsed.netloc, parsed.netloc)
     query = parse_qs(parsed.query, keep_blank_values=True)
     words: list[str] = []
-    for key in ("category", "all_keywords", "any_of_keywords", "primary_keyword", "criteria"):
+    for key in ("category", "all_keywords", "any_of_keywords", "primary_keyword", "criteria", "keywords"):
         words += query.get(key, [])
     words += [key for key in ("remote", "relocation") if key in query]
+    # The second page of a search is a search of its own in the stats.
+    words += [f"p{page}" for page in query.get("page", []) if page != "1"]
     path = [part for part in parsed.path.split("/") if part and part not in _PATH_NOISE and ";" not in part]
     if not words:
         words = [part.removeprefix("keyword-").replace("jobs-remote-", "remote ") for part in path[:2]]

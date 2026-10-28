@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 from src.services.job_searcher.listeners.djinni import DjinniListeners
 from src.services.job_searcher.listeners.dou import DouListeners
 from src.services.job_searcher.listeners.happymonday import HappyMondayListeners
+from src.services.job_searcher.listeners.linkedin import LinkedInListeners
 from src.services.job_searcher.listeners.no_fluff_jobs import NoFluffJobsListeners
 from src.services.job_searcher.listeners.robota_ua import RobotaUAListeners
 from src.services.job_searcher.listeners.work_ua import WorkUAListeners
@@ -153,3 +154,45 @@ def test_robota_ua_links_go_without_www():
     card = _card('<div><a href="/company1020/vacancy10927041">x</a></div>', "div")
 
     assert RobotaUAListeners().get_link(card) == "https://robota.ua/company1020/vacancy10927041"
+
+
+# A LinkedIn guest search card (28.10.2026), the logo left out.
+LINKEDIN_CARD = """
+<li>
+  <div class="base-card base-card--link base-search-card job-search-card"
+       data-entity-urn="urn:li:jobPosting:4481863287">
+    <a class="base-card__full-link"
+       href="https://ua.linkedin.com/jobs/view/middle-python-developer-at-ajax-4481863287?position=1&amp;refId=x">
+      <span class="sr-only">Middle Python Developer</span>
+    </a>
+    <div class="base-search-card__info">
+      <h3 class="base-search-card__title">Middle Python Developer</h3>
+      <h4 class="base-search-card__subtitle"><a class="hidden-nested-link" href="#">Ajax Systems</a></h4>
+      <div class="base-search-card__metadata">
+        <span class="job-search-card__location">Lviv, Lviv, Ukraine</span>
+        <time class="job-search-card__listdate--new" datetime="2026-10-28">2 hours ago</time>
+      </div>
+    </div>
+  </div>
+</li>
+"""
+
+
+def test_linkedin_card_reaches_the_job_as_remote_with_a_clean_link():
+    [job] = JobParser._parse_list(LinkedInListeners(), BeautifulSoup(LINKEDIN_CARD, "html.parser"))
+
+    assert (job.job_id, job.title, job.company) == ("4481863287", "Middle Python Developer", "Ajax Systems")
+    assert job.location == "Lviv, Lviv, Ukraine, remote"  # the search asks for remote only
+    assert job.work_format == "remote"
+    assert job.date == datetime(2026, 10, 28)
+    assert job.link == "https://www.linkedin.com/jobs/view/4481863287/"
+
+
+def test_linkedin_description_comes_from_the_guest_posting_not_the_page():
+    listeners = LinkedInListeners()
+
+    assert (
+        listeners.detail_url("https://www.linkedin.com/jobs/view/4481863287/")
+        == "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/4481863287"
+    )
+    assert listeners.detail_url("https://jobs.dou.ua/v/1/") == "https://jobs.dou.ua/v/1/"

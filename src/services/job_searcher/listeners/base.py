@@ -34,6 +34,8 @@ class BaseListeners:
     detail_description: str | None = None
     # Site chrome that sits inside the description block and must not reach the message.
     detail_noise: tuple[str, ...] = ()
+    # Vacancy pages opened per run for this board; None — the parser's common cap.
+    max_detail_pages: int | None = None
     # Behind a bot check that only lets a home IP through: opened via the owner's PC (home.py).
     via_home: bool = False
 
@@ -80,6 +82,11 @@ class BaseListeners:
 
     def get_list_wait_selector(self) -> str | None:
         return self.wait_for or self.all_jobs
+
+    def detail_url(self, link: str) -> str:
+        """Where the full description is read from; the vacancy's own page unless the board
+        serves it elsewhere (LinkedIn)."""
+        return link
 
     def get_detail_description(self, page: Tag) -> str | None:
         if not self.detail_description:

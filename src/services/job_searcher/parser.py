@@ -15,6 +15,7 @@ from src.services.job_searcher.listeners.djinni import DjinniListeners
 from src.services.job_searcher.listeners.dou import DouListeners
 from src.services.job_searcher.listeners.happymonday import HappyMondayListeners
 from src.services.job_searcher.listeners.jooble import JoobleListeners
+from src.services.job_searcher.listeners.linkedin import LinkedInListeners
 from src.services.job_searcher.listeners.no_fluff_jobs import NoFluffJobsListeners
 from src.services.job_searcher.listeners.robota_ua import RobotaUAListeners
 from src.services.job_searcher.listeners.wellfound import WellfoundListeners
@@ -52,6 +53,7 @@ _LISTENERS: dict[str, BaseListeners] = {
     "happymonday.ua": HappyMondayListeners(),
     "app.bazait.com": BazaITListeners(),
     "wellfound.com": WellfoundListeners(),
+    "www.linkedin.com": LinkedInListeners(),
 }
 
 _PAGE_TIMEOUT_MS = 10_000
@@ -258,7 +260,7 @@ class JobParser:
             listeners = self.get_listeners_by_platform(job.platform_name)
             if not job.link or not listeners or not listeners.detail_description:
                 continue
-            if per_site.get(job.platform_name, 0) < MAX_DETAIL_PAGES:
+            if per_site.get(job.platform_name, 0) < (listeners.max_detail_pages or MAX_DETAIL_PAGES):
                 per_site[job.platform_name] = per_site.get(job.platform_name, 0) + 1
                 targets.append(job)
         if not targets or not await self._playwright_available():
@@ -283,7 +285,9 @@ class JobParser:
                 if page is None:
                     continue
                 try:
-                    html_content = await self._get_page_content(page, job.link, listeners.detail_description)
+                    html_content = await self._get_page_content(
+                        page, listeners.detail_url(job.link), listeners.detail_description
+                    )
                     description = listeners.get_detail_description(BeautifulSoup(html_content, "html.parser"))
                     if not description and _is_challenge(await page.title(), html_content):
                         blocked.add(job.platform_name)

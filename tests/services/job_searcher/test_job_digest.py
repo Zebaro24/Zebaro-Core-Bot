@@ -118,6 +118,11 @@ def test_salary_value(text, value):
         ("https://jobs.dou.ua/vacancies/?remote&category=Python", "DOU · Python remote"),
         ("https://djinni.co/jobs/keyword-python/?employment=remote&exp_level=1y", "Djinni · python"),
         ("https://djinni.co/jobs/?all_keywords=FastAPI&employment=remote", "Djinni · FastAPI"),
+        ("https://djinni.co/jobs/?all_keywords=python&employment=remote&page=2", "Djinni · python p2"),
+        (
+            "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=data%20engineer&f_WT=2",
+            "LinkedIn · data engineer",
+        ),
         ("https://www.work.ua/jobs-remote-python+developer/", "Work.ua · remote python developer"),
         (None, "?"),
     ],

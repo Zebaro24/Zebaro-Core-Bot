@@ -38,8 +38,9 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 
 **Job Search & Scraping**
 - Headless browsing via Playwright Stealth (remote browser server, full Chromium in new headless mode)
-- Sources: DOU, Djinni, Robota.ua, Work.ua, NoFluffJobs, HappyMonday (BazaIT, Wellfound and Jooble listeners are kept but switched off); Djinni's card fields (work format, countries, years, English, salary, applicants) are read as they are
-- Work.ua, Robota.ua and HappyMonday block the server's datacenter IP; with `HOME_PROXY_URL` they go through the owner's PC over the VPN — `python scripts/home_proxy.py` there (stdlib only: CONNECT :443, only the server's address, only with the login)
+- Searches every hour, 9:00–21:00 local time
+- Sources: DOU, Djinni, LinkedIn (guest search, no login), Robota.ua, Work.ua, NoFluffJobs, HappyMonday (BazaIT, Wellfound and Jooble listeners are kept but switched off); Djinni's card fields (work format, countries, years, English, salary, applicants) are read as they are
+- Work.ua, Robota.ua, HappyMonday and LinkedIn block the server's datacenter IP; with `HOME_PROXY_URL` they go through the owner's PC over the VPN — `python scripts/home_proxy.py` there (stdlib only: CONNECT :443, only the server's address, only with the login)
 - Python is required: frontend, JS/TS full-stack and Node positions without it are filtered out (AI titles stay, marked)
 - Three tiers (on target / your stack / partial) with warnings, apply / mismatch / not-interested buttons with reasons; the partial tier arrives as one summary message with "open" buttons
 - The description highlights the stack and the red flags (another stack, 4+ years, senior, English above B1, office)
