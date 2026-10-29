@@ -2,9 +2,13 @@ import logging
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 
 from src.config import settings
 from src.interfaces.webhooks.routes.endpoints import router
+from src.interfaces.webhooks.routes.jobs import PREFIX as JOBS_PREFIX
+from src.interfaces.webhooks.routes.jobs import ApiError, api_error_handler, validation_error_handler
+from src.interfaces.webhooks.routes.jobs import public_router as jobs_public_router
 from src.interfaces.webhooks.routes.jobs import router as jobs_router
 from src.interfaces.webhooks.routes.site import router as site_router
 
@@ -25,7 +29,11 @@ app.state.github_manager = None
 
 app.include_router(router, prefix="/webhook", tags=["webhook"])
 # Not under /webhook: the vacancy buttons already sent to Telegram link to {webhook_url}/jobs/r/<id>.
-app.include_router(jobs_router, prefix="/jobs", tags=["jobs"])
+app.include_router(jobs_public_router, prefix=JOBS_PREFIX, tags=["jobs"])
+# The Jobs API for the MCP (docs/contracts/jobs-api.md); its own error format.
+app.include_router(jobs_router, prefix=JOBS_PREFIX, tags=["jobs"])
+app.add_exception_handler(ApiError, api_error_handler)
+app.add_exception_handler(RequestValidationError, validation_error_handler)
 # zebaro.dev's contact form, from the site container inside the compose network only.
 app.include_router(site_router, prefix="/site", tags=["site"])
 

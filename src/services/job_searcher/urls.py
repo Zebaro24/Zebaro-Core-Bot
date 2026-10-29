@@ -7,7 +7,7 @@ abroad. The focus is Ukrainian companies, wherever they are registered (06.10.20
 international boards brought vacancies he could not take or did not want.
 
 Each vacancy keeps the search that found it (`Job.search_url`), so a search that brings
-nothing worth an answer shows up in `scripts/job_stats.py searches`.
+nothing worth an answer shows up in the Jobs API's `/jobs/funnel?group_by=search`.
 """
 
 # Djinni filters the list by what it checks an application against: remote only, and at most

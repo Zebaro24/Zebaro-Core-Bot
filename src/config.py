@@ -29,7 +29,8 @@ class Settings(BaseSettings):
 
     webhook_url: str
 
-    job_stats_api_token: str = ""
+    # Jobs API (/jobs/*, the MCP's jobs_* tools); empty = the endpoints refuse everything.
+    jobs_api_token: str = ""
 
     # Shared secret with zebaro.dev's contact form; empty = the endpoint refuses everything.
     site_contact_token: str = ""

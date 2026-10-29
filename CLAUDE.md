@@ -67,7 +67,7 @@ src/
 │   │   ├── middlewares/
 │   │   └── notification/     # job search run, weekly digest
 │   ├── ds/                   # discord.py bot + service.py (needs_restart=True)
-│   └── webhooks/             # FastAPI: /webhook/{github,telegram}, /jobs/*, /site/contact, /health
+│   └── webhooks/             # FastAPI: /webhook/{github,telegram}, /jobs/* (Jobs API, docs/contracts/), /site/contact, /health
 └── utils/                    # format_memory, format_time
 scripts/                      # gate.py, release.py, approve.py, dev.bat, prod.bat, start-claude.bat, home_proxy.py (owner's PC)
 .claude/                      # settings.json, hooks/, skills/, agents/, docs/

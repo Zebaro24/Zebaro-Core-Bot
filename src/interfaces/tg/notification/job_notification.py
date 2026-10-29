@@ -2,15 +2,16 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from functools import partial
+from typing import TypeVar
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramRetryAfter
-from aiogram.types import InlineKeyboardMarkup, InputRichMessage
+from aiogram.types import InlineKeyboardMarkup, InputRichMessage, Message
 
 from src.config import settings
 from src.interfaces.tg.formatters.job import job_to_html, job_to_rich_html, review_summary_html, review_summary_plain
 from src.interfaces.tg.keyboards.job import get_job_action_kb, get_job_link_kb, get_job_summary_kb
-from src.services.job_searcher.container import Job, JobStorage
+from src.services.job_searcher.container import Job, JobStorage, remember_message
 from src.services.job_searcher.dedup import DUPLICATE, group_duplicates, muted_companies, reject_muted
 from src.services.job_searcher.filter import REJECTED, REVIEW, SENT, TOP, JobFilter
 from src.services.job_searcher.parser import JobParser
@@ -46,11 +47,12 @@ def _get_reply_markup(job: Job, job_id: str | None) -> InlineKeyboardMarkup | No
     return None
 
 
-async def _deliver(bot: Bot, job: Job, reply_markup: InlineKeyboardMarkup | None) -> None:
+async def _deliver(bot: Bot, job: Job, reply_markup: InlineKeyboardMarkup | None) -> tuple[Message, str]:
+    """Send the vacancy; the message and its kind ("rich" | "plain")."""
     # Only "your stack" rings; partial matches arrive silently and wait to be scrolled.
     silent = job.moderation not in (TOP, SENT)
     try:
-        await bot.send_rich_message(
+        message = await bot.send_rich_message(
             chat_id=settings.telegram_admin_id,
             # Entity detection stays on: an e-mail or a form link in the description is clickable.
             rich_message=InputRichMessage(html=job_to_rich_html(job)),
@@ -58,18 +60,20 @@ async def _deliver(bot: Bot, job: Job, reply_markup: InlineKeyboardMarkup | None
             disable_notification=silent,
             message_effect_id=FIRE_EFFECT_ID if job.moderation == TOP else None,
         )
+        return message, "rich"
     except TelegramBadRequest:
         logger.warning("Telegram refused the rich message for %s, sending the plain version", job, exc_info=True)
-        await bot.send_message(
+        message = await bot.send_message(
             chat_id=settings.telegram_admin_id,
             text=job_to_html(job),
             reply_markup=reply_markup,
             disable_web_page_preview=True,
             disable_notification=silent,
         )
+        return message, "plain"
 
 
-async def _deliver_summary(bot: Bot, jobs: list[Job], ids: list[str], first: int, total: int) -> None:
+async def _deliver_summary(bot: Bot, jobs: list[Job], ids: list[str], first: int, total: int) -> bool:
     entries = [(n, job.title or "", job_id) for n, (job, job_id) in enumerate(zip(jobs, ids, strict=True), first)]
     markup = get_job_summary_kb(entries)
     try:
@@ -79,6 +83,7 @@ async def _deliver_summary(bot: Bot, jobs: list[Job], ids: list[str], first: int
             reply_markup=markup,
             disable_notification=True,
         )
+        return True
     except TelegramBadRequest:
         logger.warning("Telegram refused the rich summary, sending the plain version", exc_info=True)
         await bot.send_message(
@@ -87,6 +92,7 @@ async def _deliver_summary(bot: Bot, jobs: list[Job], ids: list[str], first: int
             reply_markup=markup,
             disable_notification=True,
         )
+        return True
 
 
 async def _send_summary(bot: Bot, pairs: list[tuple[Job, str]]) -> int:
@@ -100,24 +106,33 @@ async def _send_summary(bot: Bot, pairs: list[tuple[Job, str]]) -> int:
     return sent
 
 
-async def _send_job(bot: Bot, job: Job, reply_markup: InlineKeyboardMarkup | None) -> bool:
-    return await _with_retries(partial(_deliver, bot, job, reply_markup))
+async def _send_job(bot: Bot, job: Job, reply_markup: InlineKeyboardMarkup | None, job_id: str | None = None) -> bool:
+    sent = await _with_retries(partial(_deliver, bot, job, reply_markup))
+    if sent is None:
+        return False
+    if job_id:
+        message, kind = sent
+        await remember_message(job_id, message.chat.id, message.message_id, kind)
+    return True
 
 
-async def _with_retries(deliver: Callable[[], Awaitable[None]]) -> bool:
+_T = TypeVar("_T")
+
+
+async def _with_retries(deliver: Callable[[], Awaitable[_T]]) -> _T | None:
+    """What `deliver` returned, or None when the vacancy was given up on."""
     for _ in range(_SEND_ATTEMPTS):
         try:
-            await deliver()
-            return True
+            return await deliver()
         except TelegramRetryAfter as e:
             # The vacancies are already saved, so a dropped message is never offered again.
             logger.warning("Telegram flood control, waiting %s s", e.retry_after)
             await asyncio.sleep(e.retry_after)
         except TelegramAPIError:
             logger.exception("Failed to send a vacancy, moving on to the next one")
-            return False
+            return None
     logger.error("Gave up on a vacancy after %d flood-control waits", _SEND_ATTEMPTS)
-    return False
+    return None
 
 
 async def job_notification(bot: Bot) -> int:
@@ -163,7 +178,7 @@ async def _run_job_notification(bot: Bot) -> int:
         if job.moderation == REVIEW and job_id:
             summary.append((job, job_id))  # sent together after the ones on target
             continue
-        if await _send_job(bot, job, _get_reply_markup(job, job_id)):
+        if await _send_job(bot, job, _get_reply_markup(job, job_id), job_id):
             sent += 1
     sent += await _send_summary(bot, summary)
 

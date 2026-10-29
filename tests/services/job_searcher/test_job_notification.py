@@ -78,6 +78,21 @@ async def test_send_job_sends_a_rich_message_and_rings_only_for_your_stack():
 
 
 @pytest.mark.asyncio
+async def test_a_sent_vacancy_remembers_its_message_and_its_kind(mocker):
+    remember = mocker.patch("src.interfaces.tg.notification.job_notification.remember_message", new=AsyncMock())
+    bot = MagicMock()
+    bot.send_rich_message = AsyncMock(return_value=MagicMock(message_id=77, chat=MagicMock(id=5)))
+    bot.send_message = AsyncMock(return_value=MagicMock(message_id=78, chat=MagicMock(id=5)))
+
+    assert await notification._send_job(bot, _job(), None, "job_1") is True
+    bot.send_rich_message.side_effect = TelegramBadRequest(method=MagicMock(), message="bad rich markup")
+    assert await notification._send_job(bot, _job(), None, "job_2") is True
+    assert await notification._send_job(bot, _job(), None) is True  # no id (the DB was down): nothing to store
+
+    assert [call.args for call in remember.await_args_list] == [("job_1", 5, 77, "rich"), ("job_2", 5, 78, "plain")]
+
+
+@pytest.mark.asyncio
 async def test_send_job_falls_back_to_plain_html_when_rich_is_refused():
     bot = MagicMock()
     bot.send_rich_message = AsyncMock(side_effect=TelegramBadRequest(method=MagicMock(), message="bad rich markup"))

@@ -55,29 +55,34 @@ TREND_POINTS = 0.08
 MAX_INSIGHTS = 5
 
 
-async def _find(query: dict[str, Any]) -> list[dict[str, Any]]:
+async def _find(query: dict[str, Any], strict: bool = False) -> list[dict[str, Any]]:
     try:
         return [doc async for doc in jobs_collection.find(query, {"description": 0})]
     except Exception as e:
+        if strict:
+            raise
         logger.warning("DB unavailable for the digest: %s", e)
         return []
 
 
-async def get_digest(days: int = 7) -> dict[str, Any]:
+async def get_digest(days: int = 7, *, strict: bool = False) -> dict[str, Any]:
+    """The digest for `days`. Telegram gets zeros when the DB is down; `strict` (the Jobs API)
+    gets the error instead, so a dead database is never read as an empty week."""
     now = datetime.utcnow()
     since, before = now - timedelta(days=days), now - timedelta(days=2 * days)
-    found_both = await _find({"found_at": {"$gte": before}, "user_status": {"$ne": "duplicate"}})
+    found_both = await _find({"found_at": {"$gte": before}, "user_status": {"$ne": "duplicate"}}, strict)
     found = [doc for doc in found_both if doc["found_at"] >= since]
     found_prev = [doc for doc in found_both if doc["found_at"] < since]
-    decided = await _find({"status_updated_at": {"$gte": before}, "user_status": {"$in": list(DECISIONS)}})
+    decided = await _find({"status_updated_at": {"$gte": before}, "user_status": {"$in": list(DECISIONS)}}, strict)
     window = await _find(
         {
             "status_updated_at": {"$gte": now - timedelta(days=max(days, SEARCH_WINDOW_DAYS))},
             "user_status": {"$in": list(DECISIONS)},
-        }
+        },
+        strict,
     )
     pending = await _find(
-        {"moderation": {"$in": list(SURFACED)}, "user_status": "pending", "found_at": {"$gte": since}}
+        {"moderation": {"$in": list(SURFACED)}, "user_status": "pending", "found_at": {"$gte": since}}, strict
     )
     this_week = [doc for doc in decided if doc["status_updated_at"] >= since]
     last_week = [doc for doc in decided if doc["status_updated_at"] < since]
@@ -96,12 +101,17 @@ async def get_digest(days: int = 7) -> dict[str, Any]:
 
 
 def _silent(found: list[dict[str, Any]]) -> list[str]:
-    from src.services.job_searcher.stats import silent_sources
+    """Platforms that are searched but brought nothing — a broken selector or a block.
 
-    by_platform: dict[str, dict[str, int]] = {}
-    for doc in found:
-        by_platform.setdefault(doc.get("platform_name") or "Unknown", {"found": 0})["found"] += 1
-    return silent_sources(by_platform) if found else []
+    With nothing found at all (an empty period, or the DB down) every source would be
+    reported as silent, which says nothing.
+    """
+    from src.services.job_searcher.parser import platform_names
+
+    if not found:
+        return []
+    seen = {doc.get("platform_name") for doc in found}
+    return sorted(name for name in platform_names() if name not in seen)
 
 
 # --- market --------------------------------------------------------------------------------

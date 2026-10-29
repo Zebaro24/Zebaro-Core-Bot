@@ -20,7 +20,7 @@ from src.interfaces.tg.keyboards.job import (
     get_job_reason_kb,
 )
 from src.interfaces.tg.middlewares.admin import AdminMiddleware
-from src.services.job_searcher.container import Job
+from src.services.job_searcher.container import Job, remember_message
 from src.services.job_searcher.dedup import BLOCKED, DECIDED, DUPLICATE, group_root
 
 logger = logging.getLogger("tg.handlers.callbacks.job")
@@ -125,14 +125,18 @@ async def _open_from_summary(query: CallbackQuery, callback_data: JobActionCallb
         text, markup = None, get_job_action_kb(callback_data.job_id, doc.get("copies"))
     job = Job.from_doc(doc)
     try:
-        await query.message.answer_rich(
+        sent = await query.message.answer_rich(
             rich_message=InputRichMessage(html=job_to_rich_html(job, status=text)), reply_markup=markup
         )
+        kind = "rich"
     except TelegramBadRequest:
         # As when the run sent it: a refused rich message falls back to plain HTML.
         logger.warning("Telegram refused the rich message for %s, sending the plain version", job, exc_info=True)
         plain = f"{job_to_html(job)}\n\n{text}" if text else job_to_html(job)
-        await query.message.answer(plain, reply_markup=markup, disable_web_page_preview=True)
+        sent = await query.message.answer(plain, reply_markup=markup, disable_web_page_preview=True)
+        kind = "plain"
+    # From now on this is the vacancy's message: a status set through the API edits it.
+    await remember_message(callback_data.job_id, sent.chat.id, sent.message_id, kind)
     await query.answer()
 
 

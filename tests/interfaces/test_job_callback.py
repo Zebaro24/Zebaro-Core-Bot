@@ -238,6 +238,19 @@ async def test_open_sends_a_summary_vacancy_as_its_own_message(collection):
 
 
 @pytest.mark.asyncio
+async def test_an_opened_vacancy_remembers_its_new_message(collection, mocker):
+    remember = mocker.patch.object(callback, "remember_message", new=AsyncMock())
+    doc = {**_doc("Dou"), "moderation": "review"}
+    _setup(collection, doc, [doc])
+    query = _query()
+    query.message.answer_rich = AsyncMock(return_value=MagicMock(message_id=42, chat=MagicMock(id=7)))
+
+    await callback.job_action_callback(query, JobActionCallback(action="open", job_id=str(doc["_id"])))
+
+    remember.assert_awaited_once_with(str(doc["_id"]), 7, 42, "rich")
+
+
+@pytest.mark.asyncio
 async def test_the_same_outcome_pressed_twice_is_answered_quietly(collection):
     from aiogram.exceptions import TelegramBadRequest
 

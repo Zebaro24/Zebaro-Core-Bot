@@ -2,6 +2,8 @@ import logging
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 
+from bson import ObjectId
+
 from src.db.client import jobs_collection
 
 # TODO: JobStorage is coupled to the DB layer (jobs_collection imported directly).
@@ -61,6 +63,12 @@ class Job:
     # After "applied": how it went — "reply" | "interview" | "offer" | "rejected".
     outcome: str | None = None
     outcome_at: datetime | None = None
+    # The vacancy's own message in Telegram, to edit it when its status changes through the API
+    # (Jobs API, part B). "rich" | "plain": the two are edited differently. Kept since 29.10.2026;
+    # the 👀 summary's vacancies get one only when opened as their own message.
+    tg_chat_id: int | None = None
+    tg_message_id: int | None = None
+    tg_message_kind: str | None = None
 
     def __str__(self) -> str:
         return f"<{self.platform_name} - {self.title} - {self.company}>"
@@ -128,6 +136,25 @@ class JobStorage:
         logger.info("Total new jobs: %d", len(self.jobs))
         for job in self.jobs:
             logger.debug("  %s", job)
+
+
+async def remember_message(job_id: str, chat_id: int, message_id: int, kind: str) -> None:
+    """Store which Telegram message shows the vacancy; the latest one wins."""
+    try:
+        await jobs_collection.update_one(
+            {"_id": ObjectId(job_id)},
+            {"$set": {"tg_chat_id": chat_id, "tg_message_id": message_id, "tg_message_kind": kind}},
+        )
+    except Exception as e:  # the message is out already; only a later edit is lost
+        logger.warning("Could not store the Telegram message of vacancy %s: %s", job_id, e)
+
+
+async def ensure_indexes() -> None:
+    """The Jobs API list pages by (found_at, _id), newest first."""
+    try:
+        await jobs_collection.create_index([("found_at", -1), ("_id", -1)])
+    except Exception as e:
+        logger.warning("Could not create the jobs index: %s", e)
 
 
 # Once per process: the scan is cheap (~1000 documents), but a /services toggle runs on_enable again.

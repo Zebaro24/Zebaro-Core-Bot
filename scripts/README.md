@@ -11,7 +11,6 @@
 | `approve.py`       | Выписывает одноразовый маркер, который разрешает `git push` или пуш тега. Живёт 15 минут, тратится один раз                                                        |
 | `dev.bat`          | Локально: `dev` (бот), `dev infra` / `dev stop` (Mongo + Playwright в Docker), `dev gate`, `dev install`                                                           |
 | `prod.bat`         | Прод по SSH: `prod health`, `prod ps`, `prod logs [c] [since]`, `prod state`, `prod restart <c>`, `prod` (шелл)                                                    |
-| `job_stats.py`     | Статистика поиска вакансий с прода по HTTPS: `job_stats.py [--days N]`, `review`, `job <id>`, `search`, `applied` (отклики с описаниями для ИИ, `--out файл.md`), `searches`, `digest`, `audit`, `fields`, `replay` (через `poetry run`), `--json`. Токен из `JOB_STATS_API_TOKEN` или `~/.zebaro/zebaro-core-bot-secrets.env` |
 | `start-claude.bat` | Открыть Claude Code в корне проекта через Windows Terminal (там Shift+Enter даёт перенос строки). Двойной клик или ярлык на панели задач                            |
 
 ## Шпаргалка
@@ -34,15 +33,6 @@ scripts\dev.bat                            :: бот локально (polling, 
 scripts\prod.bat health                    :: жив ли прод
 scripts\prod.bat logs                      :: логи бота за сутки
 scripts\prod.bat logs zebaro-core-playwright 1h
-```
-
-```bash
-python scripts/job_stats.py                # статистика вакансий за неделю
-python scripts/job_stats.py --days 30 --json
-python scripts/job_stats.py review         # что ждёт ручного ревью
-python scripts/job_stats.py search python --status applied
-python scripts/job_stats.py job <id>       # вакансия целиком, id из кнопки или площадки
-python scripts/job_stats.py applied --days 90 --out applied.md   # отдать ИИ на анализ
 ```
 
 ## Прод
