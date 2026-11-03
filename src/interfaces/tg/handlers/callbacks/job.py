@@ -1,3 +1,7 @@
+"""The vacancy buttons. A status goes through services/job_searcher/status.py, as the Jobs API's
+does: the same check of the status the message showed, the same history event (`actor: user`).
+"""
+
 import logging
 from datetime import datetime
 
@@ -6,10 +10,10 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InputRichMessage, Message
 from bson import ObjectId
 from bson.errors import InvalidId
-from pymongo import ReturnDocument
 
 from src.db.client import jobs_collection
 from src.interfaces.tg.formatters.job import job_status_html, job_to_html, job_to_rich_html
+from src.interfaces.tg.formatters.job_status import job_status_line, status_words
 from src.interfaces.tg.keyboards.job import (
     OUTCOME_TEXTS,
     REASON_TEXTS,
@@ -18,10 +22,14 @@ from src.interfaces.tg.keyboards.job import (
     get_job_action_kb,
     get_job_outcome_kb,
     get_job_reason_kb,
+    get_job_status_kb,
 )
 from src.interfaces.tg.middlewares.admin import AdminMiddleware
+from src.interfaces.tg.notification.job_status import kick_status_sync
 from src.services.job_searcher.container import Job, remember_message
-from src.services.job_searcher.dedup import BLOCKED, DECIDED, DUPLICATE, group_root
+from src.services.job_searcher.dedup import BLOCKED, DECIDED, DUPLICATE
+from src.services.job_searcher.jobs_api import public_status
+from src.services.job_searcher.status import JobNotFound, StatusConflict, group_docs, undo, write_status
 
 logger = logging.getLogger("tg.handlers.callbacks.job")
 
@@ -38,18 +46,15 @@ _STATUS_INFO = {
 # Messages sent before the reasons (06.10.2026) still carry these answers.
 _LEGACY_ACTIONS = {"block": (BLOCKED, "site")}
 _REASON_MENUS = ("mismatch", "reject")
+# An outcome button → the public status it sets.
+_OUTCOME_STATUS = {"reply": "replied", "interview": "interview", "offer": "offer", "rejected": "rejected_by_employer"}
+_APPLIED_FAMILY = ("applied", *_OUTCOME_STATUS.values())
+_CHANGED = "Статус уже изменён — сообщение обновлено"
 
 
-async def _group_docs(root: str) -> list[dict]:
-    query: dict = {"group_id": root}
-    try:
-        query = {"$or": [{"_id": ObjectId(root)}, {"group_id": root}]}
-    except InvalidId:
-        pass
-    return [doc async for doc in jobs_collection.find(query)]
-
-
-async def _edit(query: CallbackQuery, doc: dict, status: str, markup: InlineKeyboardMarkup | None = None) -> None:
+async def _edit(
+    query: CallbackQuery, doc: dict, status: str | None, markup: InlineKeyboardMarkup | None = None
+) -> None:
     message = query.message
     if not isinstance(message, Message):
         return
@@ -61,10 +66,10 @@ async def _edit(query: CallbackQuery, doc: dict, status: str, markup: InlineKeyb
                 reply_markup=markup,
             )
         else:
-            # Messages sent before rich formatting: keep the text, add the status line.
-            await message.edit_text(
-                f"{message.html_text}\n\n{status}", reply_markup=markup, disable_web_page_preview=True
-            )
+            # Messages sent before rich formatting: keep the text, add the status line; with no
+            # status (back to "new") the vacancy is rendered again without one.
+            text = f"{message.html_text}\n\n{status}" if status else job_to_html(Job.from_doc(doc))
+            await message.edit_text(text, reply_markup=markup, disable_web_page_preview=True)
     except TelegramBadRequest as e:
         # The same outcome pressed twice within a minute renders the very same message.
         if "not modified" not in str(e):
@@ -73,33 +78,69 @@ async def _edit(query: CallbackQuery, doc: dict, status: str, markup: InlineKeyb
 
 def _applied_status(doc: dict) -> str:
     """ "✅ Откликнулся · 🗓 Интервью — <now>": the application and how far it went."""
-    text = _STATUS_INFO["applied"][1]
-    if outcome := doc.get("outcome"):
-        text = f"{text} · {OUTCOME_TEXTS.get(outcome, outcome)}"
-    return job_status_html(_STATUS_INFO["applied"][0], text, datetime.now())
+    emoji, text = status_words(public_status(doc), doc.get("status_reason")) or _STATUS_INFO["applied"]
+    return job_status_html(emoji, text, datetime.now())
+
+
+async def _show_current(query: CallbackQuery, job_id: str) -> None:
+    """Somebody else changed the status first: the message catches up with the stored one."""
+    try:
+        doc = await jobs_collection.find_one({"_id": ObjectId(job_id)})
+        if doc is not None:
+            markup = get_job_status_kb(job_id, public_status(doc), doc.get("copies"))
+            await _edit(query, doc, job_status_line(doc), markup)
+    except Exception as e:  # the alert below says it all; the sync loop edits it later anyway
+        logger.warning("Could not show the current status of %s: %s", job_id, e)
+    await query.answer(_CHANGED, show_alert=True)
 
 
 async def _record_outcome(query: CallbackQuery, callback_data: JobActionCallback) -> None:
     if callback_data.reason not in OUTCOME_TEXTS:
         await query.answer("Неизвестный исход")
         return
+    to = _OUTCOME_STATUS[callback_data.reason]
     try:
-        doc = await jobs_collection.find_one_and_update(
-            {"_id": ObjectId(callback_data.job_id), "user_status": "applied"},
-            {"$set": {"outcome": callback_data.reason, "outcome_at": datetime.utcnow()}},
-            return_document=ReturnDocument.AFTER,
-        )
+        doc = await jobs_collection.find_one({"_id": ObjectId(callback_data.job_id)})
+        if doc is None or public_status(doc) not in _APPLIED_FAMILY:
+            await query.answer("Отклик не найден", show_alert=True)
+            return
+        current = public_status(doc)
+        if current != to:  # pressed again: the reason the AI may have stored stays
+            # When an answer came is not when the button is pressed: kept out of the response times.
+            written = await write_status(doc, to, expected=current, actor="user", approximate=True, sync=False)
+            doc = written.doc
+    except StatusConflict:
+        await _show_current(query, callback_data.job_id)
+        return
     except Exception as e:  # a bad id and a DB outage end the same way
         logger.warning("Failed to store the outcome: %s", e)
         await query.answer("Не удалось сохранить (БД недоступна)", show_alert=True)
-        return
-    if doc is None:
-        await query.answer("Отклик не найден", show_alert=True)
         return
     markup = get_job_outcome_kb(callback_data.job_id, doc.get("copies"), current=callback_data.reason)
     await _edit(query, doc, _applied_status(doc), markup)
     logger.info("Job %s outcome: %s", callback_data.job_id, callback_data.reason)
     await query.answer()
+
+
+async def _undo(query: CallbackQuery, callback_data: JobActionCallback) -> None:
+    """ "↩️ Отменить" under a change note: the status before it, and the note says so."""
+    try:
+        await undo(callback_data.job_id, callback_data.reason)
+    except (StatusConflict, JobNotFound):
+        await query.answer("Уже изменено — отменять нечего", show_alert=True)
+        return
+    except Exception as e:
+        logger.warning("Failed to undo %s of job %s: %s", callback_data.reason, callback_data.job_id, e)
+        await query.answer("Не удалось отменить (БД недоступна)", show_alert=True)
+        return
+    kick_status_sync()  # the vacancy's own message follows through the sync loop
+    if isinstance(query.message, Message):
+        try:
+            await query.message.edit_text(f"{query.message.html_text}\n\n↩️ <b>Отменено</b>", reply_markup=None)
+        except TelegramBadRequest as e:
+            logger.info("Could not mark the note as undone: %s", e)
+    logger.info("Job %s: event %s undone", callback_data.job_id, callback_data.reason)
+    await query.answer("Отменено")
 
 
 async def _open_from_summary(query: CallbackQuery, callback_data: JobActionCallback) -> None:
@@ -112,17 +153,8 @@ async def _open_from_summary(query: CallbackQuery, callback_data: JobActionCallb
     if doc is None or not isinstance(query.message, Message):
         await query.answer("Вакансия не найдена", show_alert=True)
         return
-    status = doc.get("user_status")
-    if status == "applied":
-        text, markup = (
-            _applied_status(doc),
-            get_job_outcome_kb(callback_data.job_id, doc.get("copies"), doc.get("outcome")),
-        )
-    elif status in _STATUS_INFO or status == DUPLICATE:
-        emoji, words = _STATUS_INFO.get(status, ("✔️", "Уже решено"))
-        text, markup = f"{emoji} <b>{words}</b>", None
-    else:
-        text, markup = None, get_job_action_kb(callback_data.job_id, doc.get("copies"))
+    text = job_status_line(doc)
+    markup = get_job_status_kb(callback_data.job_id, public_status(doc), doc.get("copies"))
     job = Job.from_doc(doc)
     try:
         sent = await query.message.answer_rich(
@@ -189,6 +221,9 @@ async def job_action_callback(query: CallbackQuery, callback_data: JobActionCall
     if callback_data.action == "open":
         await _open_from_summary(query, callback_data)
         return
+    if callback_data.action == "undo":
+        await _undo(query, callback_data)
+        return
 
     answer = _answer(callback_data)
     if answer is None:
@@ -217,7 +252,7 @@ async def job_action_callback(query: CallbackQuery, callback_data: JobActionCall
         if doc is None:
             await query.answer("Вакансия не найдена", show_alert=True)
             return
-        group = await _group_docs(group_root(doc))
+        group = await group_docs(doc)
         # Another copy of this vacancy was answered already: one vacancy, one decision in the stats.
         answered = next(
             (d for d in group if d["_id"] != doc["_id"] and d.get("user_status") in DECIDED),
@@ -227,24 +262,21 @@ async def job_action_callback(query: CallbackQuery, callback_data: JobActionCall
             user_status = DUPLICATE
             emoji, status_text = _STATUS_INFO.get(answered["user_status"], ("✔️", "Уже решено"))
             status_text = f"{status_text} (на {answered.get('platform_name')})"
-        doc = await jobs_collection.find_one_and_update(
-            {"_id": job_object_id},
-            {"$set": {"user_status": user_status, "status_reason": reason, "status_updated_at": datetime.utcnow()}},
-            return_document=ReturnDocument.AFTER,
-        )
-        if user_status in DECIDED:
-            # The copies still waiting in the chat are the same vacancy — they are answered too.
-            await jobs_collection.update_many(
-                {"_id": {"$in": [d["_id"] for d in group if d["_id"] != job_object_id]}, "user_status": "pending"},
-                {"$set": {"user_status": DUPLICATE, "status_updated_at": datetime.utcnow()}},
-            )
+        # These buttons (and the old messages' ones) are only ever on a vacancy without a
+        # decision: that is the status the message showed. Anything else means it was changed
+        # since — by the AI, another copy, a press elsewhere — and is not overwritten blindly.
+        if public_status(doc) != "new":
+            raise StatusConflict(public_status(doc))
+        written = await write_status(
+            doc, user_status, expected="new", actor="user", reason_code=reason, sync=False, group=group
+        )  # the copies still waiting are closed by the write
+        doc = written.doc
+    except StatusConflict:
+        await _show_current(query, callback_data.job_id)
+        return
     except Exception as e:
         logger.warning("Failed to update job status in DB: %s", e)
         await query.answer("Не удалось обновить статус (БД недоступна)", show_alert=True)
-        return
-
-    if doc is None:
-        await query.answer("Вакансия не найдена", show_alert=True)
         return
 
     # An application keeps its buttons: what came of it is pressed later on the same message.

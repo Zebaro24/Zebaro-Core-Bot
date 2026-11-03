@@ -79,6 +79,7 @@ _ideas/  _temp/               # вне git: находки и черновики
 - **HTML formatting**: always in `interfaces/tg/formatters/`, never in services.
 - **GithubManager**: instance-level dicts (`github_repo_webhooks`, `github_repo_events`) — NOT class-level.
 - **app.state**: `bot`/`dp` set via `webhooks/setup.py`; `github_manager` set by `GithubService.on_enable()`.
+- **Vacancy status**: every write (API, buttons, the bot) goes through `services/job_searcher/status.py:write_status` — one CAS update + `history` event; Telegram follows via `tg_sync` (`tg/notification/job_status.py`), never inside the write.
 - **Telegram webhook answers at once**, the update is handled in a background task. Telegram does not send the next update until this one is answered — a long handler froze the whole bot.
 - **ServiceManager**: singleton with cascade logic — disabling infra disables dependent services; disabling all consumers disables the infra. State in `services.json` (path from `SERVICES_STATE_FILE`; in Docker `state/services.json`, because a bind-mounted missing file turns into a directory).
 - **Discord toggle** requires bot restart (`needs_restart = True`).

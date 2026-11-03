@@ -8,7 +8,7 @@ class JobActionCallback(CallbackData, prefix="job"):
     # "apply" | "mismatch" / "reject" (with a reason: the answer; without: open the reasons) |
     # "back" (the reasons → the main buttons) | "block" (old messages: "the site will not let me") |
     # "outcome" (after applying: what came of it, the reason field) | "open" (a vacancy of the 👀
-    # summary as its own message)
+    # summary as its own message) | "undo" (take a change back; the reason field is the event id)
     action: str
     job_id: str
     reason: str = ""
@@ -116,6 +116,29 @@ def get_job_outcome_kb(
         _button(f"• {text}" if outcome == current else text, "outcome", job_id, outcome) for outcome, text in OUTCOMES
     ]
     rows = _link_rows(job_id, copies) + [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# A public status after "applied" → the outcome button marked on it.
+_APPLIED_FAMILY: dict[str, str | None] = {
+    "applied": None, "replied": "reply", "interview": "interview", "offer": "offer", "rejected_by_employer": "rejected",
+}  # fmt: skip
+
+
+def get_job_status_kb(job_id: str, status: str, copies: list[dict] | None = None) -> InlineKeyboardMarkup | None:
+    """The buttons a vacancy's message has at a public status — as if it had been pressed there."""
+    if status == "new":
+        return get_job_action_kb(job_id, copies)
+    if status in _APPLIED_FAMILY:
+        return get_job_outcome_kb(job_id, copies, current=_APPLIED_FAMILY[status])
+    return None
+
+
+def get_job_undo_kb(job_id: str, event_id: str, with_link: bool = False) -> InlineKeyboardMarkup:
+    """Under a change note: take it back. Without the vacancy's message to reply to, its link too."""
+    rows = [[_button("↩️ Отменить", "undo", job_id, event_id)]]
+    if with_link:
+        rows.append([InlineKeyboardButton(text="🔗 Вакансия", url=_link(job_id), style="primary")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

@@ -25,6 +25,7 @@ from src.interfaces.tg.handlers.admin import (
 from src.interfaces.tg.handlers.callbacks import docker, job
 from src.interfaces.tg.notification.job_notification import job_notification
 from src.interfaces.tg.notification.job_stats_notification import job_stats_notification
+from src.interfaces.tg.notification.job_status import SYNC_JOB_ID, SYNC_MINUTES, sync_job_messages
 from src.interfaces.tg.notification.spotify_notification import (
     ensure_webhook,
     spotify_bootstrap,
@@ -84,6 +85,12 @@ async def start_bot() -> None:
     for hour in SEARCH_HOURS:
         scheduler.add_job(job_notification, "cron", hour=hour, args=[bot], id=search_job_id(hour))
     scheduler.add_job(job_stats_notification, "cron", day_of_week="fri", hour=18, args=[bot], id=WEEKLY_DIGEST_ID)
+    # Status changes made through the Jobs API → Telegram. Not paused with the job searcher: the API
+    # and this loop need MongoDB only. Picks up what a restart left pending.
+    scheduler.add_job(
+        sync_job_messages, "interval", minutes=SYNC_MINUTES, args=[bot], id=SYNC_JOB_ID,
+        max_instances=1, coalesce=True, next_run_time=datetime.now() + timedelta(seconds=20),
+    )  # fmt: skip
     # First run right away: it also puts wg-easy's firewall hooks in place (vpn_notification.py).
     scheduler.add_job(
         vpn_watch, "interval", minutes=WATCH_MINUTES, args=[bot], id=WATCH_JOB_ID, next_run_time=datetime.now()

@@ -12,6 +12,7 @@ if "src.db.client" not in sys.modules:
 
 from src.interfaces.tg.handlers.callbacks import job as callback
 from src.interfaces.tg.keyboards.job import JobActionCallback
+from src.services.job_searcher import status as status_module
 
 
 def _async_cursor(docs):
@@ -32,6 +33,7 @@ def collection(mocker):
     collection = MagicMock()
     collection.update_many = AsyncMock()
     mocker.patch.object(callback, "jobs_collection", collection)
+    mocker.patch.object(status_module, "jobs_collection", collection)
     return collection
 
 
@@ -204,8 +206,16 @@ async def test_an_outcome_is_stored_on_the_application_and_shown(collection):
     query = await _press("outcome", doc, "interview")
 
     query_filter, change = collection.find_one_and_update.await_args.args
-    assert query_filter["user_status"] == "applied"
+    # Written only if it still is the plain application the message showed.
+    assert {"user_status": "applied", "outcome": None} in query_filter["$and"]
     assert change["$set"]["outcome"] == "interview"
+    event = change["$push"]["history"]
+    assert (event["from"], event["to"], event["actor"], event["approximate"]) == (
+        "applied",
+        "interview",
+        "user",
+        True,
+    )
     assert "Откликнулся · 🗓 Интервью" in query.message.edit_text.await_args.args[0]
     markup = query.message.edit_text.await_args.kwargs["reply_markup"]
     assert "• 🗓 Интервью" in [b.text for b in _buttons(markup)]
@@ -280,3 +290,75 @@ async def test_open_falls_back_to_plain_html_when_rich_is_refused(collection):
 
     assert "Python Developer" in query.message.answer.await_args.args[0]
     query.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_a_button_on_a_status_changed_meanwhile_says_so_and_writes_nothing(collection):
+    doc = _doc("Dou")
+    _setup(collection, doc, [doc])
+    collection.find_one_and_update = AsyncMock(return_value=None)  # the AI changed it in between
+
+    query = await _press("reject", doc, "role")
+
+    assert query.answer.await_args.args[0] == callback._CHANGED
+    assert query.answer.await_args.kwargs["show_alert"] is True
+    collection.update_many.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_applied_pressed_again_keeps_how_far_it_went(collection):
+    doc = {**_doc("Dou", status="applied"), "outcome": "interview"}
+    _setup(collection, doc, [doc])
+
+    query = await _press("apply", doc)
+
+    collection.find_one_and_update.assert_not_awaited()
+    assert query.answer.await_args.args[0] == callback._CHANGED
+
+
+@pytest.mark.asyncio
+async def test_old_buttons_do_not_overwrite_what_the_ai_decided(collection):
+    # The AI turned it down; its message still shows the "new" buttons (the sync is behind).
+    doc = {**_doc("Dou", status="applied"), "outcome": "rejected", "status_reason": "salary"}
+    _setup(collection, doc, [doc])
+
+    query = await _press("mismatch", doc, "english")
+
+    collection.find_one_and_update.assert_not_awaited()
+    collection.update_many.assert_not_awaited()
+    assert query.answer.await_args.args[0] == callback._CHANGED
+
+
+@pytest.mark.asyncio
+async def test_undo_takes_the_change_back_and_marks_the_note(collection, mocker):
+    undo = mocker.patch.object(callback, "undo", new=AsyncMock())
+    kick = mocker.patch.object(callback, "kick_status_sync")
+    doc = _doc("Dou", status="applied")
+
+    query = await _press("undo", doc, "a1b2c3d4e5f6")
+
+    undo.assert_awaited_once_with(str(doc["_id"]), "a1b2c3d4e5f6")
+    kick.assert_called_once()
+    assert "Отменено" in query.message.edit_text.await_args.args[0]
+    assert query.message.edit_text.await_args.kwargs["reply_markup"] is None
+
+
+@pytest.mark.asyncio
+async def test_undo_after_a_later_change_does_nothing(collection, mocker):
+    from src.services.job_searcher.status import StatusConflict
+
+    mocker.patch.object(callback, "undo", new=AsyncMock(side_effect=StatusConflict("interview")))
+    doc = _doc("Dou", status="applied")
+
+    query = await _press("undo", doc, "a1b2c3d4e5f6")
+
+    query.message.edit_text.assert_not_awaited()
+    assert "Уже изменено" in query.answer.await_args.args[0]
+
+
+def test_the_undo_button_fits_telegrams_64_bytes():
+    from src.interfaces.tg.keyboards.job import get_job_undo_kb
+
+    button = get_job_undo_kb("a" * 24, "f" * 12).inline_keyboard[0][0]
+
+    assert button.callback_data is not None and len(button.callback_data.encode()) <= 64

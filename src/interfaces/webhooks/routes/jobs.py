@@ -16,14 +16,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pymongo.errors import PyMongoError
 
 from src.config import settings
 from src.db.client import jobs_collection
-from src.services.job_searcher import jobs_api
+from src.interfaces.tg.notification.job_status import kick_status_sync
+from src.services.job_searcher import jobs_api, status
 from src.services.job_searcher.digest import get_digest
 from src.services.job_searcher.jobs_api import GROUP_BY, STATUSES, TIERS, Filters, InvalidParameter
+from src.services.job_searcher.reasons import public_reasons
 from src.services.job_searcher.words import parse_words
 
 logger = logging.getLogger("webhooks.jobs")
@@ -33,18 +35,18 @@ MAX_LIMIT = 200
 
 
 class ApiError(Exception):
-    def __init__(self, status: int, code: str, message: str) -> None:
+    def __init__(self, status: int, code: str, message: str, **extra: Any) -> None:
         super().__init__(message)
-        self.status, self.code, self.message = status, code, message
+        self.status, self.code, self.message, self.extra = status, code, message, extra
 
 
-def error_response(status: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse(status_code=status, content={"error": {"code": code, "message": message}})
+def error_response(status: int, code: str, message: str, **extra: Any) -> JSONResponse:
+    return JSONResponse(status_code=status, content={"error": {"code": code, "message": message, **extra}})
 
 
 async def api_error_handler(_: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ApiError)
-    return error_response(exc.status, exc.code, exc.message)
+    return error_response(exc.status, exc.code, exc.message, **exc.extra)
 
 
 async def validation_error_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -102,6 +104,22 @@ class JobCopy(BaseModel):
     source: str
 
 
+class HistoryEvent(BaseModel):
+    id: str
+    occurred_at: str | None = Field(description="When it happened (the e-mail's date); analytics go by it")
+    recorded_at: str | None = Field(description="When the bot wrote it")
+    from_: str = Field(alias="from")
+    to: str
+    actor: str = Field(description="ai | user | system")
+    reason_code: str | None
+    suggested_code: str | None
+    reason: str | None
+    evidence: str | None
+    approximate: bool = Field(description="The time is a guess: kept out of the response times")
+    undo_of: str | None = Field(description="The event this one took back")
+    cause: str | None = Field(description="The event on another copy that made this one (a repeat)")
+
+
 class JobFull(JobSummary):
     description: str
     location: str | None
@@ -109,6 +127,37 @@ class JobFull(JobSummary):
     applicants: int | None
     warnings: list[str]
     copies: list[JobCopy]
+    history: list[HistoryEvent] = Field(default_factory=list, description="Status events, oldest first")
+
+
+class StatusPatch(BaseModel):
+    """PATCH /jobs/{id}/status. Unknown fields are refused: a typo must not pass as "no reason"."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: str = Field(description=" | ".join(status.WRITABLE))
+    expected_status: str = Field(description="The status the client saw; another one now → 409")
+    actor: str = Field(description="ai | user")
+    reason_code: str | None = Field(default=None, description="From GET /jobs/reasons for the new status")
+    suggested_code: str | None = Field(default=None, description="With reason_code 'other': the code that would fit")
+    reason: str | None = Field(default=None, description="Free text: what exactly they said")
+    evidence: str | None = Field(default=None, description="Required for ai: the Gmail message id or a quote")
+    occurred_at: str | None = Field(default=None, description="When it happened, ISO 8601; default now")
+
+
+class StatusResult(BaseModel):
+    changed: bool
+    job: JobFull
+    telegram: str = Field(description="queued | skipped")
+
+
+class Reason(BaseModel):
+    code: str
+    description: str
+
+
+class ReasonList(BaseModel):
+    statuses: dict[str, list[Reason]]
 
 
 class JobList(BaseModel):
@@ -182,6 +231,7 @@ class Digest(BaseModel):
 _ERRORS: dict[int | str, dict[str, Any]] = {
     code: {"model": ErrorBody} for code in (400, 401, 404, 503)
 }  # fmt: skip
+_WRITE_ERRORS: dict[int | str, dict[str, Any]] = {**_ERRORS, 409: {"model": ErrorBody}}
 
 
 # --- parameters --------------------------------------------------------------------------------
@@ -331,6 +381,40 @@ async def digest(days: Annotated[int, Query(ge=1, le=180)] = 7) -> Any:
         data = await get_digest(days, strict=True)
         since, until = data.pop("since"), data.pop("until")
         return {"scope": jobs_api.SCOPE, **_dates_to_utc(data), "from": jobs_api.utc(since), "to": jobs_api.utc(until)}
+
+    return await _guarded(build)
+
+
+@router.get("/reasons", response_model=ReasonList, responses=_ERRORS)
+async def reasons() -> Any:
+    """The reason codes a client may set, per status, with what each one means."""
+    return {"statuses": public_reasons()}
+
+
+@router.patch("/{job_id}/status", response_model=StatusResult, responses=_WRITE_ERRORS)
+async def set_status(job_id: str, body: StatusPatch) -> Any:
+    """Change the status; the vacancy's Telegram message follows right after."""
+
+    async def build() -> dict[str, Any]:
+        change = status.StatusChange(**body.model_dump(), given=set(body.model_fields_set))
+        try:
+            written = await status.patch_status(job_id, change)
+        except status.JobNotFound:
+            raise ApiError(404, "not_found", f"No vacancy with id {job_id!r}") from None
+        except status.StatusConflict as e:
+            message = f"expected_status: the status is {e.current_status!r} now; read it again and decide"
+            raise ApiError(409, "status_conflict", message, current_status=e.current_status) from None
+        except status.IsDuplicate as e:
+            message = f"This vacancy is a repeat; its decision lives on {e.duplicate_of!r} — set the status there"
+            raise ApiError(409, "is_duplicate", message, duplicate_of=e.duplicate_of) from None
+        if written.queued:
+            kick_status_sync()
+        targets = await jobs_api.duplicate_targets([written.doc])
+        return {
+            "changed": written.changed,
+            "job": jobs_api.job_full(written.doc, targets.get(job_id)),
+            "telegram": "queued" if written.queued else "skipped",
+        }
 
     return await _guarded(build)
 

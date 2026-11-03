@@ -3,7 +3,6 @@ import json
 import re
 import sys
 from datetime import datetime, timedelta
-from operator import itemgetter
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -25,6 +24,9 @@ mock_settings.tz = "Europe/Berlin"
 sys.modules["src.config"] = MagicMock(settings=mock_settings)
 sys.modules["src.db.client"] = MagicMock(jobs_collection=MagicMock(), start_db=AsyncMock())
 
+# pytest puts this directory on sys.path (no __init__.py): the helper is a top-level module.
+from fake_jobs import FakeJobs  # noqa: E402
+
 from src.interfaces.webhooks.main import app  # noqa: E402
 from src.services.job_searcher import jobs_api  # noqa: E402
 from src.services.job_searcher.jobs_api import InvalidParameter, public_status, url_pattern  # noqa: E402
@@ -33,101 +35,6 @@ from src.services.job_searcher.words import has_word, parse_words  # noqa: E402
 CONTRACT = Path(__file__).resolve().parents[3] / "docs" / "contracts" / "jobs-api.md"
 AUTH = {"Authorization": "Bearer api-token"}
 NOW = datetime(2026, 10, 29, 12, 0, 0)
-
-
-# --- an in-memory collection ---------------------------------------------------------------------
-# CI has no MongoDB. The fake knows only the operators the API uses and fails loudly on any other,
-# so a query it accepts means the same here and in the database. $regex runs through Python's `re`:
-# words.py writes its patterns so that the two engines agree.
-
-
-def _equal(value: Any, target: Any) -> bool:
-    if isinstance(target, re.Pattern):
-        return isinstance(value, str) and target.search(value) is not None
-    if target is None:
-        return value is None  # MongoDB: null matches a missing field too
-    return bool(value == target)
-
-
-def _match_value(value: Any, condition: Any) -> bool:
-    if not (isinstance(condition, dict) and condition and all(key.startswith("$") for key in condition)):
-        return _equal(value, condition)
-    for op, arg in condition.items():
-        if op == "$in":
-            ok = any(_equal(value, item) for item in arg)
-        elif op == "$ne":
-            ok = not _equal(value, arg)
-        elif op == "$gte":
-            ok = value is not None and value >= arg
-        elif op == "$lt":
-            ok = value is not None and value < arg
-        elif op == "$regex":
-            ok = isinstance(value, str) and re.search(arg, value) is not None
-        else:
-            raise NotImplementedError(op)
-        if not ok:
-            return False
-    return True
-
-
-def _matches(doc: dict[str, Any], query: dict[str, Any]) -> bool:
-    for key, condition in query.items():
-        if key == "$and":
-            ok = all(_matches(doc, part) for part in condition)
-        elif key == "$or":
-            ok = any(_matches(doc, part) for part in condition)
-        elif key == "$nor":
-            ok = not any(_matches(doc, part) for part in condition)
-        elif key.startswith("$"):
-            raise NotImplementedError(key)
-        else:
-            ok = _match_value(doc.get(key), condition)
-        if not ok:
-            return False
-    return True
-
-
-def _project(doc: dict[str, Any], projection: dict[str, int] | None) -> dict[str, Any]:
-    if not projection:
-        return dict(doc)
-    if all(flag == 0 for flag in projection.values()):
-        return {key: value for key, value in doc.items() if key not in projection}
-    return {key: value for key, value in doc.items() if projection.get(key) or key == "_id"}
-
-
-class FakeCursor:
-    def __init__(self, docs: list[dict[str, Any]]) -> None:
-        self._docs = docs
-
-    def sort(self, keys: list[tuple[str, int]]) -> "FakeCursor":
-        for key, direction in reversed(keys):
-            self._docs.sort(key=itemgetter(key), reverse=direction < 0)
-        return self
-
-    def limit(self, count: int) -> "FakeCursor":
-        self._docs = self._docs[:count]
-        return self
-
-    def __aiter__(self) -> "FakeCursor":
-        self._iter = iter(self._docs)
-        return self
-
-    async def __anext__(self) -> dict[str, Any]:
-        try:
-            return next(self._iter)
-        except StopIteration:
-            raise StopAsyncIteration from None
-
-
-class FakeJobs:
-    def __init__(self, docs: list[dict[str, Any]] | None = None) -> None:
-        self.docs = list(docs or [])
-
-    def find(self, query: dict[str, Any], projection: dict[str, int] | None = None) -> FakeCursor:
-        return FakeCursor([_project(doc, projection) for doc in self.docs if _matches(doc, query)])
-
-    async def find_one(self, query: dict[str, Any]) -> dict[str, Any] | None:
-        return next((dict(doc) for doc in self.docs if _matches(doc, query)), None)
 
 
 # --- fixtures ------------------------------------------------------------------------------------

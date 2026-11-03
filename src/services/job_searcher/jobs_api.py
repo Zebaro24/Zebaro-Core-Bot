@@ -41,8 +41,8 @@ GROUP_BY = ("none", "source", "stack", "week", "tier", "search")
 # How far an application got, in order; a refusal is an answer, so it reached "replied".
 _STAGE_RANK = {"applied": 1, "replied": 2, "interview": 3, "offer": 4, "rejected_by_employer": 2}
 _REACHED = ("applied", "replied", "interview", "offer")
-# Statuses whose reason codes are the owner's (status_reason); the employer's come with part B.
-_REASONED = ("mismatch", "not_interested")
+# Statuses that take a reason code (status_reason in storage; dictionaries in reasons.py).
+_REASONED = ("rejected_by_employer", "mismatch", "not_interested")
 
 
 class InvalidParameter(ValueError):
@@ -81,8 +81,30 @@ def stack(doc: dict[str, Any]) -> list[str]:
 
 
 def _status_changed_at(doc: dict[str, Any]) -> str | None:
+    """When the status last changed: the last event's own time; before the history, the stored dates."""
+    if history := doc.get("history"):
+        return utc(history[-1].get("occurred_at"))
     dates = [d for d in (doc.get("status_updated_at"), doc.get("outcome_at")) if isinstance(d, datetime)]
     return utc(max(dates)) if dates else None
+
+
+def public_event(event: dict[str, Any]) -> dict[str, Any]:
+    """A stored history event as the contract shows it; storage-only keys stay inside."""
+    return {
+        "id": event.get("id") or "",
+        "occurred_at": utc(event.get("occurred_at")),
+        "recorded_at": utc(event.get("recorded_at")),
+        "from": event.get("from") or "new",
+        "to": event.get("to") or "new",
+        "actor": event.get("actor") or "system",
+        "reason_code": event.get("reason_code"),
+        "suggested_code": event.get("suggested_code"),
+        "reason": event.get("reason"),
+        "evidence": event.get("evidence"),
+        "approximate": bool(event.get("approximate")),
+        "undo_of": event.get("undo_of"),
+        "cause": event.get("cause"),
+    }
 
 
 def job_summary(doc: dict[str, Any], duplicate_of: str | None = None) -> dict[str, Any]:
@@ -97,7 +119,7 @@ def job_summary(doc: dict[str, Any], duplicate_of: str | None = None) -> dict[st
         "published_at": utc(doc.get("date")),
         "status": status,
         "status_reason_code": doc.get("status_reason") if status in _REASONED else None,
-        "status_reason": None,  # the free text arrives with part B
+        "status_reason": doc.get("status_reason_text"),
         "status_changed_at": _status_changed_at(doc),
         "tier": tier(doc),
         "filter_reason": doc.get("filter_reason"),
@@ -124,6 +146,7 @@ def job_full(doc: dict[str, Any], duplicate_of: str | None = None) -> dict[str, 
             for copy in doc.get("copies") or []
             if copy.get("id")
         ],
+        "history": [public_event(event) for event in doc.get("history") or []],
     }
 
 
@@ -187,7 +210,7 @@ def parse_choice(name: str, raw: str | None, allowed: tuple[str, ...]) -> list[s
     return list(dict.fromkeys(values))
 
 
-def _status_condition(status: str) -> dict[str, Any]:
+def status_condition(status: str) -> dict[str, Any]:
     if status == "new":
         return {"user_status": {"$in": ["pending", None]}}
     if status == "applied":
@@ -242,7 +265,7 @@ class Filters:
     def query(self, *, default_tiers: bool = True, repeats: bool = False) -> dict[str, Any]:
         conditions: list[dict[str, Any]] = [{"found_at": {"$gte": self.start, "$lt": self.end}}]
         if self.statuses:
-            conditions.append({"$or": [_status_condition(status) for status in self.statuses]})
+            conditions.append({"$or": [status_condition(status) for status in self.statuses]})
         elif not repeats:
             conditions.append({"user_status": {"$ne": DUPLICATE}})
         if self.tiers:
