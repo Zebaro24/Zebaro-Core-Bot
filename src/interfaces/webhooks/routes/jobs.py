@@ -225,7 +225,12 @@ class Funnel(BaseModel):
     to: str | None
     group_by: str
     groups: list[FunnelGroup]
-    journal: list[JournalItem] = Field(default_factory=list, description="The owner's changes in the period")
+    journal: list[JournalItem] | None = Field(
+        default_factory=list, description="The owner's changes in the period; null when it could not be read"
+    )
+    journal_error: str | None = Field(
+        default=None, description='unavailable: the journal could not be read; null journal is not "no changes"'
+    )
 
 
 class Transition(BaseModel):
@@ -261,7 +266,10 @@ class EventFunnel(BaseModel):
     to: str | None
     group_by: str
     groups: list[EventGroup]
-    journal: list[JournalItem]
+    journal: list[JournalItem] | None
+    journal_error: str | None = Field(
+        default=None, description='unavailable: the journal could not be read; null journal is not "no changes"'
+    )
 
 
 class JournalPost(BaseModel):
@@ -427,12 +435,13 @@ async def funnel(
             body = await events.event_funnel(filters, group_by)
         else:
             body = {**await jobs_api.funnel(filters, group_by), "by": "found"}
+        # The numbers live in MongoDB and do not wait for SQL. Without it the journal is null with
+        # a reason, never []: an empty list would read as "the owner changed nothing".
         try:
-            entries = await journal.entries(filters.start, filters.end)
-        except SQLAlchemyError as e:  # the numbers live in MongoDB: they do not wait for SQL
+            return {**body, "journal": await journal.entries(filters.start, filters.end), "journal_error": None}
+        except SQLAlchemyError as e:
             logger.warning("Funnel without the journal: SQL storage unavailable: %s", e)
-            entries = []
-        return {**body, "journal": entries}
+            return {**body, "journal": None, "journal_error": "unavailable"}
 
     return await _guarded(build)
 

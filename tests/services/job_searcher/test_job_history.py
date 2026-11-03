@@ -165,6 +165,7 @@ def test_the_funnel_carries_the_journal_of_its_period(db, jobs):
 
     assert [entry["text"] for entry in body["journal"]] == ["Только AI-вакансии"]
     assert found["by"] == "found" and len(found["journal"]) == 1
+    assert body["journal_error"] is None and found["journal_error"] is None
 
 
 # --- the funnel by event ------------------------------------------------------------------------------
@@ -205,6 +206,18 @@ async def test_guessed_times_and_silence_are_no_reply_time(jobs, no_journal):
 
 
 @pytest.mark.asyncio
+async def test_a_guessed_application_time_is_no_start_for_the_reply_time(jobs, no_journal):
+    doc = _doc(jobs)
+    await _move(jobs, doc, "applied", None, actor="user")  # no date: approximate
+    await _move(jobs, doc, "replied", NOW - DAY, evidence="gmail:9")  # a real one
+
+    group = (await asyncio.to_thread(_event_funnel))["groups"][0]
+
+    assert group["time_to_reply"] == {"count": 0, "median_hours": None, "p75_hours": None}
+    assert group["entered"]["replied"] == 1  # still an event of the period, only not a time
+
+
+@pytest.mark.asyncio
 async def test_silence_is_no_reply_in_the_found_funnel_either(jobs, no_journal):
     doc = _doc(jobs, found_at=NOW - 40 * DAY)
     await _move(jobs, doc, "applied", NOW - 39 * DAY, actor="user")
@@ -221,9 +234,12 @@ def test_the_funnel_answers_without_the_journal_when_sql_is_down(jobs, mocker):
 
     mocker.patch.object(journal, "entries", new=AsyncMock(side_effect=OperationalError("SELECT", {}, Exception("x"))))
 
-    response = _call("GET", "/jobs/funnel", params={"by": "event"})
+    for by in ("event", "found"):
+        body = _call("GET", "/jobs/funnel", params={"by": by}).json()
 
-    assert response.status_code == 200 and response.json()["journal"] == []
+        # Unknown is not "no changes": null with a reason, and the numbers still come.
+        assert body["journal"] is None and body["journal_error"] == "unavailable"
+        assert body["groups"] or by == "found"
 
 
 @pytest.mark.asyncio
