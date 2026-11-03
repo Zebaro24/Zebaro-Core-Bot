@@ -31,6 +31,8 @@ class Settings(BaseSettings):
 
     # Jobs API (/jobs/*, the MCP's jobs_* tools); empty = the endpoints refuse everything.
     jobs_api_token: str = ""
+    # An application with no event for this many days is turned down as "no_response" (daily, 10:00).
+    no_response_days: int = 21
 
     # Shared secret with zebaro.dev's contact form; empty = the endpoint refuses everything.
     site_contact_token: str = ""

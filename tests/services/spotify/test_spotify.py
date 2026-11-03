@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from src.db import sql
 from src.interfaces.tg.handlers.admin.spotify import parse_adjustment, parse_day
 from src.interfaces.tg.keyboards.spotify import sender_key
+from src.services.job_searcher import journal  # noqa: F401 — its table is in the migrations too
 from src.services.spotify import ledger, repo, schedule, sync
 from src.services.spotify.models import Adjustment, Charge, JarTransaction, Member
 from src.services.spotify.report import Money

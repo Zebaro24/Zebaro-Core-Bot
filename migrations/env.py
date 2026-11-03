@@ -8,7 +8,8 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-import src.services.spotify.models  # noqa: F401 — registers the tables on Base.metadata
+import src.services.job_searcher.journal  # noqa: F401 — registers the tables on Base.metadata
+import src.services.spotify.models  # noqa: F401
 from src.db.sql import Base
 
 config = context.config

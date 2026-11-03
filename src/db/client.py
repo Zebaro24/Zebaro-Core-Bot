@@ -11,6 +11,8 @@ db = client.get_database()
 
 jobs_collection = db["jobs"]
 github_notification_collection = db["github_notification"]
+# One-off markers of the bot's own data work: {_id: "jobs_backfill", done_at, ...}.
+meta_collection = db["meta"]
 # VPN: one document per wg-easy client (running totals across counter resets, notices sent)
 # and one per client and day (traffic that day).
 vpn_clients_collection = db["vpn_clients"]

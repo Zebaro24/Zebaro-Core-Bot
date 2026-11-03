@@ -18,11 +18,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from pymongo.errors import PyMongoError
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.config import settings
 from src.db.client import jobs_collection
 from src.interfaces.tg.notification.job_status import kick_status_sync
-from src.services.job_searcher import jobs_api, status
+from src.services.job_searcher import events, jobs_api, journal, status
 from src.services.job_searcher.digest import get_digest
 from src.services.job_searcher.jobs_api import GROUP_BY, STATUSES, TIERS, Filters, InvalidParameter
 from src.services.job_searcher.reasons import public_reasons
@@ -208,12 +209,72 @@ class FunnelGroup(BaseModel):
     median_hours_to_decision: float | None
 
 
+class JournalItem(BaseModel):
+    id: str
+    occurred_at: str | None
+    recorded_at: str | None
+    kind: str = Field(description=" | ".join(journal.KINDS))
+    text: str
+    actor: str
+
+
 class Funnel(BaseModel):
     scope: Literal["own_searches"]
+    by: Literal["found"] = "found"
     from_: str | None = Field(alias="from")
     to: str | None
     group_by: str
     groups: list[FunnelGroup]
+    journal: list[JournalItem] = Field(default_factory=list, description="The owner's changes in the period")
+
+
+class Transition(BaseModel):
+    from_: str = Field(alias="from")
+    to: str
+    count: int
+
+
+class TimeToReply(BaseModel):
+    count: int
+    median_hours: float | None
+    p75_hours: float | None
+
+
+class EventGroup(BaseModel):
+    key: str
+    label: str
+    events: int
+    entered: dict[str, int]
+    transitions: list[Transition]
+    applied: int
+    reached: Reached
+    rejections: dict[str, dict[str, int]] = Field(description="stage (from) → reason_code → count")
+    reply_rate: float | None
+    interview_rate: float | None
+    time_to_reply: TimeToReply
+
+
+class EventFunnel(BaseModel):
+    scope: Literal["own_searches"]
+    by: Literal["event"]
+    from_: str | None = Field(alias="from")
+    to: str | None
+    group_by: str
+    groups: list[EventGroup]
+    journal: list[JournalItem]
+
+
+class JournalPost(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str = Field(description=" | ".join(journal.KINDS))
+    text: str = Field(description=f"What changed and why, up to {journal.MAX_TEXT} characters")
+    occurred_at: str | None = Field(default=None, description="When the change was made, ISO 8601; default now")
+    actor: str = Field(default="user", description=" | ".join(journal.ACTORS))
+
+
+class JournalList(BaseModel):
+    items: list[JournalItem]
 
 
 class Digest(BaseModel):
@@ -293,7 +354,7 @@ async def _guarded(build: Any) -> Any:
         return await build()
     except InvalidParameter as e:
         raise ApiError(400, "invalid_parameter", str(e)) from None
-    except PyMongoError as e:
+    except (PyMongoError, SQLAlchemyError) as e:
         logger.warning("Jobs API: storage unavailable: %s", e)
         raise ApiError(503, "storage_unavailable", "Job storage is unavailable; try again later") from None
 
@@ -339,10 +400,14 @@ async def list_jobs(
     return await _guarded(build)
 
 
-@router.get("/funnel", response_model=Funnel, responses=_ERRORS)
+@router.get("/funnel", response_model=Funnel | EventFunnel, responses=_ERRORS)
 async def funnel(
     raw_from: From = None,
     to: To = None,
+    by: Annotated[
+        Literal["found", "event"],
+        Query(description="found: the vacancies found in the period; event: what happened in it (history)"),
+    ] = "found",
     group_by: Annotated[str, Query(description=f"One of: {', '.join(GROUP_BY)}")] = "none",
     source: Source = None,
     any_words: AnyWords = None,
@@ -352,13 +417,53 @@ async def funnel(
     company: Company = None,
     search: Search = None,
 ) -> Any:
-    """Counts by stage over the vacancies found in [from, to)."""
+    """Counts by stage: over the vacancies found in [from, to), or over the events in it."""
 
     async def build() -> dict[str, Any]:
         if group_by not in GROUP_BY:
             raise InvalidParameter(f"group_by: unknown value {group_by!r}; one of: {', '.join(GROUP_BY)}")
         filters = _filters(raw_from, to, source, any_words, all_words, no_words, where, company, search)
-        return await jobs_api.funnel(filters, group_by)
+        if by == "event":
+            body = await events.event_funnel(filters, group_by)
+        else:
+            body = {**await jobs_api.funnel(filters, group_by), "by": "found"}
+        try:
+            entries = await journal.entries(filters.start, filters.end)
+        except SQLAlchemyError as e:  # the numbers live in MongoDB: they do not wait for SQL
+            logger.warning("Funnel without the journal: SQL storage unavailable: %s", e)
+            entries = []
+        return {**body, "journal": entries}
+
+    return await _guarded(build)
+
+
+@router.post("/journal", response_model=JournalItem, status_code=201, responses=_ERRORS)
+async def add_journal_entry(body: JournalPost) -> Any:
+    """Note a change in the owner's approach: a new CV, another letter, a strategy."""
+
+    async def build() -> dict[str, Any]:
+        if body.kind not in journal.KINDS:
+            raise InvalidParameter(f"kind: unknown value {body.kind!r}; one of: {', '.join(journal.KINDS)}")
+        if body.actor not in journal.ACTORS:
+            raise InvalidParameter(f"actor: {body.actor!r} is not allowed; one of: {', '.join(journal.ACTORS)}")
+        text = body.text.strip()
+        if not text or len(text) > journal.MAX_TEXT:
+            raise InvalidParameter(f"text: from 1 to {journal.MAX_TEXT} characters")
+        occurred_at = jobs_api.parse_time("occurred_at", body.occurred_at)
+        if occurred_at is not None and occurred_at > datetime.utcnow() + status.CLOCK_SKEW:
+            raise InvalidParameter(f"occurred_at: {body.occurred_at} is in the future")
+        return await journal.add_entry(body.kind, text, body.actor, occurred_at)
+
+    return await _guarded(build)
+
+
+@router.get("/journal", response_model=JournalList, responses=_ERRORS)
+async def journal_entries(raw_from: From = None, to: To = None) -> Any:
+    """The owner's changes made in [from, to), oldest first; default the last 30 days."""
+
+    async def build() -> dict[str, Any]:
+        start, end = jobs_api.period(raw_from, to)
+        return {"items": await journal.entries(start, end)}
 
     return await _guarded(build)
 

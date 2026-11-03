@@ -203,6 +203,8 @@ async def _notify(bot: Bot, doc: dict[str, Any], event: dict[str, Any], reply_to
 
 
 async def _settle(doc: dict[str, Any], event_id: str | None, state: str) -> None:
+    if state != FAILED:
+        logger.info("Status sync of %s: %s (event %s)", doc["_id"], state, event_id)
     # Only the change this run sent: a newer PATCH meanwhile keeps its own "pending".
     await _update(doc, event_id, {"tg_sync.state": state, "tg_sync.settled_at": datetime.utcnow()})
 

@@ -61,6 +61,8 @@ def jobs(mocker):
     mocker.patch.object(jobs_api, "jobs_collection", fake)
     mocker.patch.object(jobs_api, "settings", mock_settings)
     mocker.patch("src.interfaces.webhooks.routes.jobs.settings", mock_settings)
+    # The owner's journal lives in SQL; these tests are about the vacancies.
+    mocker.patch("src.services.job_searcher.journal.entries", new=AsyncMock(return_value=[]))
     return fake
 
 

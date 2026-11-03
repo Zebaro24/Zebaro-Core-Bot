@@ -158,8 +158,11 @@ class FakeJobs:
         _apply(doc, update)
         return copy.deepcopy(doc) if return_document else before
 
-    async def update_one(self, query: dict[str, Any], update: dict[str, Any]) -> _Result:
+    async def update_one(self, query: dict[str, Any], update: dict[str, Any], upsert: bool = False) -> _Result:
         doc = next((doc for doc in self.docs if matches(doc, query)), None)
+        if doc is None and upsert:
+            doc = {key: value for key, value in query.items() if not key.startswith("$")}
+            self.docs.append(doc)
         if doc is not None:
             _apply(doc, update)
         return _Result(int(doc is not None))

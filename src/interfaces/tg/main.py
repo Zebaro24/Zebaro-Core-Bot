@@ -42,6 +42,7 @@ from src.services.job_searcher.service import (
     JobSearcherService,
     search_job_id,
 )
+from src.services.job_searcher.silence import SILENCE_HOUR, SILENCE_JOB_ID, silence_job
 from src.services.spotify.schedule import EVENING, MORNING
 from src.services.spotify.service import (
     EVENING_HOUR,
@@ -85,6 +86,8 @@ async def start_bot() -> None:
     for hour in SEARCH_HOURS:
         scheduler.add_job(job_notification, "cron", hour=hour, args=[bot], id=search_job_id(hour))
     scheduler.add_job(job_stats_notification, "cron", day_of_week="fri", hour=18, args=[bot], id=WEEKLY_DIGEST_ID)
+    # S3: applications nobody answered → "no_response"; does nothing until the history backfill ran.
+    scheduler.add_job(silence_job, "cron", hour=SILENCE_HOUR, id=SILENCE_JOB_ID)
     # Status changes made through the Jobs API → Telegram. Not paused with the job searcher: the API
     # and this loop need MongoDB only. Picks up what a restart left pending.
     scheduler.add_job(

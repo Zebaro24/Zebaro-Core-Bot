@@ -146,3 +146,9 @@ dedup и кнопки работали без правок. **Через неё 
 
 **Шаг 1 (rich по `chat_id`/`message_id`):** работает без обхода — `Message.edit_text` в aiogram 3.31
 сам собирает `EditMessageText(chat_id, message_id, rich_message=…)`, тот же запрос шлёт `bot.edit_message_text`.
+
+**Стоп 2 (добавки владельца 03.11):** `by=event` и `time_to_reply` выкидывают пары «событие + его
+отмена» (`undo_of`) и повторы, сделанные отменённым (`cause`). Backfill ставит восстановленные события
+перед первым реальным, их последний `to` = его `from`; даты на нём или позже не доверяем (их записал
+он сам) → `found_at`. Ежедневный S3 молчит, пока нет маркера `meta.jobs_backfill`. Перед запуском на проде:
+`mongodump` + копия `state/zebaro.db` локально → dry-run с числами → «ок» → `--apply`.

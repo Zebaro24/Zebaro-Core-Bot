@@ -40,6 +40,16 @@ SURFACED_TIERS = ("top", "sent", "review")
 GROUP_BY = ("none", "source", "stack", "week", "tier", "search")
 # How far an application got, in order; a refusal is an answer, so it reached "replied".
 _STAGE_RANK = {"applied": 1, "replied": 2, "interview": 3, "offer": 4, "rejected_by_employer": 2}
+NO_RESPONSE = "no_response"
+
+
+def stage_rank(status: str, reason_code: str | None) -> int:
+    """How far a status got. Silence ("no_response", set by the bot) is no answer: still "applied"."""
+    if status == "rejected_by_employer" and reason_code == NO_RESPONSE:
+        return _STAGE_RANK["applied"]
+    return _STAGE_RANK.get(status, 0)
+
+
 _REACHED = ("applied", "replied", "interview", "offer")
 # Statuses that take a reason code (status_reason in storage; dictionaries in reasons.py).
 _REASONED = ("rejected_by_employer", "mismatch", "not_interested")
@@ -262,8 +272,9 @@ class Filters:
     filter_reasons: list[str] = field(default_factory=list)
     reason_codes: list[str] = field(default_factory=list)
 
-    def query(self, *, default_tiers: bool = True, repeats: bool = False) -> dict[str, Any]:
-        conditions: list[dict[str, Any]] = [{"found_at": {"$gte": self.start, "$lt": self.end}}]
+    def query(self, *, default_tiers: bool = True, repeats: bool = False, by_found: bool = True) -> dict[str, Any]:
+        # by_found=False: the period is about events (funnel?by=event), not when it was found.
+        conditions: list[dict[str, Any]] = [{"found_at": {"$gte": self.start, "$lt": self.end}}] if by_found else []
         if self.statuses:
             conditions.append({"$or": [status_condition(status) for status in self.statuses]})
         elif not repeats:
@@ -402,7 +413,7 @@ def _count(group: dict[str, Any], doc: dict[str, Any]) -> None:
     status = public_status(doc)
     group["status"][status] = group["status"].get(status, 0) + 1
     group["new" if status == "new" else "decided"] += 1
-    rank = _STAGE_RANK.get(status, 0)
+    rank = stage_rank(status, doc.get("status_reason"))
     for stage in _REACHED:
         group["reached"][stage] += rank >= _STAGE_RANK[stage]
     if status == "rejected_by_employer":
@@ -426,7 +437,7 @@ def _finish(group: dict[str, Any]) -> dict[str, Any]:
     return group
 
 
-def _keys(doc: dict[str, Any], group_by: str) -> list[str]:
+def group_keys(doc: dict[str, Any], group_by: str) -> list[str]:
     if group_by == "source":
         return [doc.get("platform_name") or "Unknown"]
     if group_by == "tier":
@@ -442,15 +453,15 @@ def _keys(doc: dict[str, Any], group_by: str) -> list[str]:
     return ["all"]
 
 
-def _label(key: str, group_by: str) -> str:
+def group_label(key: str, group_by: str) -> str:
     return search_label(key) if group_by == "search" and key != UNKNOWN_SEARCH else key
 
 
 def funnel_groups(docs: list[dict[str, Any]], group_by: str) -> list[dict[str, Any]]:
     groups: dict[str, dict[str, Any]] = {}
     for doc in docs:
-        for key in _keys(doc, group_by):
-            _count(groups.setdefault(key, _empty_group(key, _label(key, group_by))), doc)
+        for key in group_keys(doc, group_by):
+            _count(groups.setdefault(key, _empty_group(key, group_label(key, group_by))), doc)
     finished = [_finish(group) for group in groups.values()]
     if group_by == "week":
         return sorted(finished, key=lambda group: group["key"])
