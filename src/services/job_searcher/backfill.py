@@ -2,6 +2,7 @@
 
     python -m src.services.job_searcher.backfill                 # dry run: numbers only
     python -m src.services.job_searcher.backfill --apply         # restore, then the silence
+    python -m src.services.job_searcher.backfill --apply --skip-silence   # the history only
     python -m src.services.job_searcher.backfill relabel --status rejected_by_employer \\
         --suggested relocation_required --code location [--apply]
 
@@ -15,7 +16,9 @@ starts at `new` needs nothing: that is also what makes a second run a no-op.
 
 **silence.** Applications whose last event is older than NO_RESPONSE_DAYS become
 `no_response` (`actor: system`, `approximate: true`), with no Telegram at all. Then the marker
-`meta.jobs_backfill` is set, and the daily check (silence.py) starts working.
+`meta.jobs_backfill` is set, and the daily check (silence.py) starts working. With
+`--skip-silence` neither happens — the real outcomes can be put in first (the AI from Gmail), and
+a later `--apply` (the restore then has nothing to do) runs the silence and switches the check on.
 
 **relabel.** Events stored as `other` with a `suggested_code` that is now a real code get it.
 """
@@ -160,16 +163,21 @@ async def relabel(status: str, suggested: str, code: str, apply: bool) -> int:
     return changed
 
 
-async def run(apply: bool) -> None:
+async def run(apply: bool, skip_silence: bool = False) -> None:
     now = datetime.utcnow()
     counts = await restore(apply=False, now=now)
     silent = await silent_count(now)
     print("restore:", dict(counts) or "nothing to restore")
-    print(f"silence: {silent} applications with no event for {settings.no_response_days}+ days → no_response")
+    skipped = " — skipped (--skip-silence)" if skip_silence else ""
+    print(f"silence: {silent} applications with no event for {settings.no_response_days}+ days → no_response{skipped}")
     if not apply:
         print("dry run: nothing written; --apply to write")
         return
     written = await restore(apply=True, now=now)
+    if skip_silence:
+        # No marker either: the daily check stays off until the silence step runs (a later --apply).
+        print(f"written: {written.get('written', 0)} restored; silence not run, the daily check stays off")
+        return
     turned = await turn_down_silent(settings.no_response_days, sync=False, approximate=True, now=now)
     await meta_collection.update_one(
         {"_id": BACKFILL_ID},
@@ -183,6 +191,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Status history backfill (Jobs API part B)")
     parser.add_argument("command", nargs="?", default="backfill", choices=("backfill", "relabel"))
     parser.add_argument("--apply", action="store_true", help="write; without it, a dry run")
+    parser.add_argument(
+        "--skip-silence",
+        action="store_true",
+        help="restore the history only: no no_response, the daily check stays off",
+    )
     parser.add_argument("--status", default="rejected_by_employer")
     parser.add_argument("--suggested")
     parser.add_argument("--code")
@@ -194,7 +207,7 @@ def main() -> None:
         count = asyncio.run(relabel(args.status, args.suggested, args.code, args.apply))
         print(f"relabel: {count} events {'changed' if args.apply else 'would change (dry run)'}")
         return
-    asyncio.run(run(args.apply))
+    asyncio.run(run(args.apply, args.skip_silence))
 
 
 if __name__ == "__main__":

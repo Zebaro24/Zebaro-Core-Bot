@@ -457,3 +457,30 @@ async def test_the_event_funnel_example_in_the_contract_has_the_real_shape(jobs,
     assert set(group) == set(example_group) and set(group["time_to_reply"]) == set(example_group["time_to_reply"])
     assert shape(real["journal"]) == shape(example["journal"])
     assert set(real) == set(example)
+
+
+@pytest.mark.asyncio
+async def test_skip_silence_writes_the_history_only_and_keeps_the_daily_check_off(jobs, meta):
+    old = _doc(jobs, user_status="applied", status_updated_at=NOW - 30 * DAY)
+
+    await backfill.run(apply=True, skip_silence=True)
+
+    stored = jobs.by_id(old["_id"])
+    assert [(e["from"], e["to"]) for e in stored["history"]] == [("new", "applied")]
+    assert jobs_api.public_status(stored) == "applied" and stored.get("status_reason") is None
+    assert meta.docs == [] and not await silence.backfill_done()
+    assert await silence.silence_job() == 0  # still off: the silence step has not run
+    assert jobs_api.public_status(jobs.by_id(old["_id"])) == "applied"
+
+
+@pytest.mark.asyncio
+async def test_a_later_full_apply_runs_the_silence_and_switches_the_check_on(jobs, meta):
+    old = _doc(jobs, user_status="applied", status_updated_at=NOW - 30 * DAY)
+    await backfill.run(apply=True, skip_silence=True)
+
+    await backfill.run(apply=True)
+
+    stored = jobs.by_id(old["_id"])
+    assert stored["status_reason"] == "no_response"
+    assert len(stored["history"]) == 2  # the restore did not run twice
+    assert await silence.backfill_done()
