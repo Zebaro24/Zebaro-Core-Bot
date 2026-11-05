@@ -26,7 +26,8 @@ Tiers (stored in `Job.moderation`, the values stats and the API use):
 
 `Job.warnings` lists what may not fit and is worth a look before applying — B2 English,
 remote without "за кордоном", a line about living in Ukraine, Python only as a plus. A warning
-keeps a vacancy out of "top" but never rejects it.
+keeps a vacancy out of "top" but never rejects it. An early startup (founding / seed / stealth)
+goes further down, to "review": the target since 05.11.2026 is companies of ~50 people and more.
 
 The owner's limits (06.10.2026): remote only, from Austria; English B1 (B2 in his Djinni
 profile); up to three years of experience asked.
@@ -176,6 +177,16 @@ WARN_UKRAINE = "ukraine"  # the description talks about being in Ukraine
 WARN_NO_DESCRIPTION = "no_description"  # the page did not load: judged by the title alone
 WARN_NO_PYTHON = "no_python"  # an AI title whose text never names Python
 WARN_PYTHON_PLUS = "python_plus"  # Python only under "nice to have": the main stack is another
+WARN_EARLY_STARTUP = "early_startup"  # founding / seed / stealth: "review" at best, never rejected
+
+# An early startup by its own words (05.11.2026). Plain "startup" is not one: outsourcers write
+# "we work with startups" — the owner applied to those as often as to anything else (37%), and
+# to the vacancies with these words half as often (19% of 32 since September).
+EARLY_STARTUP_WORDS = (
+    "founding", "pre-seed", "preseed", "seed stage", "seed-stage", "seed round", "seed funding",
+    "seed-funded", "early-stage", "early stage", "stealth", "first engineer", "first engineering hire",
+    "first hire", "рання стадія", "ранній стадії", "ранньої стадії",
+)  # fmt: skip
 
 # Keywords that need more than a word boundary.
 _SPECIAL_PATTERNS = {
@@ -312,6 +323,8 @@ def _warnings(job: Job, description: str, english: str | None) -> list[str]:
         warnings.append(WARN_ABROAD)
     if extract.ukraine_only_text(description):
         warnings.append(WARN_UKRAINE)
+    if _contains_any(f"{(job.title or '').lower()}\n{description}", EARLY_STARTUP_WORDS):
+        warnings.append(WARN_EARLY_STARTUP)
     return warnings
 
 
@@ -357,6 +370,8 @@ def evaluate(job: Job) -> Verdict:
     warnings = _warnings(job, description, english)
 
     def verdict(moderation: str) -> Verdict:
+        if moderation in (TOP, SENT) and WARN_EARLY_STARTUP in warnings:
+            moderation = REVIEW
         return Verdict(moderation, score, stack, bonus, years=years, english=english, warnings=warnings)
 
     if len(description) < MIN_DESCRIPTION and title:

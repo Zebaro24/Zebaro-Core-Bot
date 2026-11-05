@@ -43,8 +43,10 @@ def test_dou_hot_vacancy_links_to_the_plain_page():
 @pytest.mark.parametrize(
     "attrs,expected",
     [
-        ('data-bs-original-title="23:24 22.09.2026"', datetime(2026, 9, 22, 23, 24)),
-        ('title="23:24 22.09.2026"', datetime(2026, 9, 22, 23, 24)),  # before Bootstrap ran
+        # Kyiv's 23:24 in September (UTC+3) is 20:24 UTC — the dates are stored in UTC.
+        ('data-bs-original-title="23:24 22.09.2026"', datetime(2026, 9, 22, 20, 24)),
+        ('title="23:24 22.09.2026"', datetime(2026, 9, 22, 20, 24)),  # before Bootstrap ran
+        ('title="01:10 05.11.2026"', datetime(2026, 11, 4, 23, 10)),  # winter, UTC+2: the day before
         ("", None),
         ('title="вчора"', None),
     ],

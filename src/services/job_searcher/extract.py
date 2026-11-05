@@ -254,7 +254,7 @@ def relative_date(text: str, now: datetime | None = None) -> datetime | None:
         return None
     amount = int(match.group(1) or 1)
     unit = match.group(2)
-    now = now or datetime.now()
+    now = now or datetime.utcnow()  # stored dates are naive UTC
     steps = (
         (("хвилин", "minute", "минут"), timedelta(minutes=1)),
         (("годин", "hour", "час"), timedelta(hours=1)),

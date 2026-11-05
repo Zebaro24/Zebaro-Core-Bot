@@ -1,7 +1,7 @@
 import html
 import re
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 
 from src.services.job_searcher.container import Job
 from src.services.job_searcher.filter import (
@@ -28,6 +28,7 @@ _WARNINGS = {
     "no_description": "стек не проверен — сужу только по названию",
     "no_python": "Python в тексте не упомянут",
     "python_plus": "Python только «будет плюсом» — основной стек другой",
+    "early_startup": "ранний стартап (founding / seed) — сейчас цель от ~50 человек",
 }
 
 # What the description says about the stack, marked where it says it (22.10.2026): the core
@@ -96,7 +97,11 @@ _NUMBERED = re.compile(r"^\d{1,2}[.)]\s+")
 def _date(job: Job) -> str | None:
     if not job.date:
         return None
-    return job.date.strftime("%d.%m.%Y") if isinstance(job.date, datetime) else str(job.date)
+    if not isinstance(job.date, datetime):
+        return str(job.date)
+    # Stored as naive UTC: Djinni's "23:40" in Kyiv is the previous day in UTC. The process's
+    # own zone (TZ of the container) is the owner's — and needs no settings at import time.
+    return job.date.replace(tzinfo=UTC).astimezone().strftime("%d.%m.%Y")
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -419,3 +424,13 @@ def job_to_html(job: Job) -> str:
         text += f"\nDescription:\n<blockquote expandable>{description_text}</blockquote>"
 
     return text
+
+
+def home_down_html(skipped: list[str]) -> str:
+    """The once-a-day note that the home PC is off and its boards went unsearched."""
+    boards = ", ".join(html.escape(name) for name in skipped) or "площадки через домашний ПК"
+    return (
+        "🏠 <b>Домашний ПК не отвечает</b> — пропускаю: " + boards + ".\n"
+        "Включи WireGuard (профиль LAN) и <code>home_proxy.py</code>. LinkedIn догонит пропущенное "
+        "за последние 7 дней, когда ПК вернётся. До завтра больше не напомню."
+    )

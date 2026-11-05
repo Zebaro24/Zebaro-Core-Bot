@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 from urllib.parse import quote, urlparse
 
 from bs4 import BeautifulSoup
@@ -7,7 +8,7 @@ from playwright.async_api import Browser, Page, TimeoutError, async_playwright
 from playwright_stealth import Stealth
 
 from src.config import settings
-from src.services.job_searcher.container import Job, JobStorage
+from src.services.job_searcher.container import Job, JobStorage, known_count
 from src.services.job_searcher.home import home_proxy, home_proxy_up
 from src.services.job_searcher.listeners.base import BaseListeners
 from src.services.job_searcher.listeners.bazait import BazaITListeners
@@ -20,6 +21,7 @@ from src.services.job_searcher.listeners.no_fluff_jobs import NoFluffJobsListene
 from src.services.job_searcher.listeners.robota_ua import RobotaUAListeners
 from src.services.job_searcher.listeners.wellfound import WellfoundListeners
 from src.services.job_searcher.listeners.work_ua import WorkUAListeners
+from src.services.job_searcher.search_window import mark_full_pass, pages_for, window_seconds
 
 logger = logging.getLogger("job_searcher.parser")
 
@@ -110,6 +112,9 @@ class JobParser:
     def __init__(self, urls: list[str], job_storage: JobStorage) -> None:
         self.urls = urls
         self.job_storage = job_storage
+        # The home PC was needed and did not answer: its boards were skipped (the alert reads it).
+        self.home_down = False
+        self.home_skipped: list[str] = []  # the boards skipped for it, in the order of the searches
 
     @staticmethod
     async def _get_page_content(page: Page, url: str, wait_selector: str | None = None) -> str:
@@ -153,7 +158,10 @@ class JobParser:
     async def _home_page(self, browser: Browser, needed: bool) -> Page | None:
         """A page that goes out through the owner's PC, when it is configured, needed and up."""
         proxy = home_proxy()
-        if not needed or proxy is None or not await home_proxy_up(proxy):
+        if not needed or proxy is None:
+            return None
+        if not await home_proxy_up(proxy):
+            self.home_down = True
             return None
         return await self._new_page(browser, proxy)
 
@@ -183,6 +191,9 @@ class JobParser:
             direct = await self._new_page(browser)
             needs_home = any(self.get_listeners(urlparse(url).netloc).via_home for url in self.urls)
             home = await self._home_page(browser, needs_home)
+            started = datetime.utcnow()
+            windows: dict[str, int] = {}
+            full_pass: dict[str, bool] = {}
 
             for url_text in self.urls:
                 netloc = urlparse(url_text).netloc
@@ -190,28 +201,67 @@ class JobParser:
                 page = self._page_for(listeners, direct, home)
                 if page is None:
                     logger.info("Skipping %s: the home PC is not reachable", url_text)
+                    if listeners.platform_name and listeners.platform_name not in self.home_skipped:
+                        self.home_skipped.append(listeners.platform_name)
                     continue
-                logger.info("Parsing: %s%s", url_text, " (via the home PC)" if page is home else "")
-                try:
-                    html_content = await self._get_page_content(page, url_text, listeners.get_list_wait_selector())
-                except Exception:
-                    # A page that fails to load must not cost every other source its vacancies.
-                    logger.exception("Could not open %s, moving on to the next search", url_text)
+                via = " (via the home PC)" if page is home else ""
+                name = listeners.platform_name
+                if not (listeners.windowed and name):
+                    await self._parse_search_page(page, listeners, url_text, url_text, via)
                     continue
-
-                jobs = self._parse_list(listeners, BeautifulSoup(html_content, "html.parser"), url_text)
-                repeated = sum(not self.job_storage.add_job(job) for job in jobs)
-
-                if jobs:
-                    logger.info("Found %d jobs on %s (%d already found by another search)", len(jobs), netloc, repeated)
-                else:
-                    # A source that suddenly gives nothing is a broken selector or a block,
-                    # and silence in the logs is how it stayed unnoticed for weeks.
-                    logger.warning("Found 0 jobs on %s (page title %r)", netloc, await self._title(page))
+                if name not in windows:
+                    windows[name] = await window_seconds(name, started)
+                    logger.info("%s window: %.1f h", name, windows[name] / 3600)
+                found = await self._parse_windowed(page, listeners, url_text, windows[name], via)
+                full_pass[name] = full_pass.get(name, True) and found > 0
 
             await browser.close()
 
+        # Every search of the board got cards: the next run's window starts from here.
+        for name, complete in full_pass.items():
+            if complete:
+                await mark_full_pass(name, started)
+
         logger.info("Parse complete. Total: %d jobs", len(self.job_storage.jobs))
+
+    async def _parse_search_page(
+        self, page: Page, listeners: BaseListeners, page_url: str, search_url: str, via: str, first: bool = True
+    ) -> list[Job]:
+        """One list page into the storage. The vacancies keep `search_url` — the search as it is
+        listed in urls.py, whatever window or page was asked for — so the funnel's keys stay put."""
+        netloc = urlparse(page_url).netloc
+        logger.info("Parsing: %s%s", page_url, via)
+        try:
+            html_content = await self._get_page_content(page, page_url, listeners.get_list_wait_selector())
+        except Exception:
+            # A page that fails to load must not cost every other source its vacancies.
+            logger.exception("Could not open %s, moving on to the next search", page_url)
+            return []
+
+        jobs = self._parse_list(listeners, BeautifulSoup(html_content, "html.parser"), search_url)
+        repeated = sum(not self.job_storage.add_job(job) for job in jobs)
+
+        if jobs:
+            logger.info("Found %d jobs on %s (%d already found by another search)", len(jobs), netloc, repeated)
+        elif first:
+            # A source that suddenly gives nothing is a broken selector or a block,
+            # and silence in the logs is how it stayed unnoticed for weeks.
+            logger.warning("Found 0 jobs on %s (page title %r)", netloc, await self._title(page))
+        return jobs
+
+    async def _parse_windowed(self, page: Page, listeners: BaseListeners, url: str, window_s: int, via: str) -> int:
+        """A windowed search, page after page while a page is full and brings an unseen id."""
+        found = 0
+        for number in range(pages_for(window_s)):
+            first = number == 0
+            jobs = await self._parse_search_page(
+                page, listeners, listeners.search_url(url, window_s, number), url, via, first
+            )
+            found += len(jobs)
+            ids = [job.job_id for job in jobs if job.job_id]
+            if len(jobs) < (listeners.page_size or 0) or await known_count(listeners.platform_name, ids) == len(ids):
+                break
+        return found
 
     @staticmethod
     async def _title(page: Page) -> str | None:

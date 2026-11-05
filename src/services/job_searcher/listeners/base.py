@@ -38,6 +38,10 @@ class BaseListeners:
     max_detail_pages: int | None = None
     # Behind a bot check that only lets a home IP through: opened via the owner's PC (home.py).
     via_home: bool = False
+    # The search says "posted in the last N seconds" (LinkedIn's f_TPR): the parser sets N to
+    # the time since the board's last full pass and pages on (search_window.py).
+    windowed: bool = False
+    page_size: int | None = None  # cards on a full page; fewer — the last page
 
     @staticmethod
     def _get_one_by_selector(element: Tag, selector_text: str) -> str | None:
@@ -79,6 +83,10 @@ class BaseListeners:
         if not self.location:
             return None
         return self._get_one_by_selector(element, self.location)
+
+    def search_url(self, url: str, window_s: int, page: int) -> str:
+        """The search with its window and page (from 0); boards without them keep the URL."""
+        return url
 
     def get_list_wait_selector(self) -> str | None:
         return self.wait_for or self.all_jobs

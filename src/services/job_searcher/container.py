@@ -1,6 +1,6 @@
 import logging
 from dataclasses import asdict, dataclass, field, fields
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from bson import ObjectId
 
@@ -11,6 +11,40 @@ from src.db.client import jobs_collection
 #       and the DB coupling lives in infrastructure/repositories/.
 
 logger = logging.getLogger("job_searcher.container")
+
+# A stored id hides the vacancy from every later run — unless that copy is older than this and
+# the owner never answered it (05.11.2026). PwC's full-stack position, stored in 11.2025 without a
+# decision, was live and bumped a year later and never came; two months is about when a hire
+# passes probation and a position opens again.
+REVISIT_DAYS = 60
+
+
+def already_seen_query(platform_name: str | None, job_id: str | None, now: datetime) -> dict:
+    """A stored copy that still hides the vacancy: answered, or found within REVISIT_DAYS.
+
+    A "duplicate" is not an answer: same-run copies are marked so whether or not anyone answered.
+    A repeat of an answered vacancy is caught again by the grouping (dedup.py), within its
+    LOOKBACK_DAYS. `_id` holds the insert time."""
+    since = ObjectId.from_datetime(now - timedelta(days=REVISIT_DAYS))
+    return {
+        "platform_name": platform_name,
+        "job_id": job_id,
+        "$or": [{"user_status": {"$nin": [None, "pending", "duplicate"]}}, {"_id": {"$gte": since}}],
+    }
+
+
+async def known_count(platform_name: str | None, job_ids: list[str]) -> int:
+    """How many of these ids are stored already (0 when the DB cannot say). Distinct ids: one id
+    may be stored more than once (a revisit after REVISIT_DAYS, old same-run copies)."""
+    if not job_ids:
+        return 0
+    try:
+        return len(
+            await jobs_collection.distinct("job_id", {"platform_name": platform_name, "job_id": {"$in": job_ids}})
+        )
+    except Exception as e:
+        logger.warning("DB unavailable for the known-ids check: %s", e)
+        return 0
 
 
 @dataclass
@@ -119,10 +153,11 @@ class JobStorage:
 
     async def remove_jobs_already_in_db(self) -> None:
         before = len(self.jobs)
+        now = datetime.utcnow()
         try:
             for job in list(self.jobs):
                 exists = await jobs_collection.count_documents(
-                    {"platform_name": job.platform_name, "job_id": job.job_id}, limit=1
+                    already_seen_query(job.platform_name, job.job_id, now), limit=1
                 )
                 if exists:
                     self.jobs.remove(job)

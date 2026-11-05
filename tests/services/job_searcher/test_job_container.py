@@ -1,8 +1,9 @@
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from bson import ObjectId
 
 mock_settings = MagicMock()
 mock_settings.telegram_docker_access_ids = [123]
@@ -14,7 +15,7 @@ mock_jobs_collection.count_documents = AsyncMock()
 sys.modules["src.config"] = MagicMock(settings=mock_settings)
 sys.modules["src.db.client"] = MagicMock(jobs_collection=mock_jobs_collection, start_db=AsyncMock())
 
-from src.services.job_searcher.container import Job, JobStorage  # noqa: E402
+from src.services.job_searcher.container import REVISIT_DAYS, Job, JobStorage, already_seen_query  # noqa: E402
 
 
 def test_job_str():
@@ -121,10 +122,35 @@ async def test_remove_jobs_already_in_db(mocker):
     await storage.remove_jobs_already_in_db()
 
     assert job not in storage.jobs
-    mock_jobs_collection.count_documents.assert_awaited_once_with(
-        {"platform_name": "TestPlatform", "job_id": "123"}, limit=1
-    )
+    query = mock_jobs_collection.count_documents.await_args.args[0]
+    assert (query["platform_name"], query["job_id"]) == ("TestPlatform", "123")
+    assert mock_jobs_collection.count_documents.await_args.kwargs == {"limit": 1}
     _ = patched
+
+
+def _matches(query: dict, doc: dict) -> bool:
+    """The part of MongoDB's matching already_seen_query needs."""
+    if (doc["platform_name"], doc["job_id"]) != (query["platform_name"], query["job_id"]):
+        return False
+    answered, recent = query["$or"]
+    return doc.get("user_status") not in answered["user_status"]["$nin"] or doc["_id"] >= recent["_id"]["$gte"]
+
+
+def test_an_old_unanswered_copy_no_longer_hides_a_live_vacancy():
+    # PwC 780338: stored in 11.2025 with no decision, bumped on Djinni a year later.
+    now = datetime(2026, 11, 5, 12)
+    query = already_seen_query("Djinni", "780338", now)
+
+    def doc(days_ago: int, status: str | None) -> dict:
+        return {"_id": ObjectId.from_datetime(now - timedelta(days=days_ago)), "platform_name": "Djinni",
+                "job_id": "780338", "user_status": status}  # fmt: skip
+
+    assert not _matches(query, doc(368, None))
+    assert not _matches(query, doc(REVISIT_DAYS + 1, "pending"))
+    assert _matches(query, doc(REVISIT_DAYS - 1, None))  # recent: still the same vacancy
+    assert _matches(query, doc(368, "not_interested"))  # answered: hidden for good
+    # A same-run copy is marked a repeat whether or not anyone answered: not an answer itself.
+    assert not _matches(query, doc(368, "duplicate"))
 
 
 def test_add_job_skips_a_vacancy_this_run_already_has():

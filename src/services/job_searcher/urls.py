@@ -66,14 +66,15 @@ urls = [
     "https://www.work.ua/jobs-remote-python/",
     "https://www.work.ua/jobs-remote-ai+engineer/",
     "https://www.work.ua/jobs-remote-full+stack+developer/",
-    "https://happymonday.ua/jobs-search/fullstack-developer",
     # LinkedIn's guest search — Ukrainian companies' postings that never reach DOU or Djinni.
     # Remote only (f_WT=2), the last 24 hours, newest first: with a run every hour one page of
     # ten covers it. Opened through the home PC: LinkedIn answers 429 after a few dozen requests.
     f"{_LINKEDIN}?keywords=python&{_LINKEDIN_FILTERS}",
     f"{_LINKEDIN}?keywords=data%20engineer&{_LINKEDIN_FILTERS}",
     f"{_LINKEDIN}?keywords=AI%20engineer&{_LINKEDIN_FILTERS}",
-    # Off since 06.10.2026, the listeners stay ready:
+    # Off, the listeners stay ready:
+    # HappyMonday (05.11.2026) — Cloudflare answers 403 even through the home PC; nothing since 15.10.
+    # Since 06.10.2026:
     # BazaIT — eleven vacancies in three weeks, all posted in 2025, nothing since 18.09.
     # Wellfound — European startups, not Ukrainian companies; 7 applications out of 40 answers.
     # Jooble — answers Playwright with a Cloudflare 403 challenge page (checked 16.09.2026).

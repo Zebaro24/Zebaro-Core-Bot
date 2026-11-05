@@ -47,6 +47,7 @@ async def test_parse_urls_adds_jobs(mocker):
 
     mock_listener = MagicMock()
     mock_listener.platform_name = "TestPlatform"
+    mock_listener.windowed = False
     mock_listener.get_all_jobs.return_value = ["job_elem"]
     mock_listener.get_job_id.return_value = "id123"
     mock_listener.get_title.return_value = "Python Dev"

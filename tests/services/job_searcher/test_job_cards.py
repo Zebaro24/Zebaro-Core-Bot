@@ -96,7 +96,8 @@ def test_robota_ua_relative_date_becomes_a_date():
     date = RobotaUAListeners().get_date(card)
 
     assert isinstance(date, datetime)
-    assert abs((datetime.now() - timedelta(days=2) - date).total_seconds()) < 60
+    # Stored dates are naive UTC, the relative one included.
+    assert abs((datetime.utcnow() - timedelta(days=2) - date).total_seconds()) < 60
 
 
 def test_happymonday_company_falls_back_to_the_block_and_the_title():

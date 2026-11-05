@@ -7,6 +7,7 @@ from bs4 import Tag
 from src.services.job_searcher.listeners.base import BaseListeners
 
 _JOB_ID = re.compile(r"jobPosting:(\d+)")
+_WINDOW = re.compile(r"([?&])f_TPR=r\d+")
 _LINK_ID = re.compile(r"/jobs/view/(?:[^/?]*-)?(\d+)")
 
 
@@ -14,11 +15,14 @@ class LinkedInListeners(BaseListeners):
     """LinkedIn's guest job search: the fragment the public search page loads more cards from.
 
     No login, but LinkedIn answers 429 after a few dozen requests from one address (checked
-    28.10.2026), so the searches are few, one page each, and go out through the home PC.
+    28.10.2026), so the searches are few and go out through the home PC. One page a run while the
+    PC is on; after it was off, the window reaches back to the last full pass and pages on.
     """
 
     platform_name = "LinkedIn"
     via_home = True
+    windowed = True
+    page_size = 10
     # A <div> with a link inside, or the whole card as an <a> — both carry the class.
     all_jobs = ".base-search-card"
 
@@ -34,6 +38,13 @@ class LinkedInListeners(BaseListeners):
     # Each posting is one more request towards the 429: a run after the home PC was off would
     # spend the limit on descriptions and leave the rest with none.
     max_detail_pages = 15
+
+    def search_url(self, url: str, window_s: int, page: int) -> str:
+        if _WINDOW.search(url):
+            url = _WINDOW.sub(lambda match: f"{match.group(1)}f_TPR=r{window_s}", url)
+        else:
+            url = f"{url}{'&' if '?' in url else '?'}f_TPR=r{window_s}"
+        return f"{url}&start={page * (self.page_size or 0)}" if page else url
 
     def get_job_id(self, element: Tag) -> str:
         match = _JOB_ID.search(str(element.get("data-entity-urn", "")))

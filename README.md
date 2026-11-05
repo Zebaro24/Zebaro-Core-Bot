@@ -40,8 +40,9 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 **Job Search & Scraping**
 - Headless browsing via Playwright Stealth (remote browser server, full Chromium in new headless mode)
 - Searches every hour, 9:00–21:00 local time
-- Sources: DOU, Djinni, LinkedIn (guest search, no login), Robota.ua, Work.ua, NoFluffJobs, HappyMonday (BazaIT, Wellfound and Jooble listeners are kept but switched off); Djinni's card fields (work format, countries, years, English, salary, applicants) are read as they are
-- Work.ua, Robota.ua, HappyMonday and LinkedIn block the server's datacenter IP; with `HOME_PROXY_URL` they go through the owner's PC over the VPN — `python scripts/home_proxy.py` there (stdlib only: CONNECT :443, only the server's address, only with the login)
+- Sources: DOU, Djinni, LinkedIn (guest search, no login), Robota.ua, Work.ua, NoFluffJobs (HappyMonday, BazaIT, Wellfound and Jooble listeners are kept but switched off); Djinni's card fields (work format, countries, years, English, salary, applicants) are read as they are
+- Work.ua, Robota.ua and LinkedIn block the server's datacenter IP; with `HOME_PROXY_URL` they go through the owner's PC over the VPN — `python scripts/home_proxy.py` there (stdlib only: CONNECT :443, only the server's address, only with the login). A PC still off at noon gets one Telegram note a day; LinkedIn's window then reaches back to its last full pass (one day to a week, up to 5 pages a search)
+- An early startup (founding / seed / stealth in the title or text) is never above the 👀 tier, with a warning — the target is companies of ~50 people and more; a stored id older than 60 days that was never answered no longer hides a live repost
 - Python is required: frontend, JS/TS full-stack and Node positions without it are filtered out (AI titles stay, marked)
 - Three tiers (on target / your stack / partial) with warnings, apply / mismatch / not-interested buttons with reasons; the partial tier arrives as one summary message with "open" buttons
 - The description highlights the stack and the red flags (another stack, 4+ years, senior, English above B1, office)
@@ -159,7 +160,7 @@ See `scripts/README.md` for the release and production helpers.
 | `JOBS_API_TOKEN` | no | empty (endpoints refuse) | Bearer token for the Jobs API (`/jobs/*` except `/jobs/r/<id>`), the MCP's client |
 | `SITE_CONTACT_TOKEN` | no | empty (endpoint refuses) | Shared with zebaro.dev (`CONTACT_TOKEN` there) for `/site/contact` |
 | `WG_PASSWORD` | yes for compose | — | wg-easy admin password (12+ chars); the bot gets it as `WG_EASY_PASSWORD` |
-| `HOME_PROXY_URL` | no | empty (boards go direct) | `http://user:pass@10.0.0.2:8899` — HTTP proxy on the owner's PC in the VPN; Work.ua, Robota.ua and HappyMonday are opened through it (they block the server's IP) and skipped in 2 s when it is off |
+| `HOME_PROXY_URL` | no | empty (boards go direct) | `http://user:pass@10.0.0.2:8899` — HTTP proxy on the owner's PC in the VPN; Work.ua, Robota.ua and LinkedIn are opened through it (they block the server's IP) and skipped in 2 s when it is off |
 | `WG_HOST` | no | `server.zebaro.dev` | Endpoint clients connect to; must resolve straight to the server (no Cloudflare proxy) |
 | `MONOBANK_TOKEN` | no | empty (Spotify idle) | Monobank personal API token (api.monobank.ua) |
 | `MONOBANK_WEBHOOK_SECRET` | no | empty (no webhook, poll only) | Path secret of `/webhook/monobank/<secret>` — personal webhooks are not signed |

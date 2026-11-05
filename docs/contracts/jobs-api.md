@@ -149,7 +149,7 @@ tolerant reader: неизвестные поля пропускает, неиз�
 | `location` | string \| null | как написано на площадке |
 | `countries` | string \| null | откуда берут кандидатов |
 | `applicants` | int \| null | сколько уже откликнулось (показывает Djinni; у других площадок `null`) |
-| `warnings` | string[] | что может не подойти владельцу, по мнению фильтра: `english` (просят B2), `abroad` (на DOU не отмечено «за кордоном»), `ukraine` (надо быть в Украине), `no_description` (текст не загрузился), `no_python`, `python_plus` (Python только «будет плюсом») |
+| `warnings` | string[] | что может не подойти владельцу, по мнению фильтра: `english` (просят B2), `abroad` (на DOU не отмечено «за кордоном»), `ukraine` (надо быть в Украине), `no_description` (текст не загрузился), `no_python`, `python_plus` (Python только «будет плюсом»), `early_startup` (founding / seed / stealth: такая вакансия не выше review) |
 | `copies` | `[{id, source}]` | та же вакансия на других площадках |
 | `history` | `[event]` | **B.** журнал статусов, от старых к новым; `[]`, пока событий нет |
 

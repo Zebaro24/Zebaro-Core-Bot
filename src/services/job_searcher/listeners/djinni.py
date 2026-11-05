@@ -1,11 +1,21 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from bs4 import Tag
 
 from src.services.job_searcher import extract
 from src.services.job_searcher.listeners.base import BaseListeners
 from src.services.job_searcher.text import element_text
+
+# Djinni writes the tooltip time on Kyiv's clock whatever the browser's zone (every stored date
+# since 10.2025 ran up to three hours ahead of the moment it was found); stored dates are UTC.
+DJINNI_TZ = ZoneInfo("Europe/Kyiv")
+
+
+def kyiv_to_utc(moment: datetime) -> datetime:
+    """A naive Kyiv time as naive UTC."""
+    return moment.replace(tzinfo=DJINNI_TZ).astimezone(UTC).replace(tzinfo=None)
 
 
 class DjinniListeners(BaseListeners):
@@ -74,9 +84,10 @@ class DjinniListeners(BaseListeners):
         if not isinstance(date_str, str):
             return None
         try:
-            return datetime.strptime(date_str.strip(), "%H:%M %d.%m.%Y")
+            kyiv = datetime.strptime(date_str.strip(), "%H:%M %d.%m.%Y")
         except ValueError:
             return None
+        return kyiv_to_utc(kyiv)
 
     def get_link(self, element: Tag) -> str:
         select_element = element.select_one(self.link)

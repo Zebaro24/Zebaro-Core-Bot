@@ -53,7 +53,8 @@ src/
 ├── services/
 │   ├── docker/               # DockerManager, DockerProject, DockerContainer
 │   ├── github/               # GithubManager (instance-level dicts!), service, webhook, event_handler
-│   ├── job_searcher/         # container, extract, filter (tiers), dedup, stats, digest, parser, urls, listeners/;
+│   ├── job_searcher/         # container, extract, filter (tiers), dedup, stats, digest, parser, urls, listeners/,
+│   │                         # home (PC proxy + noon alert), search_window (LinkedIn), repair (one-off at enable);
 │   │                         # Jobs API: jobs_api, status (writes), reasons, events (by=event), journal (SQL), silence (S3), backfill
 │   ├── site_contact.py       # zebaro.dev contact form: model + rate limit
 │   ├── spotify/              # family plan: monobank client, sync, ledger (pure), schedule, report
