@@ -10,8 +10,11 @@
   stored once per search (69 vacancies, up to four copies). Each copy counted as found, and the
   owner's buttons on two messages counted twice. The copy that got furthest stays; the others
   become repeats of it, the way a copy on another site is one.
+* **CVs (13.11.2026).** The vacancies sent before the three CVs get the one they would go with
+  now, for the per-CV stats of the market; their tier stays as the owner saw it. An application
+  without a CV gets the one it went with: the single CV before 09.11.2026, the routed one after.
 
-All three are idempotent; the state is in `meta.jobs_repair`.
+All four are idempotent; the state is in `meta.jobs_repair`.
 """
 
 import logging
@@ -21,6 +24,7 @@ from typing import Any
 from bson import ObjectId
 
 from src.db.client import jobs_collection, meta_collection
+from src.services.job_searcher import cv
 from src.services.job_searcher.dedup import DUPLICATE, group_root
 from src.services.job_searcher.jobs_api import public_status, stage_rank
 from src.services.job_searcher.listeners.djinni import kyiv_to_utc
@@ -149,6 +153,37 @@ async def mark_same_run_copies(now: datetime) -> int:
     return marked
 
 
+_SURFACED = ("top", "sent", "review")
+
+
+async def fill_cvs() -> int:
+    query = {
+        "$or": [
+            {"moderation": {"$in": list(_SURFACED)}, "cv_track": None},
+            {"user_status": "applied", "cv_sent": None},
+        ]
+    }
+    fields = {"title": 1, "description": 1, "cv_track": 1, "user_status": 1, "status_updated_at": 1, "moderation": 1}
+    filled = 0
+    async for doc in jobs_collection.find(query, fields):
+        track = doc.get("cv_track")
+        if track is None and doc.get("moderation") in _SURFACED:
+            track = cv.route(doc.get("title"), doc.get("description"))
+            fit = cv.fit(track, doc.get("title"), doc.get("description"))
+            change = {"cv_track": track, "cv_match": fit.match, "cv_gaps": fit.gaps, "cv_gaps_plus": fit.gaps_plus}
+            result = await jobs_collection.update_one({"_id": doc["_id"], "cv_track": None}, {"$set": change})
+            filled += result.modified_count
+        if doc.get("user_status") == "applied":
+            # Compare-and-set apart from the track: a CV picked by a button meanwhile wins, and the
+            # track is filled either way.
+            result = await jobs_collection.update_one(
+                {"_id": doc["_id"], "user_status": "applied", "cv_sent": None},
+                {"$set": {"cv_sent": cv.sent_with(track, doc.get("status_updated_at"))}},
+            )
+            filled += result.modified_count
+    return filled
+
+
 async def run_repairs() -> None:
     """Each repair on its own: one that fails must not stop the others or the service."""
     now = datetime.utcnow()
@@ -156,6 +191,7 @@ async def run_repairs() -> None:
         ("found_at filled", fill_found_at),
         ("Djinni dates moved from Kyiv time to UTC", lambda: djinni_dates_to_utc(now)),
         ("same-run copies marked as repeats", lambda: mark_same_run_copies(now)),
+        ("CVs filled in", fill_cvs),
     ):
         try:
             if count := await repair():

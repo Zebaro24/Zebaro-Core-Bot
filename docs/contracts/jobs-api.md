@@ -140,6 +140,8 @@ tolerant reader: неизвестные поля пропускает, неиз�
 | `salary` | string \| null | как написано на площадке |
 | `search` | string \| null | URL поиска бота, который нашёл вакансию (`null` у найденных до 06.10.2026) |
 | `duplicate_of` | string \| null | `id` копии, где живёт решение (у `status=duplicate`) |
+| `cv` | string \| null | резюме, под которое подходит вакансия: `backend \| fullstack \| ai` (с 13.11.2026; у старых проставлено задним числом, у отброшенных фильтром `null`) |
+| `cv_sent` | string \| null | с каким резюме ушёл отклик: `backend \| fullstack \| ai \| universal` (`universal` — одно CV до 09.11.2026); `null`, пока отклика нет |
 
 Полная форма (`GET /jobs/{id}`) — всё из краткой и ещё:
 
@@ -150,6 +152,9 @@ tolerant reader: неизвестные поля пропускает, неиз�
 | `countries` | string \| null | откуда берут кандидатов |
 | `applicants` | int \| null | сколько уже откликнулось (показывает Djinni; у других площадок `null`) |
 | `warnings` | string[] | что может не подойти владельцу, по мнению фильтра: `english` (просят B2), `abroad` (на DOU не отмечено «за кордоном»), `ukraine` (надо быть в Украине), `no_description` (текст не загрузился), `no_python`, `python_plus` (Python только «будет плюсом»), `early_startup` (founding / seed / stealth: такая вакансия не выше review) |
+| `cv_match` | string[] | навыки из резюме `cv`, которые есть в тексте: `Python`, `FastAPI`, `PostgreSQL`, ... |
+| `cv_gaps` | string[] | что вакансия требует, а в резюме нет: `Celery`, `AWS`, `Kubernetes`, ... |
+| `cv_gaps_plus` | string[] | то же, но только «будет плюсом» |
 | `copies` | `[{id, source}]` | та же вакансия на других площадках |
 | `history` | `[event]` | **B.** журнал статусов, от старых к новым; `[]`, пока событий нет |
 
@@ -240,7 +245,7 @@ tolerant reader: неизвестные поля пропускает, неиз�
 |---|---|---|
 | `from` / `to` | последние 30 дней | по `found_at` (`by=event` — по `occurred_at` событий) |
 | `by` | `found` | `found \| event` |
-| `group_by` | `none` | `none \| source \| stack \| week \| tier \| search` |
+| `group_by` | `none` | `none \| source \| stack \| week \| tier \| search \| cv` |
 | `source`, `any`, `all`, `none`, `where`, `company`, `search` | — | те же фильтры, что у списка |
 
 - `group_by=stack`: одна вакансия попадает во все свои технологии, поэтому сумма групп больше
@@ -249,6 +254,8 @@ tolerant reader: неизвестные поля пропускает, неиз�
 - `group_by=search`: эффективность поисков бота. `key` — URL поиска (`(unknown)` для вакансий
   до 06.10.2026), `label` — он же коротко («Djinni · Python»). У остальных группировок
   `label` = `key`.
+- `group_by=cv`: по резюме. Отклик — по тому, с которым ушёл (`cv_sent`), остальное — по тому,
+  под которое подходит (`cv`); `(none)` — без резюме (отброшенные фильтром).
 
 Ответ:
 

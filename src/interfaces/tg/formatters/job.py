@@ -3,6 +3,7 @@ import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from src.services.job_searcher import cv, letters
 from src.services.job_searcher.container import Job
 from src.services.job_searcher.filter import (
     BACKEND_CORE,
@@ -268,6 +269,44 @@ def _why_lines(job: Job, emoji: str, mark: bool) -> list[str]:
     return lines
 
 
+def cv_line(job: Job) -> str | None:
+    """ "📎 CV: Python Backend Engineer · на Djinni выбери его" — what to send with the application."""
+    resume = cv.get(job.cv_track)
+    if resume is None or job.cv_track == cv.UNIVERSAL:
+        return None
+    hint = None
+    if job.platform_name == "Djinni" and job.cv_track != cv.DJINNI_MAIN:
+        hint = "на Djinni выбери его вместо основного"
+    elif job.platform_name == "Dou":
+        hint = "приложи PDF"
+    return f"📎 <b>CV: {html.escape(resume.title)}</b>" + (f" · {hint}" if hint else "")
+
+
+def gaps_line(job: Job) -> str | None:
+    """ "🧩 Нет в CV: Celery, AWS · плюсом: Kafka" — what the CV will not answer."""
+    parts = []
+    if job.cv_gaps:
+        parts.append("Нет в CV: " + ", ".join(job.cv_gaps))
+    if job.cv_gaps_plus:
+        parts.append(("плюсом: " if job.cv_gaps else "Нет в CV, но плюсом: ") + ", ".join(job.cv_gaps_plus))
+    return "🧩 " + html.escape(" · ".join(parts)) if parts else None
+
+
+def cover_letter_html(job: Job) -> str:
+    """The letter of the vacancy's CV in its language: a tap on the block copies it whole."""
+    track = job.cv_track if job.cv_track in cv.TRACKS else cv.FULLSTACK
+    resume = cv.CVS[track]
+    lang = letters.language(job.description or job.title)
+    salary, theirs = cv.salary_ask(track, job.salary)
+    where = "середина их вилки" if theirs else "без вилки — по треку"
+    money = f"{salary:,}".replace(",", " ")
+    return (
+        f"✉️ <b>{html.escape(resume.title)}</b> · {'UA' if lang == letters.UK else 'EN'}\n"
+        f"<pre>{html.escape(letters.letter(track, lang))}</pre>\n"
+        f"💵 Если спросят: ${money} net ({where}) · 📄 <code>{html.escape(resume.file)}</code>"
+    )
+
+
 def repeat_line(job: Job) -> str | None:
     """What the owner already saw of this vacancy (services/job_searcher/dedup.py)."""
     if not job.similar_to or not job.similar_to_platform:
@@ -338,7 +377,7 @@ def job_to_rich_html(job: Job, status: str | None = None) -> str:
 
     if job.moderation in _TIERS:
         lines = _why_lines(job, emoji, mark=True)
-        lines += [line for line in (conditions_line(job), warnings_line(job)) if line]
+        lines += [line for line in (cv_line(job), gaps_line(job), conditions_line(job), warnings_line(job)) if line]
         if lines:
             parts.append("<p>" + "<br>".join(lines) + "</p>")
 
@@ -363,9 +402,11 @@ def job_to_rich_html(job: Job, status: str | None = None) -> str:
 def _summary_item(job: Job, rich: bool) -> str:
     """ "AI Engineer — Acme · Dou · Python, LLM · ⚠️ 1 · 📌" in one line."""
     stack = [*job.matched_stack, *job.matched_bonus]
+    resume = cv.get(job.cv_track)
     bits = [
         html.escape(job.company) if job.company else None,
         html.escape(job.platform_name or "") or None,
+        f"📎 {html.escape(resume.short)}" if resume else None,
         html.escape(", ".join(stack)) if stack else None,
         "⚠️ " + html.escape(", ".join(_WARNINGS[w] for w in job.warnings if w in _WARNINGS))
         if any(w in _WARNINGS for w in job.warnings)
@@ -410,7 +451,8 @@ def job_to_html(job: Job) -> str:
         text += f" Date: <i>{html.escape(date)}</i>"
 
     if emoji:
-        why = _why_lines(job, emoji, mark=False) + [line for line in (conditions_line(job), warnings_line(job)) if line]
+        extra = (cv_line(job), gaps_line(job), conditions_line(job), warnings_line(job))
+        why = _why_lines(job, emoji, mark=False) + [line for line in extra if line]
         if why:
             text += "\n" + "\n".join(why)
 

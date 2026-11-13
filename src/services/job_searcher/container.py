@@ -91,6 +91,16 @@ class Job:
     applicants: int | None = None  # how many applied already (Djinni)
     warnings: list[str] = field(default_factory=list)  # what may not fit: "english", "ukraine", ...
     search_url: str | None = None  # the search that found it — to compare searches
+    # Which of the owner's CVs the vacancy gets (services/job_searcher/cv.py): "backend" |
+    # "fullstack" | "ai"; the CV's skills it names, and what it asks for that the CV lacks —
+    # required (`cv_gaps`) or only "nice to have" (`cv_gaps_plus`).
+    cv_track: str | None = None
+    cv_match: list[str] = field(default_factory=list)
+    cv_gaps: list[str] = field(default_factory=list)
+    cv_gaps_plus: list[str] = field(default_factory=list)
+    # The CV the application went with: the routed one when "applied" is written, changed by the
+    # buttons under it; "universal" — the one CV before 09.11.2026.
+    cv_sent: str | None = None
     # Why the owner said no: "experience" | "location" | "english" | "site" | "stack" (mismatch),
     # "role" | "stack" | "domain" | "conditions" | "other" (not_interested).
     status_reason: str | None = None

@@ -25,11 +25,12 @@ def test_get_reply_markup_uses_action_kb_when_job_id_present():
     callback_actions = [
         button.callback_data for row in markup.inline_keyboard for button in row if button.callback_data
     ]
-    assert len(callback_actions) == 3
+    assert len(callback_actions) == 4
     styles = {button.text: button.style for row in markup.inline_keyboard for button in row}
     assert styles == {
         "🔗 Вакансия": "primary",
         "✅ Откликнулся": "success",
+        "✉️ Письмо": None,
         "🚫 Не прохожу": "danger",
         "👎 Не интересно": None,
     }
@@ -54,7 +55,7 @@ def test_copies_get_their_own_link_buttons():
     assert markup is not None
 
     texts = [button.text for row in markup.inline_keyboard for button in row]
-    assert texts == ["🔗 Вакансия", "🔗 Work.ua", "✅ Откликнулся", "🚫 Не прохожу", "👎 Не интересно"]
+    assert texts == ["🔗 Вакансия", "🔗 Work.ua", "✅ Откликнулся", "✉️ Письмо", "🚫 Не прохожу", "👎 Не интересно"]
     urls = [button.url for row in markup.inline_keyboard for button in row if button.url]
     assert urls[1].endswith("/jobs/r/copy_1")  # clicks on a copy are tracked too
 

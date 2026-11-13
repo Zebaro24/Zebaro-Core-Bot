@@ -9,6 +9,8 @@ import html
 from datetime import datetime
 from typing import Any
 
+from src.services.job_searcher import cv
+
 # Why the filter did not send a vacancy. Old reasons stay: the API reports stored documents.
 REASONS = {
     "senior": "senior в названии/тексте",
@@ -19,6 +21,7 @@ REASONS = {
     "junior": "junior (старое правило)",
     "not a developer role": "не разработка",
     "other stack": "другой основной стек",
+    "off track": "data / ML / DevOps — не под резюме",
     "office": "офис или гибрид",
     "country": "не берут из-за границы",
     "company": "ФОП / школа",
@@ -195,8 +198,51 @@ def format_market_rich(digest: dict[str, Any]) -> str:
 # --- the owner -----------------------------------------------------------------------------
 
 
+def _cv_name(key: str) -> str:
+    resume = cv.get(key)
+    return resume.short if resume else key
+
+
+def _cv_section(by_cv: dict[str, Any] | None) -> list[str]:
+    """ "📎 По резюме": what each CV brought, how often it is sent, and the market for it."""
+    if not by_cv:
+        return []
+    parts = []
+    if sent := by_cv.get("sent"):
+        rows = [
+            (
+                _cv_name(row["cv"]),
+                row["replied"] / row["applied"] if row["applied"] else 0.0,
+                f"{row['replied']}/{row['applied']}"
+                + (f" 🗓{row['interview']}" if row["interview"] else "")
+                + (f" 🎉{row['offer']}" if row["offer"] else ""),
+            )
+            for row in sent
+        ]
+        parts += ["<h4>📎 По резюме — ответили из откликов · всё время</h4>", _chart(rows)]
+    rates = [row for row in by_cv.get("apply_rate") or [] if row["rate"] is not None]
+    market = by_cv.get("market") or {}
+    lines = []
+    if rates:
+        lines.append(
+            "Откликаешься · 4 недели: "
+            + " · ".join(f"{_cv_name(row['cv'])} {_pct(row['rate'])} из {row['decided']}" for row in rates)
+        )
+    if any(market.values()):
+        lines.append("Пришло за неделю: " + " · ".join(f"{_cv_name(key)} {count}" for key, count in market.items()))
+    if lines:
+        parts.append("<p>" + "<br>".join(html.escape(line) for line in lines) + "</p>")
+    return parts
+
+
 def _my_insight(item: dict[str, Any]) -> str:
     kind = item["kind"]
+    if kind == "cv_gap":
+        return (
+            f"📎 На CV <b>{html.escape(_cv_name(item['worst']))}</b> отвечают реже всех — {_pct(item['worst_rate'])} "
+            f"из {item['worst_n']}, у {html.escape(_cv_name(item['best']))} {_pct(item['best_rate'])}. "
+            "Править его первым: заголовок, summary, первые два пункта."
+        )
     if kind == "platform_gap":
         blocked = f", ещё {item['worst_blocked']} раз сайт не пустил" if item["worst_blocked"] else ""
         return (
@@ -309,6 +355,8 @@ def format_me_rich(digest: dict[str, Any]) -> str:
             _chart(rows),
             f"<p>Ответили по площадкам: {line} · ❌ отказов {outcomes['rejected']}</p>",
         ]
+
+    parts += _cv_section(me.get("by_cv"))
 
     tiers = me["by_tier_rate"]
     if any(rate is not None for rate in tiers.values()):

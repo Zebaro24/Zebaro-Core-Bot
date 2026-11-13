@@ -176,17 +176,17 @@ def test_classify_all_sets_fields_and_orders_best_first():
 
     assert len(storage.jobs) == len(jobs)
     assert [job.moderation for job in storage.jobs][:2] == ["sent", "sent"]
-    top = storage.jobs[0]
-    assert top.matched_stack == ["Python", "FastAPI", "React"]
-    assert top.filter_reason is None
-    assert {job.filter_reason for job in storage.jobs[2:]} == {"no python", "senior"}
+    full_stack = next(job for job in storage.jobs if job.title == "Full Stack")
+    assert full_stack.matched_stack == ["Python", "FastAPI", "React"]
+    assert full_stack.cv_track == "fullstack" and full_stack.filter_reason is None
+    assert {job.filter_reason for job in storage.jobs[2:]} == {"off track", "no python", "senior"}
 
 
 def test_classify_job_keeps_the_tuple_interface():
     assert JobFilter.classify_job(Job(title="Python React Developer")) == (
         "sent",
-        35,
-    )  # 2 core x10 + 2 core in title x5 + 5 for the backend side
+        26,
+    )  # 2 CV skills x3 + the role in the title 10 + 2 core in title x5
 
 
 @pytest.mark.parametrize(

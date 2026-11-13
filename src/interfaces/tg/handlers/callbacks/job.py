@@ -12,7 +12,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 
 from src.db.client import jobs_collection
-from src.interfaces.tg.formatters.job import job_status_html, job_to_html, job_to_rich_html
+from src.interfaces.tg.formatters.job import cover_letter_html, job_status_html, job_to_html, job_to_rich_html
 from src.interfaces.tg.formatters.job_status import job_status_line, status_words
 from src.interfaces.tg.keyboards.job import (
     OUTCOME_TEXTS,
@@ -23,13 +23,22 @@ from src.interfaces.tg.keyboards.job import (
     get_job_outcome_kb,
     get_job_reason_kb,
     get_job_status_kb,
+    get_letter_kb,
 )
 from src.interfaces.tg.middlewares.admin import AdminMiddleware
 from src.interfaces.tg.notification.job_status import kick_status_sync
+from src.services.job_searcher import cv
 from src.services.job_searcher.container import Job, remember_message
 from src.services.job_searcher.dedup import BLOCKED, DECIDED, DUPLICATE
 from src.services.job_searcher.jobs_api import public_status
-from src.services.job_searcher.status import JobNotFound, StatusConflict, group_docs, undo, write_status
+from src.services.job_searcher.status import (
+    JobNotFound,
+    StatusConflict,
+    group_docs,
+    set_cv_sent,
+    undo,
+    write_status,
+)
 
 logger = logging.getLogger("tg.handlers.callbacks.job")
 
@@ -87,7 +96,7 @@ async def _show_current(query: CallbackQuery, job_id: str) -> None:
     try:
         doc = await jobs_collection.find_one({"_id": ObjectId(job_id)})
         if doc is not None:
-            markup = get_job_status_kb(job_id, public_status(doc), doc.get("copies"))
+            markup = get_job_status_kb(job_id, public_status(doc), doc.get("copies"), doc.get("cv_sent"))
             await _edit(query, doc, job_status_line(doc), markup)
     except Exception as e:  # the alert below says it all; the sync loop edits it later anyway
         logger.warning("Could not show the current status of %s: %s", job_id, e)
@@ -116,7 +125,9 @@ async def _record_outcome(query: CallbackQuery, callback_data: JobActionCallback
         logger.warning("Failed to store the outcome: %s", e)
         await query.answer("Не удалось сохранить (БД недоступна)", show_alert=True)
         return
-    markup = get_job_outcome_kb(callback_data.job_id, doc.get("copies"), current=callback_data.reason)
+    markup = get_job_outcome_kb(
+        callback_data.job_id, doc.get("copies"), current=callback_data.reason, cv_sent=doc.get("cv_sent")
+    )
     await _edit(query, doc, _applied_status(doc), markup)
     logger.info("Job %s outcome: %s", callback_data.job_id, callback_data.reason)
     await query.answer()
@@ -154,7 +165,7 @@ async def _open_from_summary(query: CallbackQuery, callback_data: JobActionCallb
         await query.answer("Вакансия не найдена", show_alert=True)
         return
     text = job_status_line(doc)
-    markup = get_job_status_kb(callback_data.job_id, public_status(doc), doc.get("copies"))
+    markup = get_job_status_kb(callback_data.job_id, public_status(doc), doc.get("copies"), doc.get("cv_sent"))
     job = Job.from_doc(doc)
     try:
         sent = await query.message.answer_rich(
@@ -170,6 +181,65 @@ async def _open_from_summary(query: CallbackQuery, callback_data: JobActionCallb
     # From now on this is the vacancy's message: a status set through the API edits it.
     await remember_message(callback_data.job_id, sent.chat.id, sent.message_id, kind)
     await query.answer()
+
+
+async def _send_letter(query: CallbackQuery, callback_data: JobActionCallback) -> None:
+    """The cover letter of the vacancy's CV, under the vacancy: one tap on the block copies it."""
+    try:
+        doc = await jobs_collection.find_one({"_id": ObjectId(callback_data.job_id)})
+    except Exception as e:
+        logger.warning("Could not read the vacancy for its letter: %s", e)
+        doc = None
+    if doc is None or not isinstance(query.message, Message):
+        await query.answer("Вакансия не найдена", show_alert=True)
+        return
+    try:
+        await query.message.reply(
+            cover_letter_html(Job.from_doc(doc)),
+            reply_markup=get_letter_kb(callback_data.job_id),
+            disable_web_page_preview=True,
+        )
+    except Exception as e:  # flood control, a deleted message: the button must not spin
+        logger.warning("Could not send the letter of %s: %s", callback_data.job_id, e)
+        await query.answer("Не удалось прислать письмо", show_alert=True)
+        return
+    await query.answer()
+
+
+async def _hide_letter(query: CallbackQuery) -> None:
+    if isinstance(query.message, Message):
+        try:
+            await query.message.delete()
+        except TelegramBadRequest as e:  # older than 48 hours: Telegram keeps it
+            logger.info("Could not delete the letter: %s", e)
+            await query.answer("Telegram не даёт удалить — старше 48 часов", show_alert=True)
+            return
+    await query.answer()
+
+
+async def _change_cv(query: CallbackQuery, callback_data: JobActionCallback) -> None:
+    """The CV an application went with, when it was not the one the bot routed it to."""
+    if callback_data.reason not in cv.TRACKS:
+        await query.answer("Неизвестное резюме")
+        return
+    try:
+        doc = await set_cv_sent(callback_data.job_id, callback_data.reason)
+    except Exception as e:
+        logger.warning("Failed to store the CV of %s: %s", callback_data.job_id, e)
+        await query.answer("Не удалось сохранить (БД недоступна)", show_alert=True)
+        return
+    if doc is None:
+        await query.answer("Отклик не найден", show_alert=True)
+        return
+    markup = get_job_status_kb(callback_data.job_id, public_status(doc), doc.get("copies"), doc.get("cv_sent"))
+    if isinstance(query.message, Message):
+        try:
+            await query.message.edit_reply_markup(reply_markup=markup)
+        except TelegramBadRequest as e:
+            if "not modified" not in str(e):
+                raise
+    logger.info("Job %s went with the %s CV", callback_data.job_id, callback_data.reason)
+    await query.answer(f"📎 {cv.CVS[callback_data.reason].title}")
 
 
 def _answer(callback_data: JobActionCallback) -> tuple[str, str | None] | None:
@@ -223,6 +293,15 @@ async def job_action_callback(query: CallbackQuery, callback_data: JobActionCall
         return
     if callback_data.action == "undo":
         await _undo(query, callback_data)
+        return
+    if callback_data.action == "letter":
+        await _send_letter(query, callback_data)
+        return
+    if callback_data.action == "hide":
+        await _hide_letter(query)
+        return
+    if callback_data.action == "cv":
+        await _change_cv(query, callback_data)
         return
 
     answer = _answer(callback_data)
@@ -280,7 +359,11 @@ async def job_action_callback(query: CallbackQuery, callback_data: JobActionCall
         return
 
     # An application keeps its buttons: what came of it is pressed later on the same message.
-    markup = get_job_outcome_kb(callback_data.job_id, doc.get("copies")) if user_status == "applied" else None
+    markup = (
+        get_job_outcome_kb(callback_data.job_id, doc.get("copies"), cv_sent=doc.get("cv_sent"))
+        if user_status == "applied"
+        else None
+    )
     await _edit(query, doc, job_status_html(emoji, status_text, datetime.now()), markup)
 
     logger.info("Job %s marked as %s (%s) by user_id=%s", callback_data.job_id, user_status, reason, query.from_user.id)

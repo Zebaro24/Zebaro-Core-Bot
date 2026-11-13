@@ -1,8 +1,8 @@
 """Where the vacancies come from.
 
-One line per search, grouped by site. Every search is either the owner's stack (Python /
-FastAPI on the back, React / Next.js on the front), AI work around it or Python data
-engineering (28.10.2026), and is limited to remote — the owner works only remotely, from
+One line per search, grouped by site. Every search serves one of the owner's three CVs
+(Python backend, Python full-stack, AI engineer — services/job_searcher/cv.py), and is
+limited to remote — the owner works only remotely, from
 abroad. The focus is Ukrainian companies, wherever they are registered (06.10.2026):
 international boards brought vacancies he could not take or did not want.
 
@@ -21,14 +21,14 @@ _LINKEDIN_FILTERS = "location=Ukraine&f_WT=2&f_TPR=r86400&sortBy=DD"
 urls = [
     # DOU — the main Ukrainian board, 46% of its vacancies answered with an application. Its
     # search matches categories, not the text, so the categories Python work is filed under:
-    # Python, full-stack, AI/ML, data engineering. The first page holds 3–7 days of each — plenty
+    # Python, full-stack, AI/ML. The first page holds 3–7 days of each — plenty
     # with a run every hour. Front End went on 28.10.2026: Python is required, and of its 30
     # vacancies in a month one got an application. The ?relocation searches went on 06.10.2026:
     # a relocation-only vacancy is an office abroad, one that is also remote comes through ?remote.
+    # Data Engineer went on 13.11.2026 with the three CVs: none of them is for data roles.
     "https://jobs.dou.ua/vacancies/?remote&category=Python",
     "https://jobs.dou.ua/vacancies/?remote&category=Fullstack",
     "https://jobs.dou.ua/vacancies/?remote&category=AI%2FML",
-    "https://jobs.dou.ua/vacancies/?remote&category=Data%20Engineer",
     # Djinni — the list already carries the whole description and the card the work format,
     # countries, years and English, so these pages cost one load each. keyword-<x>/ pages exist
     # only for real categories; the rest goes through the full-text search.
@@ -42,7 +42,6 @@ urls = [
     # category for ("ML Engineer", "AI/ML") is ignored and shows every vacancy (28.10.2026).
     f"https://djinni.co/jobs/?all_keywords=python&{_DJINNI_FILTERS}",
     f"https://djinni.co/jobs/?all_keywords=python&{_DJINNI_FILTERS}&page=2",
-    f"https://djinni.co/jobs/?primary_keyword=Data+Engineer&{_DJINNI_FILTERS}",
     f"https://djinni.co/jobs/keyword-fullstack/?{_DJINNI_FILTERS}",
     f"https://djinni.co/jobs/?all_keywords=FastAPI&{_DJINNI_FILTERS}",
     f"https://djinni.co/jobs/?all_keywords=Django&{_DJINNI_FILTERS}",
@@ -70,7 +69,6 @@ urls = [
     # Remote only (f_WT=2), the last 24 hours, newest first: with a run every hour one page of
     # ten covers it. Opened through the home PC: LinkedIn answers 429 after a few dozen requests.
     f"{_LINKEDIN}?keywords=python&{_LINKEDIN_FILTERS}",
-    f"{_LINKEDIN}?keywords=data%20engineer&{_LINKEDIN_FILTERS}",
     f"{_LINKEDIN}?keywords=AI%20engineer&{_LINKEDIN_FILTERS}",
     # Off, the listeners stay ready:
     # HappyMonday (05.11.2026) — Cloudflare answers 403 even through the home PC; nothing since 15.10.

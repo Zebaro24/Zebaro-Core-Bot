@@ -165,7 +165,7 @@ async def _edit(bot: Bot, doc: dict[str, Any]) -> bool:
     """Edit the vacancy's message to its current status; False when the message is gone."""
     job_id = str(doc["_id"])
     line = job_status_line(doc)
-    markup = get_job_status_kb(job_id, public_status(doc), doc.get("copies"))
+    markup = get_job_status_kb(job_id, public_status(doc), doc.get("copies"), doc.get("cv_sent"))
     job = Job.from_doc(doc)
     try:
         if doc.get("tg_message_kind") == "plain":

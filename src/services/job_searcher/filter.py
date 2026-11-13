@@ -16,11 +16,17 @@ Python is required (22.10.2026): a vacancy that never names it is not sent, what
 has — frontend, JS/TS full-stack, Node backends. AI titles are the one exception: their texts
 often skip the language, and the owner applied to such.
 
+Every vacancy that passes gets one of the owner's three CVs (services/job_searcher/cv.py, since
+13.11.2026), and the tier says how well it fits *that* CV — a Python backend position is as
+much "on target" for the Backend CV as a Python + React one is for the Fullstack CV.
+
 Tiers (stored in `Job.moderation`, the values stats and the API use):
-  "top"                 🔥🔥🔥 right on target: your stack on both sides, or Python in the title;
-                        the level fits, and nothing in the conditions needs a second look
-  "sent"                🔥 your stack: a backend core (Python / FastAPI) AND a frontend core
-                        (React / Next.js) both appear, or a Python position by its title
+  "top"                 🔥🔥🔥 right on target: the CV's core (Backend: a Python position or a
+                        Python framework; Fullstack: Python and React / Next.js; AI: an AI title,
+                        Python and LLM work), the title names the CV's role, the level fits, at
+                        most one technology the CV lacks is required, and nothing in the
+                        conditions needs a second look
+  "sent"                🔥 the CV's core is there, but something above is not
   "review"              👀 partial: Python somewhere in the text, or an AI title without it
   "rejected_by_filter"  not sent; `Job.filter_reason` says why
 
@@ -38,9 +44,12 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from src.services.job_searcher import extract
+from src.services.job_searcher import cv, extract
 from src.services.job_searcher.container import Job, JobStorage
 from src.services.job_searcher.extract import required_years
+from src.services.job_searcher.keywords import contains_any as _contains_any
+from src.services.job_searcher.keywords import found as _found
+from src.services.job_searcher.keywords import pattern as _pattern
 
 logger = logging.getLogger("job_searcher.filter")
 
@@ -125,8 +134,18 @@ _DEVELOPER_WORK = re.compile(
 OTHER_STACK_WORDS = (
     "java", "kotlin", "c#", ".net", "php", "laravel", "angular", "vue", "vue.js",
     "react native", "flutter", "android", "ios", "mobile developer", "ruby", "rails", "golang",
-    "wordpress", "webflow",
+    "wordpress", "webflow", "shopify",
 )  # fmt: skip
+# Roles none of the three CVs is for (the owner's routing table, 13.11.2026): data and ML,
+# research, infrastructure. An AI / LLM word in the title keeps one — "AI/ML Engineer",
+# "Research Engineer (LLM)" go to the AI CV.
+OFF_TRACK_WORDS = (
+    "data engineer", "data engineering", "big data", "etl", "ml engineer", "ml engineers", "mlops",
+    "machine learning engineer", "data scientist", "data science", "computer vision", "research",
+    "researcher", "devops", "sre", "site reliability", "infrastructure engineer",
+    "cloud engineer",
+)  # fmt: skip
+_OFF_TRACK_RESCUE = ("ai", "llm", "llms", "genai", "gen ai", "agentic")
 WRONG_COMPANY_WORDS = ("фоп", "school")
 # Military units hire through the same boards: "Fullstack Developer до 1 окремий медичний
 # батальйон", "Інженер БпЛА — 116 ОМБр". Never for the owner.
@@ -160,6 +179,9 @@ MAX_YEARS = 3
 MAX_ENGLISH = "B2"
 # Less text than this is a page that did not load, not a vacancy without a stack.
 MIN_DESCRIPTION = 200
+# Required technologies the CV does not name that still leave a vacancy on target: one is an
+# answer in the letter or the interview, two are a different stack.
+MAX_GAPS = 1
 
 TOP = "top"
 SENT = "sent"
@@ -188,34 +210,10 @@ EARLY_STARTUP_WORDS = (
     "first hire", "рання стадія", "ранній стадії", "ранньої стадії",
 )  # fmt: skip
 
-# Keywords that need more than a word boundary.
-_SPECIAL_PATTERNS = {
-    # React Native is mobile development, not the React the owner writes.
-    "react": r"\breact\b(?![\s-]*native)",
-}
-
-
-def _pattern(keyword: str) -> str:
-    # Word boundaries: short tokens like "ai" or "sr" must not match inside "email" or "srv".
-    # A digit may follow ("Python3"), a letter may not.
-    return _SPECIAL_PATTERNS.get(keyword, rf"(?<![\w.]){re.escape(keyword)}(?![^\W\d_])")
-
-
-def _contains(text: str, keyword: str) -> bool:
-    return re.search(_pattern(keyword), text) is not None
-
 
 def keyword_pattern(keyword: str) -> str:
     """The regex a keyword is matched with — the formatter highlights by the same rules."""
     return _pattern(keyword)
-
-
-def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
-    return any(_contains(text, keyword) for keyword in keywords)
-
-
-def _found(text: str, stack: dict[str, tuple[str, ...]]) -> list[str]:
-    return [name for name, keywords in stack.items() if _contains_any(text, keywords)]
 
 
 @dataclass
@@ -228,6 +226,8 @@ class Verdict:
     years: int | None = None
     english: str | None = None
     warnings: list[str] = field(default_factory=list)
+    cv_track: str | None = None
+    cv_fit: cv.Fit | None = None
 
 
 _LEVELS = (("Junior", JUNIOR_WORDS), ("Middle", MIDDLE_WORDS), ("Senior", SENIOR_WORDS))
@@ -265,6 +265,8 @@ def title_reject_reason(title: str | None, company: str | None) -> str | None:
         return "not a developer role"
     if _contains_any(title, OTHER_STACK_WORDS):
         return "other stack"
+    if _contains_any(title, OFF_TRACK_WORDS) and not _contains_any(title, _OFF_TRACK_RESCUE):
+        return "off track"
     if _contains_any(_REPORTS_TO.sub("", title), LEAD_WORDS):
         return "lead"
     if _contains_any(title, SENIOR_WORDS) and not has_lower:
@@ -362,17 +364,21 @@ def evaluate(job: Job) -> Verdict:
     text = f"{title}\n{description}"
     stack = _found(text, CORE_STACK)
     bonus = _found(text, BONUS_STACK)
-    backend = any(name in stack for name in BACKEND_CORE)
-    frontend = any(name in stack for name in FRONTEND_CORE)
     title_python = _contains_any(title, PYTHON_WORDS)
-    # Backend first: inside a tier the Python side and the title's stack decide the order.
-    score = 10 * len(stack) + 5 * len(_found(title, CORE_STACK)) + 2 * len(bonus) + (5 if backend else 0)
+    track = cv.route(job.title, job.description)
+    fit = cv.fit(track, job.title, job.description)
+    named = cv.title_names(track, job.title)
+    # Inside a tier: the CV's skills the vacancy names, its role in the title, minus what the CV lacks.
+    score = 3 * len(fit.match) + (10 if named else 0) + 5 * len(_found(title, CORE_STACK)) - 4 * len(fit.gaps)
     warnings = _warnings(job, description, english)
 
     def verdict(moderation: str) -> Verdict:
         if moderation in (TOP, SENT) and WARN_EARLY_STARTUP in warnings:
             moderation = REVIEW
-        return Verdict(moderation, score, stack, bonus, years=years, english=english, warnings=warnings)
+        return Verdict(
+            moderation, score, stack, bonus, years=years, english=english, warnings=warnings,
+            cv_track=track, cv_fit=fit,
+        )  # fmt: skip
 
     if len(description) < MIN_DESCRIPTION and title:
         # The page did not load (a bot check, a timeout): years, level and office went unchecked,
@@ -387,22 +393,18 @@ def evaluate(job: Job) -> Verdict:
         if _contains_any(title, AI_TITLE_WORDS):
             warnings.append(WARN_NO_PYTHON)
             return verdict(REVIEW)
-        return Verdict(REJECTED, score, stack, bonus, reason="no python", years=years, english=english)
+        return Verdict(REJECTED, 0, stack, bonus, reason="no python", years=years, english=english)
 
     if not title_python and extract.only_as_plus(job.description, PYTHON_WORDS):
         # "Node.js developer, Python is a plus": Python is there, but it is not the job.
         warnings.append(WARN_PYTHON_PLUS)
         return verdict(REVIEW)
 
+    if not cv.core_fits(track, job.title, job.description, fit.match):
+        return verdict(REVIEW)
     blocking = [warning for warning in warnings if warning != WARN_ABROAD]
-    if backend and frontend:
-        on_target = not blocking and _level_fits(job, years) and bool(_found(title, CORE_STACK) or "full" in title)
-        return verdict(TOP if on_target else SENT)
-    # A Python position by its title: the owner applied to half of these — more than to the
-    # full-stack "your stack" tier — so it no longer waits among the partial matches.
-    if backend and title_python:
-        return verdict(TOP if not blocking and _level_fits(job, years) else SENT)
-    return verdict(REVIEW)
+    on_target = not blocking and _level_fits(job, years) and named and len(fit.gaps) <= MAX_GAPS
+    return verdict(TOP if on_target else SENT)
 
 
 class JobFilter:
@@ -453,3 +455,6 @@ def apply_verdict(job: Job, verdict: Verdict) -> None:
     job.english = verdict.english or job.english
     job.warnings = verdict.warnings
     job.filter_reason = verdict.reason
+    fit = verdict.cv_fit or cv.Fit()
+    job.cv_track = verdict.cv_track
+    job.cv_match, job.cv_gaps, job.cv_gaps_plus = fit.match, fit.gaps, fit.gaps_plus

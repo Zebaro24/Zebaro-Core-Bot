@@ -53,7 +53,8 @@ src/
 ├── services/
 │   ├── docker/               # DockerManager, DockerProject, DockerContainer
 │   ├── github/               # GithubManager (instance-level dicts!), service, webhook, event_handler
-│   ├── job_searcher/         # container, extract, filter (tiers), dedup, stats, digest, parser, urls, listeners/,
+│   ├── job_searcher/         # container, extract, filter (tiers), cv (3 CVs: routing, fit), letters, keywords,
+│   │                         # dedup, stats, digest, parser, urls, listeners/,
 │   │                         # home (PC proxy + noon alert), search_window (LinkedIn), repair (one-off at enable);
 │   │                         # Jobs API: jobs_api, status (writes), reasons, events (by=event), journal (SQL), silence (S3), backfill
 │   ├── site_contact.py       # zebaro.dev contact form: model + rate limit
@@ -82,6 +83,7 @@ _ideas/  _temp/               # вне git: находки и черновики
 - **GithubManager**: instance-level dicts (`github_repo_webhooks`, `github_repo_events`) — NOT class-level.
 - **app.state**: `bot`/`dp` set via `webhooks/setup.py`; `github_manager` set by `GithubService.on_enable()`.
 - **Vacancy status**: every write (API, buttons, the bot) goes through `services/job_searcher/status.py:write_status` — one CAS update + `history` event; Telegram follows via `tg_sync` (`tg/notification/job_status.py`), never inside the write.
+- **CVs**: `services/job_searcher/cv.py` (skills, titles, salaries) and `letters.py` mirror the owner's CVs in `D:\Work\Career\CV\Upload` and the letters in `Job-Search/cover-letters.md` — a CV or letter edit there is an edit here.
 - **Telegram webhook answers at once**, the update is handled in a background task. Telegram does not send the next update until this one is answered — a long handler froze the whole bot.
 - **ServiceManager**: singleton with cascade logic — disabling infra disables dependent services; disabling all consumers disables the infra. State in `services.json` (path from `SERVICES_STATE_FILE`; in Docker `state/services.json`, because a bind-mounted missing file turns into a directory).
 - **Discord toggle** requires bot restart (`needs_restart = True`).

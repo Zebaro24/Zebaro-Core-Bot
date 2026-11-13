@@ -7,7 +7,9 @@ Two parts, two messages (06.10.2026):
   for, what they pay, how many apply, what keeps him out — and how that moved since last week;
 * me — his decisions this period (counted by the moment he pressed the button, not when the
   vacancy was found, or late answers fall out of every week): the funnel from found to
-  applied, the answers and their trend, conversion per site, tier and search, what he lacks.
+  applied, the answers and their trend, conversion per site, tier and search, what he lacks;
+  and per CV (13.11.2026) — how many of each the market brought, how often he applies with it,
+  and what came of the applications it went with, against the single CV of before.
 
 Both end in insights: the few conclusions worth acting on, picked by rules over the numbers
 (`market_insights`, `my_insights`). They are data — a kind and its figures; the formatter
@@ -24,6 +26,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from src.db.client import jobs_collection
+from src.services.job_searcher import cv
 from src.services.job_searcher.extract import english_rank
 
 logger = logging.getLogger("job_searcher.digest")
@@ -32,7 +35,7 @@ SURFACED = ("top", "sent", "review")
 # Not his field: these say nothing about what *his* market wants.
 _OUTSIDE_FIELD = (
     "other stack", "not a developer role", "military", "company", "location", "frontend", "no python",
-    "no stack match", "muted company",
+    "no stack match", "muted company", "off track",
 )  # fmt: skip
 DECISIONS = ("applied", "mismatch", "not_interested", "blocked")
 # Why a vacancy of his field is out of reach — his limits, as the filter names them.
@@ -53,6 +56,11 @@ PENDING_OLD_DAYS = 3
 TREND_POINTS = 0.08
 # Insights shown at most: the point is the few that matter.
 MAX_INSIGHTS = 5
+# Applications per CV before their answers are compared (the owner's CV plan: ~20 each, then
+# the worst CV is reworked first — headline, summary, the first two points).
+CV_COMPARE_MIN = 20
+# A gap in reply rates smaller than this between CVs is noise at these numbers.
+CV_REPLY_GAP = 0.1
 
 
 async def _find(query: dict[str, Any], strict: bool = False) -> list[dict[str, Any]]:
@@ -84,10 +92,13 @@ async def get_digest(days: int = 7, *, strict: bool = False) -> dict[str, Any]:
     pending = await _find(
         {"moderation": {"$in": list(SURFACED)}, "user_status": "pending", "found_at": {"$gte": since}}, strict
     )
+    # Every application ever: what each CV brought, the single one of before included.
+    applied_all = await _find({"user_status": "applied"}, strict)
     this_week = [doc for doc in decided if doc["status_updated_at"] >= since]
     last_week = [doc for doc in decided if doc["status_updated_at"] < since]
     market = market_stats(found, found_prev)
     me = my_stats(this_week, last_week, window, pending, now, found)
+    me["by_cv"] = cv_stats(applied_all, window, found)
     return {
         "period_days": days,
         "since": since,
@@ -421,9 +432,76 @@ def _best_and_worst(searches: list[dict[str, Any]]) -> dict[str, list[dict[str, 
     return {"best": best, "worst": worst}
 
 
+def cv_used(doc: dict[str, Any]) -> str:
+    """The CV an application went with: the one stored, or the one it would have gone with."""
+    stored = doc.get("cv_sent")
+    return stored if stored in cv.CV_KEYS else cv.sent_with(doc.get("cv_track"), doc.get("status_updated_at"))
+
+
+def cv_stats(
+    applied_all: list[dict[str, Any]], window: list[dict[str, Any]], found: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Per CV: the applications it went with and what came of them (all time), how often a
+    vacancy routed to it got an application (four weeks), and how many it got this week."""
+    by_cv: dict[str, list[dict[str, Any]]] = {}
+    for doc in applied_all:
+        by_cv.setdefault(cv_used(doc), []).append(doc)
+    sent = []
+    for key in cv.CV_KEYS:
+        docs = by_cv.get(key, [])
+        if not docs:
+            continue
+        outcomes = [doc.get("outcome") for doc in docs]
+        replied = sum(outcome in _REPLIED for outcome in outcomes)
+        sent.append(
+            {
+                "cv": key,
+                "applied": len(docs),
+                "replied": replied,
+                "interview": sum(outcome in _INTERVIEWED for outcome in outcomes),
+                "offer": outcomes.count("offer"),
+                "rejected": outcomes.count("rejected"),
+                "reply_rate": replied / len(docs) if len(docs) >= MIN_FOR_SHARE else None,
+            }
+        )
+    apply_rate = []
+    for key in cv.TRACKS:
+        docs = [doc for doc in window if doc.get("cv_track") == key]
+        if docs:
+            applied = sum(doc.get("user_status") == "applied" for doc in docs)
+            rate = applied / len(docs) if len(docs) >= MIN_FOR_SHARE else None
+            apply_rate.append({"cv": key, "decided": len(docs), "applied": applied, "rate": rate})
+    surfaced = Counter(doc.get("cv_track") for doc in found if doc.get("moderation") in SURFACED)
+    return {
+        "sent": sent,
+        "apply_rate": apply_rate,
+        "market": {key: surfaced.get(key, 0) for key in cv.TRACKS},
+    }
+
+
+def _cv_insight(by_cv: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The CV to rework first: its replies lag the others' once each has enough applications."""
+    rows = [row for row in (by_cv or {}).get("sent", []) if row["cv"] in cv.TRACKS]
+    ready = [row for row in rows if row["applied"] >= CV_COMPARE_MIN]
+    if len(ready) < 2:
+        return None
+    best = max(ready, key=lambda row: row["replied"] / row["applied"])
+    worst = min(ready, key=lambda row: row["replied"] / row["applied"])
+    gap = best["replied"] / best["applied"] - worst["replied"] / worst["applied"]
+    if gap < CV_REPLY_GAP:
+        return None
+    return {
+        "kind": "cv_gap",
+        "worst": worst["cv"], "worst_rate": worst["replied"] / worst["applied"], "worst_n": worst["applied"],
+        "best": best["cv"], "best_rate": best["replied"] / best["applied"],
+    }  # fmt: skip
+
+
 def my_insights(me: dict[str, Any], market: dict[str, Any]) -> list[dict[str, Any]]:
     """What his own numbers say, most useful first."""
     insights: list[dict[str, Any]] = []
+    if cv_gap := _cv_insight(me.get("by_cv")):
+        insights.append(cv_gap)
     platforms = [p for p in me["by_platform"] if p["decided"] >= MIN_FOR_SHARE and p["rate"] is not None]
     if len(platforms) >= 2:
         best = max(platforms, key=lambda p: p["rate"])

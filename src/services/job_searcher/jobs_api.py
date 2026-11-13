@@ -37,7 +37,7 @@ STATUSES = (
 )  # fmt: skip
 TIERS = ("top", "sent", "review", "filtered_out")
 SURFACED_TIERS = ("top", "sent", "review")
-GROUP_BY = ("none", "source", "stack", "week", "tier", "search")
+GROUP_BY = ("none", "source", "stack", "week", "tier", "search", "cv")
 # How far an application got, in order; a refusal is an answer, so it reached "replied".
 _STAGE_RANK = {"applied": 1, "replied": 2, "interview": 3, "offer": 4, "rejected_by_employer": 2}
 NO_RESPONSE = "no_response"
@@ -140,6 +140,8 @@ def job_summary(doc: dict[str, Any], duplicate_of: str | None = None) -> dict[st
         "salary": doc.get("salary"),
         "search": doc.get("search_url"),
         "duplicate_of": duplicate_of if status == "duplicate" else None,
+        "cv": doc.get("cv_track"),
+        "cv_sent": doc.get("cv_sent"),
     }
 
 
@@ -151,6 +153,9 @@ def job_full(doc: dict[str, Any], duplicate_of: str | None = None) -> dict[str, 
         "countries": doc.get("countries"),
         "applicants": doc.get("applicants"),
         "warnings": list(doc.get("warnings") or []),
+        "cv_match": list(doc.get("cv_match") or []),
+        "cv_gaps": list(doc.get("cv_gaps") or []),
+        "cv_gaps_plus": list(doc.get("cv_gaps_plus") or []),
         "copies": [
             {"id": copy["id"], "source": copy.get("platform") or "Unknown"}
             for copy in doc.get("copies") or []
@@ -446,6 +451,10 @@ def group_keys(doc: dict[str, Any], group_by: str) -> list[str]:
         return stack(doc) or ["(none)"]
     if group_by == "search":
         return [doc.get("search_url") or UNKNOWN_SEARCH]
+    if group_by == "cv":
+        # An application by the CV it went with, the rest by the one it would get.
+        sent = doc.get("cv_sent") if doc.get("user_status") == "applied" else None
+        return [sent or doc.get("cv_track") or "(none)"]
     if group_by == "week":
         found_at = doc["found_at"].replace(tzinfo=UTC).astimezone(ZoneInfo(settings.tz))
         year, week, _ = found_at.isocalendar()

@@ -23,6 +23,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
 
 from src.db.client import jobs_collection
+from src.services.job_searcher import cv
 from src.services.job_searcher.dedup import BLOCKED, DECIDED, DUPLICATE, PENDING, group_root
 from src.services.job_searcher.jobs_api import (
     STATUSES,
@@ -141,6 +142,18 @@ def _system_event(doc: dict[str, Any], to: str, now: datetime, **extra: Any) -> 
     return new_event(doc, to, actor="system", occurred_at=now, now=now, approximate=False, **extra)
 
 
+async def set_cv_sent(job_id: str, key: str) -> dict[str, Any] | None:
+    """Change the CV an application went with (the buttons under it). Only on an application:
+    None when the vacancy is gone or is not one."""
+    if key not in cv.TRACKS:
+        raise ValueError(key)
+    return await jobs_collection.find_one_and_update(
+        {"_id": ObjectId(job_id), "user_status": "applied"},
+        {"$set": {"cv_sent": key}},
+        return_document=ReturnDocument.AFTER,
+    )
+
+
 async def write_status(
     doc: dict[str, Any],
     to: str,
@@ -177,6 +190,13 @@ async def write_status(
         change["status_updated_at"] = when
     if change["outcome"] and change["outcome"] != doc.get("outcome"):
         change["outcome_at"] = when
+    if change["user_status"] == "applied" and not doc.get("cv_sent"):
+        # The CV it went with — the routed one; the buttons under the application change it. An
+        # outcome on an older application: the CV of the day it was sent, not of the reply's.
+        applied_at = doc.get("status_updated_at") if doc.get("user_status") == "applied" else when
+        change["cv_sent"] = cv.sent_with(doc.get("cv_track"), applied_at)
+    elif change["user_status"] != "applied" and doc.get("cv_sent"):
+        change["cv_sent"] = None  # an application undone or turned into a "no" went with no CV
     queued = sync and (notify or bool(doc.get("tg_message_id")))
     if queued:
         change["tg_sync"] = {

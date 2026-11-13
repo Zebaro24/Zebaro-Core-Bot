@@ -195,6 +195,9 @@ async def test_an_application_keeps_the_outcome_buttons(collection):
         "🗓 Интервью",
         "🎉 Оффер",
         "❌ Отказ",
+        "📎 Backend",
+        "• 📎 Fullstack",  # no CV routed: the default one, marked
+        "📎 AI",
     ]
 
 

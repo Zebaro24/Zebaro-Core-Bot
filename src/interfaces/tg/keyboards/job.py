@@ -2,13 +2,16 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from src.config import settings
+from src.services.job_searcher import cv
 
 
 class JobActionCallback(CallbackData, prefix="job"):
     # "apply" | "mismatch" / "reject" (with a reason: the answer; without: open the reasons) |
     # "back" (the reasons → the main buttons) | "block" (old messages: "the site will not let me") |
     # "outcome" (after applying: what came of it, the reason field) | "open" (a vacancy of the 👀
-    # summary as its own message) | "undo" (take a change back; the reason field is the event id)
+    # summary as its own message) | "undo" (take a change back; the reason field is the event id) |
+    # "letter" (the cover letter of the vacancy's CV, as a message of its own) | "cv" (after
+    # applying: the CV it went with, the reason field) | "hide" (delete the letter's message)
     action: str
     job_id: str
     reason: str = ""
@@ -89,7 +92,7 @@ def _button(text: str, action: str, job_id: str, reason: str = "", style: str | 
 def get_job_action_kb(job_id: str, copies: list[dict] | None = None) -> InlineKeyboardMarkup:
     """The vacancy link, the same vacancy on other sites, and the owner's answer."""
     rows = _link_rows(job_id, copies)
-    rows.append([_button("✅ Откликнулся", "apply", job_id, style="success")])
+    rows.append([_button("✅ Откликнулся", "apply", job_id, style="success"), _button("✉️ Письмо", "letter", job_id)])
     rows.append(
         [
             _button("🚫 Не прохожу", "mismatch", job_id, style="danger"),
@@ -108,15 +111,31 @@ def get_job_reason_kb(job_id: str, action: str, copies: list[dict] | None = None
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _cv_row(job_id: str, cv_sent: str | None) -> list[InlineKeyboardButton]:
+    """The CV the application went with, marked; another one pressed when it was not the routed one.
+    The single CV of the old applications is not offered: it is out of use."""
+    return [
+        _button(f"• 📎 {cv.CVS[key].short}" if key == cv_sent else f"📎 {cv.CVS[key].short}", "cv", job_id, key)
+        for key in cv.TRACKS
+    ]
+
+
 def get_job_outcome_kb(
-    job_id: str, copies: list[dict] | None = None, current: str | None = None
+    job_id: str, copies: list[dict] | None = None, current: str | None = None, cv_sent: str | None = None
 ) -> InlineKeyboardMarkup:
-    """After "applied": the link stays, and what came of it — pressed again as it moves on."""
+    """After "applied": the link stays, what came of it — pressed again as it moves on — and the CV
+    it went with."""
     buttons = [
         _button(f"• {text}" if outcome == current else text, "outcome", job_id, outcome) for outcome, text in OUTCOMES
     ]
     rows = _link_rows(job_id, copies) + [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
+    if cv_sent != cv.UNIVERSAL:
+        rows.append(_cv_row(job_id, cv_sent))
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def get_letter_kb(job_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[_button("🗑 Убрать", "hide", job_id)]])
 
 
 # A public status after "applied" → the outcome button marked on it.
@@ -125,12 +144,14 @@ _APPLIED_FAMILY: dict[str, str | None] = {
 }  # fmt: skip
 
 
-def get_job_status_kb(job_id: str, status: str, copies: list[dict] | None = None) -> InlineKeyboardMarkup | None:
+def get_job_status_kb(
+    job_id: str, status: str, copies: list[dict] | None = None, cv_sent: str | None = None
+) -> InlineKeyboardMarkup | None:
     """The buttons a vacancy's message has at a public status — as if it had been pressed there."""
     if status == "new":
         return get_job_action_kb(job_id, copies)
     if status in _APPLIED_FAMILY:
-        return get_job_outcome_kb(job_id, copies, current=_APPLIED_FAMILY[status])
+        return get_job_outcome_kb(job_id, copies, current=_APPLIED_FAMILY[status], cv_sent=cv_sent)
     return None
 
 
