@@ -10,7 +10,7 @@ package-mode = false
 # Runtime dependencies
 # ---------------------------------------------------------------------------
 [tool.poetry.dependencies]
-python = ">=3.11,<3.15"
+python = ">=3.11.5,<3.15"
 
 # --- Telegram ---
 aiogram = "^3.27"
