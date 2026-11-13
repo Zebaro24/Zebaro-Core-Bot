@@ -303,6 +303,19 @@ def test_one_vacancy_comes_with_its_text_and_copies(client, jobs):
     assert (body["applicants"], body["warnings"]) == (37, ["english"])
 
 
+def test_one_vacancy_names_its_cv_and_what_it_lacks(client, jobs):
+    # The response models list their fields: a field the storage has but they lack never goes out.
+    doc = _doc(cv_track="backend", cv_sent="ai", user_status="applied", cv_match=["Python"], cv_gaps=["AWS"])
+    jobs.docs.append(doc)
+
+    body = client.get(f"/jobs/{doc['_id']}", headers=AUTH).json()
+
+    assert (body["cv"], body["cv_sent"]) == ("backend", "ai")
+    assert (body["cv_match"], body["cv_gaps"], body["cv_gaps_plus"]) == (["Python"], ["AWS"], [])
+    listed = client.get("/jobs", params={"status": "applied"}, headers=AUTH).json()["items"][0]
+    assert listed["cv"] == "backend" and "cv_match" not in listed
+
+
 @pytest.mark.parametrize("job_id", [str(ObjectId()), "not-an-id"])
 def test_an_unknown_vacancy_is_a_404(client, job_id):
     response = client.get(f"/jobs/{job_id}", headers=AUTH)
@@ -418,6 +431,7 @@ def test_the_list_example_in_the_contract_is_a_real_answer(client, jobs):
             "required_years": 2,
             "salary": example["salary"],
             "search_url": example["search"],
+            "cv_track": example["cv"],
         }
     )
 

@@ -94,6 +94,10 @@ class JobSummary(BaseModel):
     salary: str | None
     search: str | None
     duplicate_of: str | None
+    cv: str | None = Field(default=None, description="The CV it fits: backend | fullstack | ai")
+    cv_sent: str | None = Field(
+        default=None, description="The CV the application went with: backend | fullstack | ai | universal"
+    )
 
 
 class JobListItem(JobSummary):
@@ -127,6 +131,9 @@ class JobFull(JobSummary):
     countries: str | None
     applicants: int | None
     warnings: list[str]
+    cv_match: list[str] = Field(default_factory=list, description="The CV's skills the vacancy names")
+    cv_gaps: list[str] = Field(default_factory=list, description="Required, and not in the CV")
+    cv_gaps_plus: list[str] = Field(default_factory=list, description="Not in the CV, only nice to have")
     copies: list[JobCopy]
     history: list[HistoryEvent] = Field(default_factory=list, description="Status events, oldest first")
 

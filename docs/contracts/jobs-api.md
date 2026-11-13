@@ -213,7 +213,8 @@ tolerant reader: неизвестные поля пропускает, неиз�
      "status": "new", "status_reason_code": null, "status_reason": null, "status_changed_at": null,
      "tier": "top", "filter_reason": null, "stack": ["Python", "FastAPI", "LLM"],
      "work_format": "remote", "english": "B1", "required_years": 2, "salary": "$2500–3500",
-     "search": "https://djinni.co/jobs/?primary_keyword=Python", "duplicate_of": null}
+     "search": "https://djinni.co/jobs/?primary_keyword=Python", "duplicate_of": null,
+     "cv": "ai", "cv_sent": null}
   ],
   "next_cursor": "eyJmIjoiMjAyNi0xMC0yOFQwOToxMjo0NFoiLCJpIjoiNjcyMGYxYzIifQ"
 }
