@@ -134,7 +134,7 @@ _DEVELOPER_WORK = re.compile(
 OTHER_STACK_WORDS = (
     "java", "kotlin", "c#", ".net", "php", "laravel", "angular", "vue", "vue.js",
     "react native", "flutter", "android", "ios", "mobile developer", "ruby", "rails", "golang",
-    "wordpress", "webflow", "shopify",
+    "wordpress", "webflow", "shopify", "c++", "c/c++",
 )  # fmt: skip
 # Roles none of the three CVs is for (the owner's routing table, 13.11.2026): data and ML,
 # research, infrastructure. An AI / LLM word in the title keeps one — "AI/ML Engineer",
@@ -143,9 +143,34 @@ OFF_TRACK_WORDS = (
     "data engineer", "data engineering", "big data", "etl", "ml engineer", "ml engineers", "mlops",
     "machine learning engineer", "data scientist", "data science", "computer vision", "research",
     "researcher", "devops", "sre", "site reliability", "infrastructure engineer",
-    "cloud engineer",
+    "cloud engineer", "scientist", "scientists",
 )  # fmt: skip
 _OFF_TRACK_RESCUE = ("ai", "llm", "llms", "genai", "gen ai", "agentic")
+# Engineering that is not software — what the AI turned down as "not a developer role" in the
+# week of 09–16.11.2026, mostly from LinkedIn (Hardware / Embedded / Transport Engineer, UAV
+# Systems). Python in the title keeps one: the owner applied to "Python / Embedded Engineer".
+HARDWARE_WORDS = (
+    "hardware", "embedded", "firmware", "fpga", "mechanical", "electrical", "electronics", "robotics",
+    "network engineer", "transport engineer", "telecom", "silicon", "validation engineer",
+    "verification engineer", "uav", "energy system", "power system", "modeller", "modeler", "modelling",
+)  # fmt: skip
+# Work around software that is not writing it: Product Analyst, Адміністратор IdM, AI Solutions
+# Coordinator. The owner's work is Python code — scraping, bots, sites, apps, automation (16.11.2026).
+NOT_CODING_WORDS = (
+    "analyst", "analysts", "аналітики", "аналітика", "аналитик", "аналитики", "bi", "power bi",
+    "mathematician", "administrator", "адміністратор", "администратор", "sysadmin", "coordinator",
+    "координатор", "marketing automation",
+)  # fmt: skip
+# A title has to name the work: one of these, or an AI word. "Product Marketing Specialist",
+# "Talent Scientist", "Адміністратор IdM" name none.
+DEV_TITLE_WORDS = (
+    "developer", "developers", "development", "dev", "engineer", "engineers", "engineering",
+    "programmer", "coder", "software", "automation", "scraping", "scraper", "parser", "bot", "bots",
+    "backend", "back-end", "fullstack", "full-stack", "full stack", "python", "django", "fastapi",
+    "розробник", "розробниця", "розробника", "розробка", "розробки", "програміст", "програмістка",
+    "інженер", "інженера", "разработчик", "программист", "инженер", "автоматизація", "автоматизації",
+    "автоматизация", "парсинг", "бот", "боти", "ботів",
+)  # fmt: skip
 WRONG_COMPANY_WORDS = ("фоп", "school")
 # Military units hire through the same boards: "Fullstack Developer до 1 окремий медичний
 # батальйон", "Інженер БпЛА — 116 ОМБр". Never for the owner.
@@ -267,6 +292,10 @@ def title_reject_reason(title: str | None, company: str | None) -> str | None:
         return "other stack"
     if _contains_any(title, OFF_TRACK_WORDS) and not _contains_any(title, _OFF_TRACK_RESCUE):
         return "off track"
+    if _contains_any(title, NOT_CODING_WORDS):
+        return "not a developer role"
+    if _contains_any(title, HARDWARE_WORDS) and not _contains_any(title, PYTHON_WORDS):
+        return "not a developer role"
     if _contains_any(_REPORTS_TO.sub("", title), LEAD_WORDS):
         return "lead"
     if _contains_any(title, SENIOR_WORDS) and not has_lower:
@@ -275,6 +304,8 @@ def title_reject_reason(title: str | None, company: str | None) -> str | None:
         return "intern"
     if frontend_title(title):
         return "frontend"
+    if title and not _contains_any(title, DEV_TITLE_WORDS) and not _contains_any(title, AI_TITLE_WORDS):
+        return "not a developer role"
     return None
 
 
