@@ -204,3 +204,14 @@ def test_no_outcome_yet_shows_no_section():
 
     assert my_stats(applied, [], applied, [], NOW, [])["outcomes"] is None
     assert "После отклика" not in format_me_rich(_digest())
+
+
+@pytest.mark.asyncio
+async def test_partial_matches_do_not_wait_for_an_answer(mocker):
+    """👀 are a side list: left alone, they are not counted as waiting (16.11.2026)."""
+    from src.services.job_searcher import digest
+
+    find = mocker.patch.object(digest, "_find", AsyncMock(return_value=[]))
+    await digest.get_digest(7)
+    pending = [call.args[0] for call in find.await_args_list if call.args[0].get("user_status") == "pending"]
+    assert pending == [{**pending[0], "moderation": {"$in": ["top", "sent"]}}]

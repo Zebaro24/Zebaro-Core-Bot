@@ -32,6 +32,7 @@ from src.services.job_searcher.extract import english_rank
 logger = logging.getLogger("job_searcher.digest")
 
 SURFACED = ("top", "sent", "review")
+AWAITING = ("top", "sent")  # the tiers whose vacancies wait for an answer
 # Not his field: these say nothing about what *his* market wants.
 _OUTSIDE_FIELD = (
     "other stack", "not a developer role", "military", "company", "location", "frontend", "no python",
@@ -89,8 +90,10 @@ async def get_digest(days: int = 7, *, strict: bool = False) -> dict[str, Any]:
         },
         strict,
     )
+    # 👀 are a side list, looked through and answered only when one catches the eye (16.11.2026):
+    # one left alone is not a vacancy waiting for an answer.
     pending = await _find(
-        {"moderation": {"$in": list(SURFACED)}, "user_status": "pending", "found_at": {"$gte": since}}, strict
+        {"moderation": {"$in": list(AWAITING)}, "user_status": "pending", "found_at": {"$gte": since}}, strict
     )
     # Every application ever: what each CV brought, the single one of before included.
     applied_all = await _find({"user_status": "applied"}, strict)
