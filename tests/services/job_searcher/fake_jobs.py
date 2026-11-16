@@ -89,14 +89,16 @@ def _project(doc: dict[str, Any], projection: dict[str, int] | None) -> dict[str
 
 def _apply(doc: dict[str, Any], update: dict[str, Any]) -> None:
     for op, fields in update.items():
-        if op not in ("$set", "$push"):
+        if op not in ("$set", "$push", "$unset"):
             raise NotImplementedError(op)
         for key, value in fields.items():
             *path, last = key.split(".")
             target = doc
             for part in path:
                 target = target.setdefault(part, {})
-            if op == "$set":
+            if op == "$unset":
+                target.pop(last, None)
+            elif op == "$set":
                 target[last] = copy.deepcopy(value)
             else:
                 target.setdefault(last, []).append(copy.deepcopy(value))

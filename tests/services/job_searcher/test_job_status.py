@@ -30,6 +30,7 @@ if "src.db.client" not in sys.modules:
 
 from fake_jobs import FakeJobs  # noqa: E402  (pytest puts this directory on sys.path)
 
+from src.interfaces.tg.notification import ai_notes, review_summary  # noqa: E402
 from src.interfaces.tg.notification import job_status as sync  # noqa: E402
 from src.interfaces.webhooks.main import app  # noqa: E402
 from src.services.job_searcher import jobs_api, status  # noqa: E402
@@ -40,9 +41,12 @@ EVIDENCE = "gmail:18c2f0a1b2"
 
 @pytest.fixture
 def jobs(mocker):
-    fake = FakeJobs()
-    for module in (jobs_api, status, sync):
+    fake, meta = FakeJobs(), FakeJobs()
+    for module in (jobs_api, status, sync, ai_notes, review_summary):
         mocker.patch.object(module, "jobs_collection", fake)
+    for module in (ai_notes, review_summary):
+        mocker.patch.object(module, "meta_collection", meta)
+    mocker.patch.object(ai_notes, "settings", mock_settings)
     mocker.patch.object(jobs_api, "settings", mock_settings)
     mocker.patch("src.interfaces.webhooks.routes.jobs.settings", mock_settings)
     mocker.patch("src.interfaces.tg.formatters.job_status.settings", mock_settings)
@@ -340,7 +344,7 @@ async def test_undo_after_a_later_change_changes_nothing(jobs):
 def _bot() -> MagicMock:
     bot = MagicMock()
     bot.edit_message_text = AsyncMock()
-    bot.send_message = AsyncMock()
+    bot.send_message = AsyncMock(return_value=MagicMock(chat=MagicMock(id=777), message_id=900))
     return bot
 
 
@@ -356,7 +360,7 @@ def _error(kind: type[TelegramAPIError], message: str, **extra: Any) -> Exceptio
 
 
 @pytest.mark.asyncio
-async def test_the_message_is_edited_and_a_quiet_note_answers_it(jobs):
+async def test_the_message_is_edited_and_a_quiet_change_joins_the_ai_session_message(jobs):
     doc = await _ai_change(jobs, tg_chat_id=1, tg_message_id=10, tg_message_kind="rich")
     bot = _bot()
 
@@ -366,9 +370,22 @@ async def test_the_message_is_edited_and_a_quiet_note_answers_it(jobs):
     assert (edit["chat_id"], edit["message_id"]) == (1, 10)
     assert "🤖" in edit["rich_message"].html and "Отказ" in edit["rich_message"].html
     note = bot.send_message.await_args.kwargs
-    assert note["reply_parameters"].message_id == 10 and note["disable_notification"] is True
-    assert "↩️ Отменить" in [b.text for row in note["reply_markup"].inline_keyboard for b in row]
+    assert "AI: 1 изменение" in note["text"] and note["disable_notification"] is True
+    assert "reply_parameters" not in note
+    assert [b.text for row in note["reply_markup"].inline_keyboard for b in row] == ["↩️ Отменить…"]
     assert jobs.by_id(doc["_id"])["tg_sync"]["state"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_an_interview_gets_a_note_of_its_own_under_the_vacancy(jobs):
+    await _ai_change(jobs, "interview", tg_chat_id=1, tg_message_id=10)
+    bot = _bot()
+
+    await sync.sync_job_messages(bot)
+
+    note = bot.send_message.await_args.kwargs
+    assert note["reply_parameters"].message_id == 10
+    assert "↩️ Отменить" in [b.text for row in note["reply_markup"].inline_keyboard for b in row]
 
 
 @pytest.mark.asyncio
@@ -424,7 +441,7 @@ async def test_not_modified_is_success(jobs):
 
 @pytest.mark.asyncio
 async def test_a_deleted_message_is_gone_and_the_note_comes_on_its_own(jobs):
-    doc = await _ai_change(jobs, tg_chat_id=1, tg_message_id=10)
+    doc = await _ai_change(jobs, "interview", tg_chat_id=1, tg_message_id=10)
     bot = _bot()
     bot.edit_message_text.side_effect = _error(TelegramBadRequest, "Bad Request: message to edit not found")
 
@@ -496,3 +513,54 @@ async def test_no_note_about_a_change_already_overtaken(jobs):
 
     bot.edit_message_text.assert_awaited_once()  # the message shows the latest status
     bot.send_message.assert_not_awaited()
+
+
+# --- POST /jobs/status/batch ------------------------------------------------------------------------
+
+
+def test_a_batch_writes_each_change_and_reports_each_one(jobs, kick):
+    first, second = _applied(jobs), _applied(jobs)
+    taken = _doc(jobs, user_status="not_interested")
+    change = {"status": "rejected_by_employer", "expected_status": "applied", "actor": "ai", "evidence": EVIDENCE}
+
+    response = _call(
+        "POST",
+        "/jobs/status/batch",
+        {
+            "changes": [
+                {"job_id": str(first["_id"]), **change, "reason_code": "no_reason"},
+                {"job_id": str(taken["_id"]), **change},  # its status is another one now
+                {"job_id": str(second["_id"]), **change},
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["written"], body["failed"]) == (2, 1)
+    assert [r["ok"] for r in body["results"]] == [True, False, True]
+    assert body["results"][1]["error"]["code"] == "status_conflict"
+    assert jobs.by_id(first["_id"])["status_reason"] == "no_reason"
+    assert jobs.by_id(second["_id"])["outcome"] == "rejected"
+    kick.assert_called_once()
+
+
+def test_a_batch_names_a_bad_change_and_keeps_the_rest(jobs, kick):
+    doc = _applied(jobs)
+    good = {"status": "rejected_by_employer", "expected_status": "applied", "actor": "ai", "evidence": EVIDENCE}
+
+    body = _call(
+        "POST",
+        "/jobs/status/batch",
+        {"changes": [{"job_id": "nope", **good}, {"job_id": str(doc["_id"]), **{**good, "evidence": None}}]},
+    ).json()
+
+    assert [r["error"]["code"] for r in body["results"]] == ["not_found", "invalid_parameter"]
+    kick.assert_not_called()
+
+
+def test_a_batch_is_at_most_25_changes(jobs):
+    change = {"job_id": "x", "status": "applied", "expected_status": "new", "actor": "user"}
+
+    assert _call("POST", "/jobs/status/batch", {"changes": [change] * 26}).status_code == 400
+    assert _call("POST", "/jobs/status/batch", {"changes": []}).status_code == 400

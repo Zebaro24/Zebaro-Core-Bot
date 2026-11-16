@@ -11,7 +11,9 @@ class JobActionCallback(CallbackData, prefix="job"):
     # "outcome" (after applying: what came of it, the reason field) | "open" (a vacancy of the 👀
     # summary as its own message) | "undo" (take a change back; the reason field is the event id) |
     # "letter" (the cover letter of the vacancy's CV, as a message of its own) | "cv" (after
-    # applying: the CV it went with, the reason field) | "hide" (delete the letter's message)
+    # applying: the CV it went with, the reason field) | "hide" (delete the letter's message) |
+    # "notes" / "notes_back" (the AI's changes: show / hide the undo choice) | "undo_note" (take
+    # one of them back; the reason field is the event id)
     action: str
     job_id: str
     reason: str = ""
@@ -160,6 +162,29 @@ def get_job_undo_kb(job_id: str, event_id: str, with_link: bool = False) -> Inli
     rows = [[_button("↩️ Отменить", "undo", job_id, event_id)]]
     if with_link:
         rows.append([InlineKeyboardButton(text="🔗 Вакансия", url=_link(job_id), style="primary")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+NOTES_BUTTON_TITLE = 22
+# The AI notes' buttons have no vacancy of their own: the message's state is found by its id.
+NOTES_JOB = "-"
+
+
+def get_notes_kb(open_entries: int) -> InlineKeyboardMarkup | None:
+    """Under the AI's changes: one button that asks which one to take back."""
+    if not open_entries:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[_button("↩️ Отменить…", "notes", NOTES_JOB)]])
+
+
+def get_notes_pick_kb(entries: list[tuple[int, str, str, str]]) -> InlineKeyboardMarkup:
+    """Which change to undo: (number, company or title, vacancy id, event id), then "back"."""
+    buttons = []
+    for number, name, job_id, event_id in entries:
+        short = name if len(name) <= NOTES_BUTTON_TITLE else name[: NOTES_BUTTON_TITLE - 1] + "…"
+        buttons.append(_button(f"↩️ {number}. {short}", "undo_note", job_id, event_id))
+    rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
+    rows.append([_button("✖️ Назад", "notes_back", NOTES_JOB)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

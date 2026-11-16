@@ -26,6 +26,7 @@ from src.interfaces.tg.keyboards.job import (
     get_letter_kb,
 )
 from src.interfaces.tg.middlewares.admin import AdminMiddleware
+from src.interfaces.tg.notification import ai_notes
 from src.interfaces.tg.notification.job_status import kick_status_sync
 from src.services.job_searcher import cv
 from src.services.job_searcher.container import Job, remember_message
@@ -152,6 +153,40 @@ async def _undo(query: CallbackQuery, callback_data: JobActionCallback) -> None:
             logger.info("Could not mark the note as undone: %s", e)
     logger.info("Job %s: event %s undone", callback_data.job_id, callback_data.reason)
     await query.answer("Отменено")
+
+
+async def _notes(query: CallbackQuery, callback_data: JobActionCallback) -> None:
+    """The AI's changes in one message: "↩️ Отменить…" shows which, "✖️ Назад" hides the choice,
+    a numbered button takes that change back and the message is rendered again."""
+    message = query.message
+    if not isinstance(message, Message) or query.bot is None:
+        await query.answer()
+        return
+    # One answer per press: Telegram refuses a second one.
+    notice, alert = None, False
+    if callback_data.action == "undo_note":
+        try:
+            await undo(callback_data.job_id, callback_data.reason)
+        except (StatusConflict, JobNotFound):
+            notice, alert = "Уже изменено — отменять нечего", True  # the message is rendered as it is now
+        except Exception as e:
+            logger.warning("Failed to undo %s of job %s: %s", callback_data.reason, callback_data.job_id, e)
+            await query.answer("Не удалось отменить (БД недоступна)", show_alert=True)
+            return
+        else:
+            kick_status_sync()  # the vacancy's own message follows through the sync loop
+            logger.info("Job %s: event %s undone", callback_data.job_id, callback_data.reason)
+            notice = "Отменено"
+    try:
+        known = await ai_notes.refresh(
+            query.bot, message.chat.id, message.message_id, picking=callback_data.action == "notes"
+        )
+    except Exception as e:
+        logger.warning("Could not render the AI notes again: %s", e)
+        known = True
+    if not known:
+        notice, alert = "Это сообщение уже не обновить", True
+    await query.answer(notice, show_alert=alert)
 
 
 async def _open_from_summary(query: CallbackQuery, callback_data: JobActionCallback) -> None:
@@ -293,6 +328,9 @@ async def job_action_callback(query: CallbackQuery, callback_data: JobActionCall
         return
     if callback_data.action == "undo":
         await _undo(query, callback_data)
+        return
+    if callback_data.action in ("notes", "notes_back", "undo_note"):
+        await _notes(query, callback_data)
         return
     if callback_data.action == "letter":
         await _send_letter(query, callback_data)

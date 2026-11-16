@@ -512,30 +512,89 @@ async def reasons() -> Any:
     return {"statuses": public_reasons()}
 
 
+async def _write_status(job_id: str, body: StatusPatch) -> dict[str, Any]:
+    """One status change → StatusResult; ApiError names what is wrong."""
+    change = status.StatusChange(**body.model_dump(), given=set(body.model_fields_set))
+    try:
+        written = await status.patch_status(job_id, change)
+    except InvalidParameter as e:
+        raise ApiError(400, "invalid_parameter", str(e)) from None
+    except status.JobNotFound:
+        raise ApiError(404, "not_found", f"No vacancy with id {job_id!r}") from None
+    except status.StatusConflict as e:
+        message = f"expected_status: the status is {e.current_status!r} now; read it again and decide"
+        raise ApiError(409, "status_conflict", message, current_status=e.current_status) from None
+    except status.IsDuplicate as e:
+        message = f"This vacancy is a repeat; its decision lives on {e.duplicate_of!r} — set the status there"
+        raise ApiError(409, "is_duplicate", message, duplicate_of=e.duplicate_of) from None
+    targets = await jobs_api.duplicate_targets([written.doc])
+    return {
+        "changed": written.changed,
+        "job": jobs_api.job_full(written.doc, targets.get(job_id)),
+        "telegram": "queued" if written.queued else "skipped",
+    }
+
+
 @router.patch("/{job_id}/status", response_model=StatusResult, responses=_WRITE_ERRORS)
 async def set_status(job_id: str, body: StatusPatch) -> Any:
     """Change the status; the vacancy's Telegram message follows right after."""
 
     async def build() -> dict[str, Any]:
-        change = status.StatusChange(**body.model_dump(), given=set(body.model_fields_set))
-        try:
-            written = await status.patch_status(job_id, change)
-        except status.JobNotFound:
-            raise ApiError(404, "not_found", f"No vacancy with id {job_id!r}") from None
-        except status.StatusConflict as e:
-            message = f"expected_status: the status is {e.current_status!r} now; read it again and decide"
-            raise ApiError(409, "status_conflict", message, current_status=e.current_status) from None
-        except status.IsDuplicate as e:
-            message = f"This vacancy is a repeat; its decision lives on {e.duplicate_of!r} — set the status there"
-            raise ApiError(409, "is_duplicate", message, duplicate_of=e.duplicate_of) from None
-        if written.queued:
+        result = await _write_status(job_id, body)
+        if result["telegram"] == "queued":
             kick_status_sync()
-        targets = await jobs_api.duplicate_targets([written.doc])
-        return {
-            "changed": written.changed,
-            "job": jobs_api.job_full(written.doc, targets.get(job_id)),
-            "telegram": "queued" if written.queued else "skipped",
-        }
+        return result
+
+    return await _guarded(build)
+
+
+MAX_BATCH = 25
+
+
+class BatchItem(StatusPatch):
+    job_id: str = Field(description="The vacancy's id")
+
+
+class StatusBatch(BaseModel):
+    """POST /jobs/status/batch: up to MAX_BATCH changes, each as in PATCH /jobs/{id}/status."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    changes: list[BatchItem] = Field(min_length=1, max_length=MAX_BATCH)
+
+
+class BatchResult(BaseModel):
+    job_id: str
+    ok: bool
+    result: StatusResult | None = None
+    error: dict[str, Any] | None = Field(default=None, description="As in an error response: code, message, ...")
+
+
+class BatchResults(BaseModel):
+    results: list[BatchResult] = Field(description="In the order of `changes`")
+    written: int = Field(description="How many changed a status")
+    failed: int
+
+
+@router.post("/status/batch", response_model=BatchResults, responses=_ERRORS)
+async def set_statuses(body: StatusBatch) -> Any:
+    """Several status changes at once (16.11.2026): an AI sorting the inbox sends one call, and the
+    owner gets one Telegram message. Each change stands alone — a conflict on one does not stop
+    the rest; the storage going down does (503)."""
+
+    async def build() -> dict[str, Any]:
+        results: list[dict[str, Any]] = []
+        for item in body.changes:
+            patch = StatusPatch(**item.model_dump(exclude={"job_id"}, exclude_unset=True))
+            try:
+                results.append({"job_id": item.job_id, "ok": True, "result": await _write_status(item.job_id, patch)})
+            except ApiError as e:
+                error = {"code": e.code, "message": e.message, **e.extra}
+                results.append({"job_id": item.job_id, "ok": False, "error": error})
+        if any(r["ok"] and r["result"]["telegram"] == "queued" for r in results):
+            kick_status_sync()
+        written = sum(1 for r in results if r["ok"] and r["result"]["changed"])
+        return {"results": results, "written": written, "failed": sum(1 for r in results if not r["ok"])}
 
     return await _guarded(build)
 

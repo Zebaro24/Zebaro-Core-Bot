@@ -10,7 +10,10 @@ restart loses nothing. One loop is one sender: changes go out one by one, and a 
   message, but the note is still sent (on its own, with the vacancy's link).
 - A timeout or a 5xx → tried again later, with a growing pause; a 429 → after `retry_after`.
 - The note is sent only for the vacancy's latest event and only when the writer asked (an AI
-  change): a later change made by a button needs no note about the earlier one.
+  change): a later change made by a button needs no note about the earlier one. A reply, an
+  interview or an offer gets a note of its own; any other change joins the AI session's one
+  message (ai_notes.py).
+- The day's 👀 summary follows its vacancies' statuses here too (review_summary.py).
 """
 
 import asyncio
@@ -34,6 +37,8 @@ from src.db.client import jobs_collection
 from src.interfaces.tg.formatters.job import job_to_html, job_to_rich_html
 from src.interfaces.tg.formatters.job_status import job_status_line, status_change_html
 from src.interfaces.tg.keyboards.job import get_job_status_kb, get_job_undo_kb
+from src.interfaces.tg.notification.ai_notes import add_note
+from src.interfaces.tg.notification.review_summary import refresh_stale_summaries
 from src.services.job_searcher.container import Job
 from src.services.job_searcher.jobs_api import public_status
 from src.services.job_searcher.status import LOUD
@@ -73,6 +78,15 @@ def backoff(attempts: int) -> timedelta:
 
 async def sync_job_messages(bot: Bot) -> int:
     """Send what is pending; how many changes were settled (done, gone or failed)."""
+    settled = await _sync_vacancies(bot)
+    try:
+        await refresh_stale_summaries(bot)
+    except Exception:  # a broken summary must not stop the next minute's changes
+        logger.warning("Review summary refresh broke", exc_info=True)
+    return settled
+
+
+async def _sync_vacancies(bot: Bot) -> int:
     settled, seen = 0, set()
     for _ in range(_ROUNDS):
         try:
@@ -156,8 +170,11 @@ async def _send(bot: Bot, doc: dict[str, Any], sync: dict[str, Any]) -> str:
     history = doc.get("history") or []
     event = history[-1] if history else None
     if sync.get("notify") and event is not None and event.get("id") == sync.get("event_id"):
-        reply_to = doc["tg_message_id"] if has_message and state == DONE else None
-        await _notify(bot, doc, event, reply_to)
+        if event.get("to") in LOUD:  # a reply, an interview, an offer: a note of its own, with a sound
+            reply_to = doc["tg_message_id"] if has_message and state == DONE else None
+            await _notify(bot, doc, event, reply_to)
+        else:  # the rest of an AI session goes into one message (ai_notes.py)
+            await add_note(bot, doc, event)
     return state
 
 

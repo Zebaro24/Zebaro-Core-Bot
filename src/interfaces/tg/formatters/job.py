@@ -419,19 +419,54 @@ def _summary_item(job: Job, rich: bool) -> str:
     return head + " — " + " · ".join(bit for bit in bits if bit)
 
 
-def review_summary_html(jobs: list[Job], first_number: int = 1, total: int | None = None) -> str:
-    """The 👀 tier of a run as one message (22.10.2026): partial matches no longer arrive one by
-    one between the vacancies on target. A button under it opens any of them in full."""
+def _summary_head(total: int, day: str | None, decided: int) -> str:
+    when = f" за {day}" if day else ""
+    done = f" (решено {decided})" if decided else ""
+    return f"👀 Частичные совпадения{when} — {total}{done}"
+
+
+def _marked(job: Job, mark: str | None, rich: bool) -> str:
+    item = _summary_item(job, rich)
+    return f"{mark} {item}" if mark else item
+
+
+def review_summary_html(
+    jobs: list[Job],
+    first_number: int = 1,
+    total: int | None = None,
+    *,
+    day: str | None = None,
+    decided: int = 0,
+    marks: list[str | None] | None = None,
+) -> str:
+    """The day's 👀 tier as one message (16.11.2026; a message per run before): partial matches
+    never arrive one by one between the vacancies on target. A decided one shows its status mark;
+    a button under the message opens any of them in full."""
     total = total if total is not None else len(jobs)
+    marks = marks if marks is not None else [None for _ in jobs]
     # Numbered by hand, not <ol>: the numbers are the buttons', and a later part starts past 1.
-    items = "".join(f"<p>{n}. {_summary_item(job, rich=True)}</p>" for n, job in enumerate(jobs, first_number))
-    return f"<h3>👀 Частичные совпадения — {total}</h3>{items}"
+    items = "".join(
+        f"<p>{n}. {_marked(job, m, rich=True)}</p>"
+        for n, (job, m) in enumerate(zip(jobs, marks, strict=True), first_number)
+    )
+    return f"<h3>{_summary_head(total, day, decided)}</h3>{items}"
 
 
-def review_summary_plain(jobs: list[Job], first_number: int = 1, total: int | None = None) -> str:
+def review_summary_plain(
+    jobs: list[Job],
+    first_number: int = 1,
+    total: int | None = None,
+    *,
+    day: str | None = None,
+    decided: int = 0,
+    marks: list[str | None] | None = None,
+) -> str:
     total = total if total is not None else len(jobs)
-    lines = [f"{n}. {_summary_item(job, rich=False)}" for n, job in enumerate(jobs, first_number)]
-    return f"👀 <b>Частичные совпадения — {total}</b>\n" + "\n".join(lines)
+    marks = marks if marks is not None else [None for _ in jobs]
+    lines = [
+        f"{n}. {_marked(job, m, rich=False)}" for n, (job, m) in enumerate(zip(jobs, marks, strict=True), first_number)
+    ]
+    return f"<b>{_summary_head(total, day, decided)}</b>\n" + "\n".join(lines)
 
 
 def job_to_html(job: Job) -> str:

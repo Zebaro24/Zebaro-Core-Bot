@@ -52,6 +52,8 @@ def _query():
     message.rich_message = None
     message.html_text = "vacancy"
     message.edit_text = AsyncMock()
+    message.chat = MagicMock(id=1)
+    message.message_id = 2
     query = MagicMock()
     query.message = message
     query.answer = AsyncMock()
@@ -365,3 +367,31 @@ def test_the_undo_button_fits_telegrams_64_bytes():
     button = get_job_undo_kb("a" * 24, "f" * 12).inline_keyboard[0][0]
 
     assert button.callback_data is not None and len(button.callback_data.encode()) <= 64
+
+
+@pytest.mark.asyncio
+async def test_undo_from_the_ai_notes_answers_the_press_once(collection, mocker):
+    from src.services.job_searcher.status import StatusConflict
+
+    mocker.patch.object(callback, "undo", new=AsyncMock(side_effect=StatusConflict("interview")))
+    refresh = mocker.patch.object(callback.ai_notes, "refresh", new=AsyncMock(return_value=True))
+    doc = _doc("Dou", status="applied")
+
+    query = await _press("undo_note", doc, "a1b2c3d4e5f6")
+
+    refresh.assert_awaited_once()  # the message shows the vacancy as it is now
+    query.answer.assert_awaited_once()
+    assert "Уже изменено" in query.answer.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_undo_from_the_ai_notes_renders_the_message_again(collection, mocker):
+    mocker.patch.object(callback, "undo", new=AsyncMock())
+    mocker.patch.object(callback, "kick_status_sync")
+    refresh = mocker.patch.object(callback.ai_notes, "refresh", new=AsyncMock(return_value=True))
+    doc = _doc("Dou", status="applied")
+
+    query = await _press("undo_note", doc, "a1b2c3d4e5f6")
+
+    assert refresh.await_args.kwargs["picking"] is False
+    query.answer.assert_awaited_once_with("Отменено", show_alert=False)

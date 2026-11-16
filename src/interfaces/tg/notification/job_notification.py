@@ -10,14 +10,9 @@ from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramRet
 from aiogram.types import InlineKeyboardMarkup, InputRichMessage, Message
 
 from src.config import settings
-from src.interfaces.tg.formatters.job import (
-    home_down_html,
-    job_to_html,
-    job_to_rich_html,
-    review_summary_html,
-    review_summary_plain,
-)
-from src.interfaces.tg.keyboards.job import get_job_action_kb, get_job_link_kb, get_job_summary_kb
+from src.interfaces.tg.formatters.job import home_down_html, job_to_html, job_to_rich_html
+from src.interfaces.tg.keyboards.job import get_job_action_kb, get_job_link_kb
+from src.interfaces.tg.notification.review_summary import add_to_summary
 from src.services.job_searcher.container import Job, JobStorage, remember_message
 from src.services.job_searcher.dedup import DUPLICATE, group_duplicates, muted_companies, reject_muted
 from src.services.job_searcher.filter import REJECTED, REVIEW, SENT, TOP, JobFilter
@@ -33,8 +28,6 @@ FIRE_EFFECT_ID = "5104841245755180586"
 
 # How many flood-control waits one vacancy may take before it is given up on.
 _SEND_ATTEMPTS = 5
-# Vacancies per 👀 summary message: two buttons a row keeps the keyboard to ten rows.
-SUMMARY_CHUNK = 20
 
 # Webhook updates are now handled concurrently, so nothing else stops a manual search
 # from overlapping another one (or the scheduled run) and sending every vacancy twice.
@@ -79,39 +72,6 @@ async def _deliver(bot: Bot, job: Job, reply_markup: InlineKeyboardMarkup | None
             disable_notification=silent,
         )
         return message, "plain"
-
-
-async def _deliver_summary(bot: Bot, jobs: list[Job], ids: list[str], first: int, total: int) -> bool:
-    entries = [(n, job.title or "", job_id) for n, (job, job_id) in enumerate(zip(jobs, ids, strict=True), first)]
-    markup = get_job_summary_kb(entries)
-    try:
-        await bot.send_rich_message(
-            chat_id=settings.telegram_admin_id,
-            rich_message=InputRichMessage(html=review_summary_html(jobs, first, total)),
-            reply_markup=markup,
-            disable_notification=True,
-        )
-        return True
-    except TelegramBadRequest:
-        logger.warning("Telegram refused the rich summary, sending the plain version", exc_info=True)
-        await bot.send_message(
-            chat_id=settings.telegram_admin_id,
-            text=review_summary_plain(jobs, first, total),
-            reply_markup=markup,
-            disable_notification=True,
-        )
-        return True
-
-
-async def _send_summary(bot: Bot, pairs: list[tuple[Job, str]]) -> int:
-    """The 👀 tier as one message (or a few of SUMMARY_CHUNK). Returns how many vacancies went."""
-    sent = 0
-    for start in range(0, len(pairs), SUMMARY_CHUNK):
-        chunk = pairs[start : start + SUMMARY_CHUNK]
-        jobs, ids = [job for job, _ in chunk], [job_id for _, job_id in chunk]
-        if await _with_retries(partial(_deliver_summary, bot, jobs, ids, start + 1, len(pairs))):
-            sent += len(chunk)
-    return sent
 
 
 async def _send_job(bot: Bot, job: Job, reply_markup: InlineKeyboardMarkup | None, job_id: str | None = None) -> bool:
@@ -191,16 +151,16 @@ async def _run_job_notification(bot: Bot) -> int:
     await group_duplicates(job_storage.jobs, ids)
 
     sent = 0
-    summary: list[tuple[Job, str]] = []
+    summary: list[str] = []
     for job, job_id in zip(job_storage.jobs, ids, strict=True):
         if job.moderation == REJECTED or job.user_status == DUPLICATE:
             continue
         if job.moderation == REVIEW and job_id:
-            summary.append((job, job_id))  # sent together after the ones on target
+            summary.append(job_id)  # into the day's 👀 message, after the ones on target
             continue
         if await _send_job(bot, job, _get_reply_markup(job, job_id), job_id):
             sent += 1
-    sent += await _send_summary(bot, summary)
+    sent += await add_to_summary(bot, summary)
 
     logger.info("Job notification complete. Sent %d/%d jobs", sent, len(job_storage.jobs))
     return sent

@@ -197,6 +197,8 @@ async def write_status(
         change["cv_sent"] = cv.sent_with(doc.get("cv_track"), applied_at)
     elif change["user_status"] != "applied" and doc.get("cv_sent"):
         change["cv_sent"] = None  # an application undone or turned into a "no" went with no CV
+    if doc.get("review_day"):
+        change["review_stale"] = True  # the day's 👀 summary shows the status mark (review_summary.py)
     queued = sync and (notify or bool(doc.get("tg_message_id")))
     if queued:
         change["tg_sync"] = {

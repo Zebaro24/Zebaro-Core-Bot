@@ -97,3 +97,37 @@ def status_change_html(doc: dict[str, Any], event: dict[str, Any]) -> str:
     if event.get("reason"):
         lines.append(f"<i>{html.escape(event['reason'])}</i>")
     return "\n".join(lines)
+
+
+NOTE_REASON_LIMIT = 150
+
+
+def _changes(count: int) -> str:
+    if count % 10 == 1 and count % 100 != 11:
+        return f"{count} изменение"
+    if 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14:
+        return f"{count} изменения"
+    return f"{count} изменений"
+
+
+def ai_notes_html(items: list[tuple[dict[str, Any], dict[str, Any], bool]]) -> str:
+    """The AI's changes of one session as one message (16.11.2026): (vacancy, event, undone)."""
+    lines = [f"🤖 <b>AI: {_changes(len(items))}</b>"]
+    for n, (doc, event, undone) in enumerate(items, 1):
+        vacancy = html.escape(doc.get("title") or "Без названия")
+        company = html.escape(doc.get("company") or "")
+        name = f"{company} — {vacancy}" if company else vacancy
+        if undone:
+            lines.append(f"\n<s>{n}. {name}</s> ↩️ отменено")
+            continue
+        title = f'{n}. <a href="{settings.webhook_url}/jobs/r/{doc["_id"]}"><b>{name}</b></a>'
+        to, frm = event.get("to") or "new", event.get("from") or "new"
+        label = reason_label(to, event.get("reason_code"))
+        if event.get("reason_code") == "other" and event.get("suggested_code"):
+            label = f"другое — {event['suggested_code']}"
+        change = f"{STATUS_NAMES.get(frm, frm)} → <b>{STATUS_NAMES.get(to, to)}</b>"
+        lines.append(f"\n{title}\n{change} ({html.escape(label)})" if label else f"\n{title}\n{change}")
+        if reason := event.get("reason"):
+            cut = reason if len(reason) <= NOTE_REASON_LIMIT else reason[: NOTE_REASON_LIMIT - 1] + "…"
+            lines.append(f"<i>{html.escape(cut)}</i>")
+    return "\n".join(lines)

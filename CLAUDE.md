@@ -68,7 +68,7 @@ src/
 │   │   ├── handlers/callbacks/
 │   │   ├── keyboards/
 │   │   ├── middlewares/
-│   │   └── notification/     # job search run, weekly digest
+│   │   └── notification/     # job search run, weekly digest, day's 👀 summary, AI notes per session
 │   ├── ds/                   # discord.py bot + service.py (needs_restart=True)
 │   └── webhooks/             # FastAPI: /webhook/{github,telegram}, /jobs/* (Jobs API, docs/contracts/), /site/contact, /health
 └── utils/                    # format_memory, format_time
