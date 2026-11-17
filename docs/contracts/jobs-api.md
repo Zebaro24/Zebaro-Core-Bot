@@ -157,6 +157,8 @@ tolerant reader: неизвестные поля пропускает, неиз�
 | `cv_match` | string[] | навыки из резюме `cv`, которые есть в тексте: `Python`, `FastAPI`, `PostgreSQL`, ... |
 | `cv_gaps` | string[] | что вакансия требует, а в резюме нет: `Celery`, `AWS`, `Kubernetes`, ... |
 | `cv_gaps_plus` | string[] | то же, но только «будет плюсом» |
+| `requirements` | string \| null | раздел обязательных требований из `description` как написан (под заголовком Requirements / Required skills / What we're looking for / Вимоги / Що ми очікуємо / Требования…, до следующего раздела; «Nice to have» не входит); до 35 строк и 2500 символов. `null` — заголовка нет, читать `description`. Считается при чтении, с 18.11.2026 |
+| `work_hours` | string[] | строки `description` про часы, часовой пояс или график («Overlap with CET 10:00–14:00»), до трёх |
 | `history` | `[event]` | **B.** журнал статусов, от старых к новым; `[]`, пока событий нет |
 
 Событие журнала (B):

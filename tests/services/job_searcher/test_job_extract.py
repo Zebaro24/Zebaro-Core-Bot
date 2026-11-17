@@ -143,3 +143,125 @@ def test_card_applicants():
 )
 def test_only_as_plus(description, plus_only):
     assert extract.only_as_plus(description, ("python", "django")) is plus_only
+
+
+# --- the brief ---------------------------------------------------------------------------------
+
+DJINNI_EN = """About us
+We are a fast-growing AI startup with a friendly culture.
+
+Responsibilities:
+• Build LLM agents
+• Strong skills in code review
+
+Requirements:
+• 3+ years of commercial experience with Python
+• FastAPI, PostgreSQL
+• Experience with interview tools is fine
+• English B2+
+
+Nice to have:
+• LangChain
+
+We offer:
+• Remote work, 20 days off
+"""
+
+DOU_UK = """Про компанію
+Ми продуктова компанія.
+
+Що ми очікуємо
+- Досвід з Python від 2 років
+- Розуміння REST
+
+Обов'язки
+- Писати сервіси
+
+Що ми пропонуємо
+- Гнучкий графік
+"""
+
+
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        (
+            DJINNI_EN,
+            "• 3+ years of commercial experience with Python\n• FastAPI, PostgreSQL\n"
+            "• Experience with interview tools is fine\n• English B2+",
+        ),
+        (DOU_UK, "- Досвід з Python від 2 років\n- Розуміння REST"),
+        ("Требования:\n- Django\n- Docker\nМы предлагаем:\n- ДМС", "- Django\n- Docker"),
+        ("Requirements: Python, SQL\nWhat we offer: a team", "Python, SQL"),  # the list on the heading's line
+        ("1. Requirements\n- Go\n2. Benefits\n- Gym", "- Go"),  # a numbered heading
+        ("We build things in Python. You will love it.", None),  # no heading: read the full text
+        ("Strong skills in Python and SQL are needed for this role\n- Go", None),  # a long line opens nothing
+        (None, None),
+    ],
+    ids=["en", "uk", "ru", "inline", "numbered", "no heading", "a body line naming skills", "no text"],
+)
+def test_requirements_are_the_must_have_section(description, expected):
+    assert extract.requirements(description) == expected
+
+
+DJINNI_SUBSECTIONS = """We’re looking for an AI Automation Developer with strong Python fundamentals.
+
+What you’ll do
+
+• Build and maintain n8n workflows.
+
+What we’re looking for
+
+Strong Python fundamentals
+
+• You can confidently write and explain Python code.
+• You can work with APIs, process JSON, and build a backend service using FastAPI.
+
+Hands-on automation and AI experience
+
+• You have built working n8n workflows.
+
+Nice to have
+
+• Experience with React.
+
+What we offer
+
+• Paid vacation.
+"""
+
+
+def test_a_typographic_apostrophe_and_sub_headings_keep_the_section():
+    # The shape of a real Djinni text (robomate, 17.11.2026): "we’re", and sub-headings inside.
+    assert extract.requirements(DJINNI_SUBSECTIONS) == (
+        "Strong Python fundamentals\n"
+        "• You can confidently write and explain Python code.\n"
+        "• You can work with APIs, process JSON, and build a backend service using FastAPI.\n"
+        "Hands-on automation and AI experience\n"
+        "• You have built working n8n workflows."
+    )
+
+
+def test_requirements_are_cut_at_the_limit():
+    description = "Requirements:\n" + "\n".join(f"- skill number {i} " + "x" * 80 for i in range(40))
+
+    text = extract.requirements(description)
+
+    assert text is not None
+    assert len(text.splitlines()) <= extract.REQUIREMENTS_MAX_LINES
+    assert len(text) <= extract.REQUIREMENTS_MAX_CHARS
+
+
+@pytest.mark.parametrize(
+    ("description", "hours"),
+    [
+        ("Remote\n• Overlap with CET 10:00–14:00\n• Python", ["Overlap with CET 10:00–14:00"]),
+        ("Часовий пояс: Київ ±2 години\nГрафік: 10:00-19:00", ["Часовий пояс: Київ ±2 години", "Графік: 10:00-19:00"]),
+        ("Work 40 hours per week, US time zone (EST)", ["Work 40 hours per week, US time zone (EST)"]),
+        ("Python, FastAPI, 3+ years", []),
+        ("est. 2015, we are the best", []),  # "est." of a founding year is a word, not a zone
+    ],
+    ids=["overlap", "uk schedule", "hours per week", "none", "est as a word"],
+)
+def test_work_hours_are_the_lines_about_time(description, hours):
+    assert extract.work_hours(description) == hours

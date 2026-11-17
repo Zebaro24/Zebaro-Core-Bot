@@ -139,6 +139,12 @@ class JobFull(JobSummary):
     cv_match: list[str] = Field(default_factory=list, description="The CV's skills the vacancy names")
     cv_gaps: list[str] = Field(default_factory=list, description="Required, and not in the CV")
     cv_gaps_plus: list[str] = Field(default_factory=list, description="Not in the CV, only nice to have")
+    requirements: str | None = Field(
+        default=None, description="The must-have section of the description as written; null when it has none"
+    )
+    work_hours: list[str] = Field(
+        default_factory=list, description="The description's lines about hours, time zone or schedule"
+    )
     history: list[HistoryEvent] = Field(default_factory=list, description="Status events, oldest first")
 
 

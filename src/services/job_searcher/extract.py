@@ -267,3 +267,102 @@ def relative_date(text: str, now: datetime | None = None) -> datetime | None:
         if unit.startswith(prefixes):
             return now - amount * step
     return None
+
+
+# --- the brief: requirements and hours --------------------------------------------------------
+# For a client sifting many vacancies (the MCP's jobs_get brief): the must-have section as written and the
+# lines about hours, without the company, the culture and the benefits. Read from the stored description
+# each time, so old vacancies have it too and a better rule here applies to all of them at once.
+
+_REQUIRED_HEADING = re.compile(
+    r"requirements?|required|qualifications?|must[- ]haves?|what (?:we|you)(?:['’]re| are)? (?:expect|need|look)|"
+    r"what you(?:['’]ll)? (?:need|bring)|you (?:have|bring|are|should)|skills|about you|who we(?:['’]re| are) look|"
+    r"вимоги|що (?:ми )?очікуємо|ми очікуємо|очікуємо|від тебе|від вас|що потрібно|кого (?:ми )?шукаємо|"
+    r"твій досвід|ти маєш|необхідн|требования|что (?:мы )?ожидаем|мы ожидаем|ожидаем|от тебя|от вас|"
+    r"что нужно|кого (?:мы )?ищем|необходим"
+)
+# Any other section: where the requirements end.
+_OTHER_HEADING = re.compile(
+    r"responsibilit|duties|what you(?:['’]ll)? (?:do|work)|tasks|your role|we offer|what we offer|benefits|perks|"
+    r"about (?:us|the company|the project|the role|the team)|our (?:team|company|product)|interview|hiring process|"
+    r"обов.язки|задачі|завдання|чим (?:ти )?(?:будеш|доведеться)|(?:що )?(?:ми )?пропонуємо|умови|бонуси|"
+    r"переваги роботи|про (?:нас|компанію|проєкт|проект|команду)|етапи|обязанности|задачи|"
+    r"(?:что )?(?:мы )?предлагаем|условия|о (?:нас|компании|проекте|команде)|этапы"
+)
+_BULLET_MARKS = "•-*–—·▪◦●"
+# A Djinni "What we're looking for" with four sub-headings runs to ~25 lines (robomate, 17.11.2026).
+REQUIREMENTS_MAX_LINES = 35
+REQUIREMENTS_MAX_CHARS = 2500
+
+_HOURS = re.compile(
+    r"time ?zone|часов(?:ий|ой|ого) пояс|working hours|work(?:ing)? schedule|графік|график|overlap|"
+    r"\b\d{1,2}[:.]\d{2}\s*[-–—]\s*\d{1,2}[:.]\d{2}\b|"
+    r"\b\d{1,2}\s*(?:am|pm)\b|\b\d{1,2}\s*(?:hours|годин|часов)\s*(?:per|a|на)\s*(?:week|day|тиждень|день|неделю)"
+)
+# Zones as written, upper case: "est." of a founding year is a word.
+_ZONES = re.compile(r"\b(?:CET|CEST|EET|EEST|EST|EDT|PST|PDT|UTC|GMT)\b")
+HOURS_MAX_LINES = 3
+HOURS_LINE_MAX = 200
+
+
+_SECTION_HEAD_MAX = 40
+_LEADING_MARKS = re.compile(r"^[\W\d_]+")  # "1. ", "🔹 ", "— " before a heading's words
+
+
+def _heading(line: str) -> tuple[str, str] | None:
+    """A section heading as (its words lowered, the text after its colon): "Requirements:", "Що ми
+    очікуємо", "Requirements: Python, SQL". None for a body line: a bullet, or a long line with no colon
+    ("Strong skills in Python and SQL" names "skills" but opens nothing)."""
+    if line.startswith(tuple(_BULLET_MARKS)):
+        return None
+    bare = _LEADING_MARKS.sub("", line)
+    words, _, rest = bare.partition(":")
+    head = words.strip().lower()
+    if not head or len(head) > _SECTION_HEAD_MAX or head.endswith((".", ";", ",")):
+        return None
+    return head, rest.strip()
+
+
+def requirements(description: str | None) -> str | None:
+    """The must-have section as written: the lines under a requirements heading up to the next section.
+
+    "Nice to have" is not in it. A heading with its list on the same line ("Requirements: Python, SQL")
+    keeps that text. None when no such heading: the client reads the full text then.
+    """
+    taken: list[str] = []
+    inside = False
+    for raw in (description or "").split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        heading = _heading(line)
+        if heading is not None and (_PLUS.match(heading[0]) or _OTHER_HEADING.match(heading[0])):
+            inside = False
+            continue
+        if heading is not None and _REQUIRED_HEADING.match(heading[0]):
+            inside = True
+            if heading[1]:
+                taken.append(heading[1])
+            continue
+        if inside:
+            taken.append(line)
+        if len(taken) >= REQUIREMENTS_MAX_LINES:
+            break
+    text = "\n".join(line for line in taken if line)
+    if not text:
+        return None
+    if len(text) > REQUIREMENTS_MAX_CHARS:
+        text = text[: REQUIREMENTS_MAX_CHARS - 1].rstrip() + "…"
+    return text
+
+
+def work_hours(description: str | None) -> list[str]:
+    """The lines about hours, time zone or schedule ("Overlap with CET 10:00–14:00"), at most three."""
+    found: list[str] = []
+    for raw in (description or "").split("\n"):
+        line = raw.strip().strip(_BULLET_MARKS + " ")
+        if line and (_HOURS.search(line.lower()) or _ZONES.search(line)) and line not in found:
+            found.append(line if len(line) <= HOURS_LINE_MAX else line[: HOURS_LINE_MAX - 1].rstrip() + "…")
+        if len(found) >= HOURS_MAX_LINES:
+            break
+    return found

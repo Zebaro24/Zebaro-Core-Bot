@@ -24,6 +24,7 @@ from src.config import settings
 from src.db.client import jobs_collection
 from src.services.job_searcher.dedup import BLOCKED, DECIDED, DUPLICATE, group_root
 from src.services.job_searcher.digest import search_label
+from src.services.job_searcher.extract import requirements, work_hours
 from src.services.job_searcher.words import MAX_WORD_LENGTH, MAX_WORDS, WHERE_FIELDS, case_free, words_query
 
 SCOPE = "own_searches"
@@ -170,6 +171,8 @@ def job_full(
         "cv_match": list(doc.get("cv_match") or []),
         "cv_gaps": list(doc.get("cv_gaps") or []),
         "cv_gaps_plus": list(doc.get("cv_gaps_plus") or []),
+        "requirements": requirements(doc.get("description")),
+        "work_hours": work_hours(doc.get("description")),
         "history": [public_event(event) for event in doc.get("history") or []],
     }
 
