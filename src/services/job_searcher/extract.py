@@ -14,6 +14,7 @@ them (06.10.2026): see the numbers next to each rule.
 """
 
 import re
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 # --- experience ---------------------------------------------------------------------------
@@ -283,7 +284,8 @@ _REQUIRED_HEADING = re.compile(
 )
 # Any other section: where the requirements end.
 _OTHER_HEADING = re.compile(
-    r"responsibilit|duties|what you(?:['’]ll)? (?:do|work)|tasks|your role|we offer|what we offer|benefits|perks|"
+    r"responsibilit|duties|what you(?:['’]ll| will)? (?:do|work)|tasks|your role|we offer|what we offer|benefits|"
+    r"perks|plus|bonus|advantages?|додатково|дополнительно|"
     r"about (?:us|the company|the project|the role|the team)|our (?:team|company|product)|interview|hiring process|"
     r"обов.язки|задачі|завдання|чим (?:ти )?(?:будеш|доведеться)|(?:що )?(?:ми )?пропонуємо|умови|бонуси|"
     r"переваги роботи|про (?:нас|компанію|проєкт|проект|команду)|етапи|обязанности|задачи|"
@@ -296,7 +298,8 @@ REQUIREMENTS_MAX_CHARS = 2500
 
 _HOURS = re.compile(
     r"time ?zone|часов(?:ий|ой|ого) пояс|working hours|work(?:ing)? schedule|графік|график|overlap|"
-    r"\b\d{1,2}[:.]\d{2}\s*[-–—]\s*\d{1,2}[:.]\d{2}\b|"
+    # 10:00–19:00, 10.00-19.00; not a date range ("01.12 - 15.12"): a dot only before :00 or :30 minutes
+    r"\b\d{1,2}(?::[0-5]\d|\.[03]0)\s*[-–—]\s*\d{1,2}(?::[0-5]\d|\.[03]0)\b|flexible (?:hours|schedule)|"
     r"\b\d{1,2}\s*(?:am|pm)\b|\b\d{1,2}\s*(?:hours|годин|часов)\s*(?:per|a|на)\s*(?:week|day|тиждень|день|неделю)"
 )
 # Zones as written, upper case: "est." of a founding year is a word.
@@ -309,18 +312,38 @@ _SECTION_HEAD_MAX = 40
 _LEADING_MARKS = re.compile(r"^[\W\d_]+")  # "1. ", "🔹 ", "— " before a heading's words
 
 
-def _heading(line: str) -> tuple[str, str] | None:
-    """A section heading as (its words lowered, the text after its colon): "Requirements:", "Що ми
-    очікуємо", "Requirements: Python, SQL". None for a body line: a bullet, or a long line with no colon
-    ("Strong skills in Python and SQL" names "skills" but opens nothing)."""
+_HEADING_TAIL_WORDS = 2  # "What we're look|ing for", "Required| skills": what may follow a heading's words
+
+
+@dataclass
+class _Heading:
+    words: str  # lowered, without numbering or a leading emoji
+    rest: str  # the text after its colon: "Requirements: Python, SQL"
+    colon: bool
+
+
+def _heading(line: str) -> _Heading | None:
+    """A line shaped like a section heading; None for a bullet or a long line."""
     if line.startswith(tuple(_BULLET_MARKS)):
         return None
     bare = _LEADING_MARKS.sub("", line)
-    words, _, rest = bare.partition(":")
+    words, colon, rest = bare.partition(":")
     head = words.strip().lower()
     if not head or len(head) > _SECTION_HEAD_MAX or head.endswith((".", ";", ",")):
         return None
-    return head, rest.strip()
+    return _Heading(head, rest.strip(), bool(colon))
+
+
+def _names(pattern: re.Pattern[str], heading: _Heading | None) -> bool:
+    """The heading opens the section `pattern` names. With a colon its first words decide; without one it
+    must be nothing but those words and up to two more, with no figures — "Required skills" and "What
+    we're looking for" are headings, "You are going to build APIs" and "Required English B2" are lines."""
+    if heading is None or (match := pattern.match(heading.words)) is None:
+        return False
+    if heading.colon:
+        return True
+    tail = heading.words[match.end() :].split()
+    return len(tail) <= _HEADING_TAIL_WORDS and not any(char.isdigit() for char in heading.words)
 
 
 def requirements(description: str | None) -> str | None:
@@ -336,13 +359,13 @@ def requirements(description: str | None) -> str | None:
         if not line:
             continue
         heading = _heading(line)
-        if heading is not None and (_PLUS.match(heading[0]) or _OTHER_HEADING.match(heading[0])):
+        if _names(_PLUS, heading) or _names(_OTHER_HEADING, heading):
             inside = False
             continue
-        if heading is not None and _REQUIRED_HEADING.match(heading[0]):
+        if heading is not None and _names(_REQUIRED_HEADING, heading):
             inside = True
-            if heading[1]:
-                taken.append(heading[1])
+            if heading.rest:
+                taken.append(heading.rest)
             continue
         if inside:
             taken.append(line)

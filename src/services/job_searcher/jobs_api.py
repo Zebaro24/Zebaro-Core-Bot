@@ -22,7 +22,7 @@ from bson.errors import InvalidId
 
 from src.config import settings
 from src.db.client import jobs_collection
-from src.services.job_searcher.dedup import BLOCKED, DECIDED, DUPLICATE, group_root
+from src.services.job_searcher.dedup import BLOCKED, DECIDED, DUPLICATE, PENDING, group_root
 from src.services.job_searcher.digest import search_label
 from src.services.job_searcher.extract import requirements, work_hours
 from src.services.job_searcher.words import MAX_WORD_LENGTH, MAX_WORDS, WHERE_FIELDS, case_free, words_query
@@ -234,24 +234,20 @@ async def group_copies(docs: list[dict[str, Any]]) -> dict[str, list[dict[str, A
     return result
 
 
-async def waiting_repeats() -> list[ObjectId]:
-    """Waiting vacancies that repeat an earlier waiting one of their group: a repost or another board's
-    copy found in a later run while the group was still unanswered. Deciding either decides both (the other
-    becomes `duplicate`), so the list shows the earliest one, with the rest in its `copies`."""
-    waiting = {"user_status": {"$in": ["pending", None]}}
-    grouped = [
-        doc async for doc in jobs_collection.find({"$and": [waiting, {"group_id": {"$ne": None}}]}, _COPY_FIELDS)
-    ]
-    roots = {group_root(doc) for doc in grouped}
-    root_ids = [ObjectId(root) for root in roots if ObjectId.is_valid(root)]
-    known = {doc["_id"] for doc in grouped}
-    async for root in jobs_collection.find({"$and": [waiting, {"_id": {"$in": root_ids}}]}, _COPY_FIELDS):
-        if root["_id"] not in known:  # a root from before groups: no group_id of its own
-            grouped.append(root)
-    by_group: dict[str, list[ObjectId]] = {}
-    for doc in grouped:
-        by_group.setdefault(group_root(doc), []).append(doc["_id"])
-    return [later for ids in by_group.values() for later in sorted(ids)[1:]]
+async def waiting_repeats(scope: dict[str, Any]) -> list[ObjectId]:
+    """Among the waiting vacancies the list's filters (`scope`) select: all but the latest of each group.
+
+    A repost or another board's copy found in a later run while the group was unanswered waits next to the
+    first one; deciding either decides both (status._close_copies makes the other `duplicate`). The list
+    keeps the latest — the one just sent to Telegram with 🔁, on top of a newest-first list — with the rest in
+    its `copies`. Only copies the same filters select count: a copy outside the period, the board or the
+    words never hides one inside them. "pending" only, as _close_copies closes only those.
+    """
+    found = jobs_collection.find({"$and": [scope, {"user_status": PENDING}]}, {**_COPY_FIELDS, "found_at": 1})
+    by_group: dict[str, list[tuple[datetime, ObjectId]]] = {}
+    async for doc in found:
+        by_group.setdefault(group_root(doc), []).append((doc["found_at"], doc["_id"]))  # the list's own order
+    return [earlier for keys in by_group.values() for _, earlier in sorted(keys)[:-1]]
 
 
 # --- parameters --------------------------------------------------------------------------------
@@ -413,7 +409,7 @@ LIST_SORT = [("found_at", -1), ("_id", -1)]
 async def list_jobs(filters: Filters, limit: int, cursor: str | None, with_description: bool = False) -> dict[str, Any]:
     query = filters.query()
     # A lookup by link or board id finds the copy it names; a browsing list shows one vacancy per group.
-    if not (filters.url or filters.source_id) and (repeats := await waiting_repeats()):
+    if not (filters.url or filters.source_id) and (repeats := await waiting_repeats(query)):
         query = {"$and": [query, {"$nor": [{"_id": {"$in": repeats}}]}]}
     query = after_cursor(query, cursor)
     projection = None if with_description else {"description": 0}

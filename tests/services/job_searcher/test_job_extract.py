@@ -242,6 +242,31 @@ def test_a_typographic_apostrophe_and_sub_headings_keep_the_section():
     )
 
 
+BARE_LINES = """What you will do:
+You are going to build APIs
+Design services in FastAPI
+Requirements:
+You have 3+ years with Python
+Required English B2
+Solid SQL
+Plus:
+Kubernetes
+"""
+
+
+def test_lines_without_bullets_are_not_taken_for_headings():
+    # The reviewer's case: short plain lines naming "you are", "you have", "required" are body lines.
+    assert extract.requirements(BARE_LINES) == "You have 3+ years with Python\nRequired English B2\nSolid SQL"
+
+
+@pytest.mark.parametrize(
+    "heading",
+    ["Required skills", "What we're looking for", "Що ми очікуємо", "Requirements", "🔹 Вимоги до кандидата"],
+)
+def test_a_heading_without_a_colon_still_opens_the_section(heading):
+    assert extract.requirements(f"{heading}\n- Python\nWe offer\n- Gym") == "- Python"
+
+
 def test_requirements_are_cut_at_the_limit():
     description = "Requirements:\n" + "\n".join(f"- skill number {i} " + "x" * 80 for i in range(40))
 
@@ -260,8 +285,11 @@ def test_requirements_are_cut_at_the_limit():
         ("Work 40 hours per week, US time zone (EST)", ["Work 40 hours per week, US time zone (EST)"]),
         ("Python, FastAPI, 3+ years", []),
         ("est. 2015, we are the best", []),  # "est." of a founding year is a word, not a zone
+        ("Vacation 01.12 - 15.12", []),  # a date range
+        ("Робочий день 10.00-19.00", ["Робочий день 10.00-19.00"]),
+        ("Flexible schedule, remote", ["Flexible schedule, remote"]),
     ],
-    ids=["overlap", "uk schedule", "hours per week", "none", "est as a word"],
+    ids=["overlap", "uk schedule", "hours per week", "none", "est as a word", "dates", "dotted hours", "flexible"],
 )
 def test_work_hours_are_the_lines_about_time(description, hours):
     assert extract.work_hours(description) == hours

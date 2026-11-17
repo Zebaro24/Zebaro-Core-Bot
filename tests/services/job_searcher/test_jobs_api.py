@@ -328,13 +328,32 @@ def _group(jobs: FakeJobs, *statuses: str, platforms: tuple[str, ...] = ("Djinni
     return [root, *copies]
 
 
-def test_a_later_waiting_copy_is_listed_only_in_the_first_ones_copies(client, jobs):
+def test_the_latest_waiting_copy_is_listed_with_the_earlier_in_its_copies(client, jobs):
+    # The latest is the one just sent to Telegram with 🔁, on top of a newest-first list.
     root, later = _group(jobs, "pending", "pending")
 
     items = _get(client, "/jobs", status="new").json()["items"]
 
+    assert [item["id"] for item in items] == [str(later["_id"])]
+    assert items[0]["copies"] == [{"id": str(root["_id"]), "source": "Djinni", "status": "new"}]
+
+
+def test_a_period_after_the_first_copy_still_shows_the_repeat(client, jobs):
+    # "Today's new ones": the first copy is outside the period, so nothing may hide the repeat.
+    _, later = _group(jobs, "pending", "pending")
+    since = (later["found_at"] - timedelta(minutes=1)).isoformat()
+
+    items = _get(client, "/jobs", status="new", **{"from": since}).json()["items"]
+
+    assert [item["id"] for item in items] == [str(later["_id"])]
+
+
+def test_a_board_filter_shows_the_copy_on_that_board(client, jobs):
+    root, _ = _group(jobs, "pending", "pending")
+
+    items = _get(client, "/jobs", source="Djinni").json()["items"]
+
     assert [item["id"] for item in items] == [str(root["_id"])]
-    assert items[0]["copies"] == [{"id": str(later["_id"]), "source": "Dou", "status": "new"}]
 
 
 def test_a_lookup_by_link_finds_the_waiting_copy_it_names(client, jobs):
@@ -357,14 +376,24 @@ def test_a_copy_after_a_blocked_one_is_listed(client, jobs):
     assert listed["copies"] == [{"id": str(blocked["_id"]), "source": "Djinni", "status": "blocked"}]
 
 
-def test_a_root_from_before_groups_still_hides_its_later_copy(client, jobs):
+def test_a_root_from_before_groups_is_one_group_with_its_later_copy(client, jobs):
     root = _doc("Python Developer", 300, platform_name="Djinni")  # no group_id of its own
     later = _doc("Python Developer", 100, group_id=str(root["_id"]))
     jobs.docs += [root, later]
 
     items = _get(client, "/jobs").json()["items"]
 
-    assert [item["id"] for item in items] == [str(root["_id"])]
+    assert [item["id"] for item in items] == [str(later["_id"])]
+
+
+def test_a_vacancy_without_a_status_field_is_never_hidden(client, jobs):
+    # _close_copies closes only "pending": a copy it would leave open must stay in sight.
+    root, later = _group(jobs, "pending", "pending")
+    del root["user_status"]
+
+    items = _get(client, "/jobs").json()["items"]
+
+    assert {item["id"] for item in items} == {str(root["_id"]), str(later["_id"])}
 
 
 def test_a_vacancy_without_a_group_has_no_copies(client, jobs):
@@ -497,13 +526,18 @@ def test_the_list_example_in_the_contract_is_a_real_answer(client, jobs):
             "salary": example["salary"],
             "search_url": example["search"],
             "cv_track": example["cv"],
-            "group_id": example["id"],
+            "group_id": example["copies"][0]["id"],
         }
     )
-    # The same vacancy on Dou, found by a later run while the group was unanswered: listed in copies only.
+    # The same vacancy on Dou, found a day earlier and still unanswered: the group's root, listed in copies only.
     copy = example["copies"][0]
     jobs.docs.append(
-        _doc(_id=ObjectId(copy["id"]), platform_name=copy["source"], group_id=example["id"], minutes_ago=60 * 24)
+        _doc(
+            _id=ObjectId(copy["id"]),
+            platform_name=copy["source"],
+            group_id=copy["id"],
+            found_at=datetime(2026, 10, 27, 9, 0),
+        )
     )
 
     body = _get(client, "/jobs").json()
