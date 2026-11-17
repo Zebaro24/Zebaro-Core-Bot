@@ -43,6 +43,15 @@ REASONS: dict[str, dict[str, str]] = {
 }
 # Codes a client may not set: their effect lives in the bot.
 BUTTON_ONLY = {MUTED}
+# Codes of statuses a client may not set at all, listed so a reader of the history knows what they mean
+# ("blocked/site" in an event). Not in REASONS: nothing validates a write against them.
+READ_ONLY_REASONS: dict[str, dict[str, str]] = {
+    "blocked": {
+        "site": "Площадка не пустила откликнуться (Djinni отказывает, если профиль не проходит её фильтр по "
+        "опыту); копия вакансии с другой площадки придёт сама. Ставится только кнопкой «⛔ Сайт не пускает» "
+        "в Telegram, клиент статус blocked не ставит",
+    },
+}
 
 # Short words for a Telegram status line: "Отказ: зарплата".
 EMPLOYER_LABELS = {
@@ -60,8 +69,13 @@ EMPLOYER_LABELS = {
 
 
 def public_reasons() -> dict[str, list[dict[str, str]]]:
-    """GET /jobs/reasons: the codes a client may set, per status."""
-    return {
+    """GET /jobs/reasons: the codes a client may set, per status, then the read-only ones (blocked)."""
+    settable = {
         status: [{"code": code, "description": text} for code, text in codes.items() if code not in BUTTON_ONLY]
         for status, codes in REASONS.items()
     }
+    read_only = {
+        status: [{"code": code, "description": text} for code, text in codes.items()]
+        for status, codes in READ_ONLY_REASONS.items()
+    }
+    return settable | read_only

@@ -270,6 +270,23 @@ def test_the_reasons_are_listed_per_status(jobs):
     assert all(reason["description"] for codes in statuses.values() for reason in codes)
 
 
+def test_the_blocked_codes_are_listed_to_read_the_history(jobs):
+    statuses = _call("GET", "/jobs/reasons").json()["statuses"]
+
+    assert [reason["code"] for reason in statuses["blocked"]] == ["site"]
+    assert "только кнопкой" in statuses["blocked"][0]["description"]
+
+
+def test_a_blocked_code_does_not_make_blocked_settable(jobs):
+    doc = _doc(jobs)
+    body = {"status": "blocked", "expected_status": "new", "actor": "ai", "reason_code": "site", "evidence": "user:x"}
+
+    response = _call("PATCH", f"/jobs/{doc['_id']}/status", json=body)
+
+    assert response.status_code == 400
+    assert "Telegram button only" in response.json()["error"]["message"]
+
+
 def test_one_vacancy_without_history_keeps_its_part_a_answer(jobs):
     doc = _doc(
         jobs, user_status="applied", status_updated_at=datetime(2026, 10, 19), outcome="reply",
