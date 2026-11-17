@@ -391,6 +391,7 @@ def _empty_group(key: str, label: str | None = None) -> dict[str, Any]:
         "tiers": dict.fromkeys(TIERS, 0),
         "decided": 0, "new": 0, "opened": 0, "clicks": 0,
         "reached": dict.fromkeys(_REACHED, 0),
+        "applied_with": {},
         "status": {status: 0 for status in STATUSES if status != "duplicate"},
         "rejected_after": {"applied": 0, "replied": 0, "interview": 0, "unknown": 0},
         "reasons": {"rejected_by_employer": {}, "mismatch": {}, "not_interested": {}, "filtered_out": {}},
@@ -421,6 +422,8 @@ def _count(group: dict[str, Any], doc: dict[str, Any]) -> None:
     rank = stage_rank(status, doc.get("status_reason"))
     for stage in _REACHED:
         group["reached"][stage] += rank >= _STAGE_RANK[stage]
+    if sent := doc.get("cv_sent"):  # set on an application only, its outcomes included
+        group["applied_with"][sent] = group["applied_with"].get(sent, 0) + 1
     if status == "rejected_by_employer":
         group["rejected_after"]["unknown"] += 1  # the stage is known only from part B's history
     if status in _REASONED and (code := doc.get("status_reason")):
@@ -452,9 +455,11 @@ def group_keys(doc: dict[str, Any], group_by: str) -> list[str]:
     if group_by == "search":
         return [doc.get("search_url") or UNKNOWN_SEARCH]
     if group_by == "cv":
-        # An application by the CV it went with, the rest by the one it would get.
-        sent = doc.get("cv_sent") if doc.get("user_status") == "applied" else None
-        return [sent or doc.get("cv_track") or "(none)"]
+        # By the CV the vacancy fits, applications too (17.11.2026): grouping an application by the
+        # CV it went with made "universal" (the one CV before 09.11) a group of applications only,
+        # 100% applied, and left the tracks' older vacancies without their answers. The CV an
+        # application went with is in `applied_with`.
+        return [doc.get("cv_track") or "(none)"]
     if group_by == "week":
         found_at = doc["found_at"].replace(tzinfo=UTC).astimezone(ZoneInfo(settings.tz))
         year, week, _ = found_at.isocalendar()

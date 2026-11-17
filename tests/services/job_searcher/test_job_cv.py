@@ -16,7 +16,7 @@ from src.services.job_searcher import cv, letters, repair, status
 from src.services.job_searcher.container import Job
 from src.services.job_searcher.digest import cv_stats, cv_used, my_insights
 from src.services.job_searcher.filter import evaluate, title_reject_reason
-from src.services.job_searcher.jobs_api import group_keys
+from src.services.job_searcher.jobs_api import funnel_groups, group_keys
 
 LONG = "We build a product for logistics companies and care about clean code. " * 4
 
@@ -201,13 +201,31 @@ async def test_the_repair_fills_the_cvs_of_stored_vacancies(mocker):
 @pytest.mark.parametrize(
     "doc,key",
     [
-        ({"user_status": "applied", "cv_sent": cv.AI, "cv_track": cv.BACKEND}, cv.AI),
-        ({"user_status": "pending", "cv_sent": cv.AI, "cv_track": cv.BACKEND}, cv.BACKEND),  # undone
+        ({"user_status": "applied", "cv_sent": cv.AI, "cv_track": cv.BACKEND}, cv.BACKEND),
+        ({"user_status": "pending", "cv_track": cv.BACKEND}, cv.BACKEND),
         ({"user_status": "pending"}, "(none)"),
     ],
 )
-def test_the_funnel_groups_an_application_by_its_cv(doc, key):
+def test_the_funnel_groups_by_the_cv_the_vacancy_fits(doc, key):
     assert group_keys(doc, "cv") == [key]
+
+
+def test_the_cv_funnel_tells_which_cv_the_applications_went_with():
+    found = datetime(2026, 11, 1)
+    base = {"moderation": "sent", "found_at": found, "cv_track": cv.BACKEND}
+    docs = [
+        {**base, "user_status": "applied", "cv_sent": cv.UNIVERSAL},
+        {**base, "user_status": "applied", "cv_sent": cv.BACKEND},
+        {**base, "user_status": "not_interested"},
+        {**base, "cv_track": cv.AI, "user_status": "pending"},
+    ]
+
+    groups = {group["key"]: group for group in funnel_groups(docs, "cv")}
+
+    assert set(groups) == {cv.BACKEND, cv.AI}  # no group of applications only
+    backend = groups[cv.BACKEND]
+    assert backend["applied_with"] == {cv.UNIVERSAL: 1, cv.BACKEND: 1}
+    assert (backend["reached"]["applied"], backend["decided"], backend["apply_rate"]) == (2, 3, 0.667)
 
 
 def _status_collection(mocker, doc):

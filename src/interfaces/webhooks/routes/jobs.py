@@ -208,6 +208,7 @@ class FunnelGroup(BaseModel):
     opened: int
     clicks: int
     reached: Reached
+    applied_with: dict[str, int] = Field(description="Applications by the CV they went with (cv_sent)")
     status: dict[str, int]
     rejected_after: RejectedAfter
     reasons: Reasons

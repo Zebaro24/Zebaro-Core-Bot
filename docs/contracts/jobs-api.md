@@ -256,8 +256,10 @@ tolerant reader: неизвестные поля пропускает, неиз�
 - `group_by=search`: эффективность поисков бота. `key` — URL поиска (`(unknown)` для вакансий
   до 06.10.2026), `label` — он же коротко («Djinni · Python»). У остальных группировок
   `label` = `key`.
-- `group_by=cv`: по резюме. Отклик — по тому, с которым ушёл (`cv_sent`), остальное — по тому,
-  под которое подходит (`cv`); `(none)` — без резюме (отброшенные фильтром).
+- `group_by=cv`: по резюме, под которое вакансия подходит (`cv`), отклики тоже; `(none)` — без
+  резюме (отброшенные фильтром). С каким резюме ушли отклики группы — в `applied_with`
+  (`universal` — одно CV до 09.11.2026). До 17.11.2026 отклик шёл в группу по `cv_sent`, и
+  `universal` была группой из одних откликов со 100%.
 
 Ответ:
 
@@ -273,6 +275,7 @@ tolerant reader: неизвестные поля пропускает, неиз�
       "tiers": {"top": 14, "sent": 52, "review": 45, "filtered_out": 301},
       "decided": 87, "new": 24, "opened": 60, "clicks": 95,
       "reached": {"applied": 31, "replied": 9, "interview": 4, "offer": 0},
+      "applied_with": {"universal": 22, "backend": 6, "ai": 3},
       "status": {"new": 24, "applied": 19, "replied": 3, "interview": 2, "offer": 0,
                  "rejected_by_employer": 7, "mismatch": 30, "not_interested": 21, "blocked": 5},
       "rejected_after": {"applied": 4, "replied": 1, "interview": 0, "unknown": 2},
@@ -294,6 +297,7 @@ tolerant reader: неизвестные поля пропускает, неиз�
 - `opened` — сколько дошедших владелец открыл по ссылке; `clicks` — всего переходов.
 - `reached.X` — дошли **до этапа X или дальше**. Отказ работодателя — это ответ, поэтому он
   входит в `replied`; кроме `no_response` — тишина не ответ, такой отклик остаётся в `applied`.
+- `applied_with` — отклики группы по резюме, с которым ушли (`cv_sent`); сумма = `reached.applied`.
 - `rejected_after` — на каком этапе отказали. `unknown` — отказ записан до журнала (B).
 - `by` — `found`; `journal` — записи журнала владельца за период (см. `GET /jobs/journal`),
   `[]` — изменений не было. Хранилище журнала недоступно → `journal: null` и
