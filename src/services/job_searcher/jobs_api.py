@@ -117,7 +117,9 @@ def public_event(event: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def job_summary(doc: dict[str, Any], duplicate_of: str | None = None) -> dict[str, Any]:
+def job_summary(
+    doc: dict[str, Any], duplicate_of: str | None = None, copies: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
     status = public_status(doc)
     return {
         "id": str(doc["_id"]),
@@ -142,12 +144,24 @@ def job_summary(doc: dict[str, Any], duplicate_of: str | None = None) -> dict[st
         "duplicate_of": duplicate_of if status == "duplicate" else None,
         "cv": doc.get("cv_track"),
         "cv_sent": doc.get("cv_sent"),
+        "copies": copies if copies is not None else _stored_copies(doc),
     }
 
 
-def job_full(doc: dict[str, Any], duplicate_of: str | None = None) -> dict[str, Any]:
+def _stored_copies(doc: dict[str, Any]) -> list[dict[str, Any]]:
+    """The copies a run's primary was stored with: its siblings from the same run only."""
+    return [
+        {"id": copy["id"], "source": copy.get("platform") or "Unknown", "status": None}
+        for copy in doc.get("copies") or []
+        if copy.get("id")
+    ]
+
+
+def job_full(
+    doc: dict[str, Any], duplicate_of: str | None = None, copies: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
     return {
-        **job_summary(doc, duplicate_of),
+        **job_summary(doc, duplicate_of, copies),
         "description": doc.get("description") or "",
         "location": doc.get("location"),
         "countries": doc.get("countries"),
@@ -156,11 +170,6 @@ def job_full(doc: dict[str, Any], duplicate_of: str | None = None) -> dict[str, 
         "cv_match": list(doc.get("cv_match") or []),
         "cv_gaps": list(doc.get("cv_gaps") or []),
         "cv_gaps_plus": list(doc.get("cv_gaps_plus") or []),
-        "copies": [
-            {"id": copy["id"], "source": copy.get("platform") or "Unknown"}
-            for copy in doc.get("copies") or []
-            if copy.get("id")
-        ],
         "history": [public_event(event) for event in doc.get("history") or []],
     }
 
@@ -191,6 +200,55 @@ async def duplicate_targets(docs: list[dict[str, Any]]) -> dict[str, str]:
         for doc in docs
         if doc.get("user_status") == DUPLICATE
     }
+
+
+_COPY_FIELDS = {"_id": 1, "group_id": 1, "platform_name": 1, "user_status": 1, "outcome": 1}
+
+
+async def group_copies(docs: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """For each of `docs`: the other vacancies of its group, oldest first, with their status. One query per page.
+
+    The group is the source of truth: the stored `copies` of a run's primary miss a copy found in a later run
+    (it joins by `group_id` only). A stored copy the group query did not return is kept, without a status.
+    """
+    roots = {group_root(doc) for doc in docs}
+    object_ids = [ObjectId(root) for root in roots if ObjectId.is_valid(root)]
+    query = {"$or": [{"_id": {"$in": object_ids}}, {"group_id": {"$in": list(roots)}}]}
+    members: dict[str, list[dict[str, Any]]] = {}
+    async for member in jobs_collection.find(query, _COPY_FIELDS):
+        members.setdefault(group_root(member), []).append(member)
+    result: dict[str, list[dict[str, Any]]] = {}
+    for doc in docs:
+        own = str(doc["_id"])
+        others = sorted((m for m in members.get(group_root(doc), []) if str(m["_id"]) != own), key=lambda m: m["_id"])
+        copies = [
+            {"id": str(m["_id"]), "source": m.get("platform_name") or "Unknown", "status": public_status(m)}
+            for m in others
+        ]
+        known = {copy["id"] for copy in copies} | {own}
+        copies += [copy for copy in _stored_copies(doc) if copy["id"] not in known]
+        result[own] = copies
+    return result
+
+
+async def waiting_repeats() -> list[ObjectId]:
+    """Waiting vacancies that repeat an earlier waiting one of their group: a repost or another board's
+    copy found in a later run while the group was still unanswered. Deciding either decides both (the other
+    becomes `duplicate`), so the list shows the earliest one, with the rest in its `copies`."""
+    waiting = {"user_status": {"$in": ["pending", None]}}
+    grouped = [
+        doc async for doc in jobs_collection.find({"$and": [waiting, {"group_id": {"$ne": None}}]}, _COPY_FIELDS)
+    ]
+    roots = {group_root(doc) for doc in grouped}
+    root_ids = [ObjectId(root) for root in roots if ObjectId.is_valid(root)]
+    known = {doc["_id"] for doc in grouped}
+    async for root in jobs_collection.find({"$and": [waiting, {"_id": {"$in": root_ids}}]}, _COPY_FIELDS):
+        if root["_id"] not in known:  # a root from before groups: no group_id of its own
+            grouped.append(root)
+    by_group: dict[str, list[ObjectId]] = {}
+    for doc in grouped:
+        by_group.setdefault(group_root(doc), []).append(doc["_id"])
+    return [later for ids in by_group.values() for later in sorted(ids)[1:]]
 
 
 # --- parameters --------------------------------------------------------------------------------
@@ -350,15 +408,20 @@ LIST_SORT = [("found_at", -1), ("_id", -1)]
 
 
 async def list_jobs(filters: Filters, limit: int, cursor: str | None, with_description: bool = False) -> dict[str, Any]:
-    query = after_cursor(filters.query(), cursor)
+    query = filters.query()
+    # A lookup by link or board id finds the copy it names; a browsing list shows one vacancy per group.
+    if not (filters.url or filters.source_id) and (repeats := await waiting_repeats()):
+        query = {"$and": [query, {"$nor": [{"_id": {"$in": repeats}}]}]}
+    query = after_cursor(query, cursor)
     projection = None if with_description else {"description": 0}
     found = jobs_collection.find(query, projection).sort(LIST_SORT).limit(limit + 1)
     docs = [doc async for doc in found]
     page, more = docs[:limit], len(docs) > limit
     targets = await duplicate_targets(page)
+    copies = await group_copies(page)
 
     def item(doc: dict[str, Any]) -> dict[str, Any]:
-        summary = job_summary(doc, targets.get(str(doc["_id"])))
+        summary = job_summary(doc, targets.get(str(doc["_id"])), copies.get(str(doc["_id"])))
         return {**summary, "description": doc.get("description") or ""} if with_description else summary
 
     return {
@@ -375,7 +438,8 @@ async def get_job(job_id: str) -> dict[str, Any] | None:
     if doc is None:
         return None
     targets = await duplicate_targets([doc])
-    return job_full(doc, targets.get(job_id))
+    copies = await group_copies([doc])
+    return job_full(doc, targets.get(job_id), copies.get(job_id))
 
 
 # --- the funnel --------------------------------------------------------------------------------

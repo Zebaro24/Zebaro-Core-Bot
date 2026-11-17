@@ -72,6 +72,12 @@ class ErrorBody(BaseModel):
     error: ErrorDetail
 
 
+class JobCopy(BaseModel):
+    id: str
+    source: str
+    status: str | None = Field(default=None, description="Its status; null for a stored copy no longer found")
+
+
 class JobSummary(BaseModel):
     id: str
     title: str
@@ -98,15 +104,14 @@ class JobSummary(BaseModel):
     cv_sent: str | None = Field(
         default=None, description="The CV the application went with: backend | fullstack | ai | universal"
     )
+    copies: list[JobCopy] = Field(
+        default_factory=list,
+        description="The same vacancy on other boards or reposted later (its group), oldest first",
+    )
 
 
 class JobListItem(JobSummary):
     description: str | None = Field(default=None, description="Only with with_description=true")
-
-
-class JobCopy(BaseModel):
-    id: str
-    source: str
 
 
 class HistoryEvent(BaseModel):
@@ -134,7 +139,6 @@ class JobFull(JobSummary):
     cv_match: list[str] = Field(default_factory=list, description="The CV's skills the vacancy names")
     cv_gaps: list[str] = Field(default_factory=list, description="Required, and not in the CV")
     cv_gaps_plus: list[str] = Field(default_factory=list, description="Not in the CV, only nice to have")
-    copies: list[JobCopy]
     history: list[HistoryEvent] = Field(default_factory=list, description="Status events, oldest first")
 
 
@@ -529,9 +533,10 @@ async def _write_status(job_id: str, body: StatusPatch) -> dict[str, Any]:
         message = f"This vacancy is a repeat; its decision lives on {e.duplicate_of!r} — set the status there"
         raise ApiError(409, "is_duplicate", message, duplicate_of=e.duplicate_of) from None
     targets = await jobs_api.duplicate_targets([written.doc])
+    copies = await jobs_api.group_copies([written.doc])
     return {
         "changed": written.changed,
-        "job": jobs_api.job_full(written.doc, targets.get(job_id)),
+        "job": jobs_api.job_full(written.doc, targets.get(job_id), copies.get(job_id)),
         "telegram": "queued" if written.queued else "skipped",
     }
 

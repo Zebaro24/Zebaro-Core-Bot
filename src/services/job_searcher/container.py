@@ -195,10 +195,11 @@ async def remember_message(job_id: str, chat_id: int, message_id: int, kind: str
 
 
 async def ensure_indexes() -> None:
-    """The Jobs API list pages by (found_at, _id), newest first; the status sync looks up the 👀
-    whose day's summary needs a new render every minute."""
+    """The Jobs API list pages by (found_at, _id), newest first, and looks up each page's groups by
+    group_id; the status sync looks up the 👀 whose day's summary needs a new render every minute."""
     try:
         await jobs_collection.create_index([("found_at", -1), ("_id", -1)])
+        await jobs_collection.create_index("group_id", sparse=True)
         await jobs_collection.create_index("review_stale", sparse=True)
     except Exception as e:
         logger.warning("Could not create the jobs index: %s", e)

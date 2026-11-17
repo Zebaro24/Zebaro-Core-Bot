@@ -298,7 +298,7 @@ def test_one_vacancy_comes_with_its_text_and_copies(client, jobs):
     body = client.get(f"/jobs/{doc['_id']}", headers=AUTH).json()
 
     assert body["description"] == "We build things in Python."
-    assert body["copies"] == [{"id": copy_id, "source": "Djinni"}]
+    assert body["copies"] == [{"id": copy_id, "source": "Djinni", "status": None}]  # stored, not found any more
     assert body["published_at"] == "2026-10-28T00:00:00Z"
     assert (body["applicants"], body["warnings"]) == (37, ["english"])
 
@@ -314,6 +314,71 @@ def test_one_vacancy_names_its_cv_and_what_it_lacks(client, jobs):
     assert (body["cv_match"], body["cv_gaps"], body["cv_gaps_plus"]) == (["Python"], ["AWS"], [])
     listed = client.get("/jobs", params={"status": "applied"}, headers=AUTH).json()["items"][0]
     assert listed["cv"] == "backend" and "cv_match" not in listed
+
+
+def _group(jobs: FakeJobs, *statuses: str, platforms: tuple[str, ...] = ("Djinni", "Dou", "Work.ua")) -> list[dict]:
+    """A group as dedup stores it: the root with group_id = its own id, later copies pointing at it."""
+    root = _doc("Python Developer", 300, platform_name=platforms[0], user_status=statuses[0])
+    root["group_id"] = str(root["_id"])
+    copies = [
+        _doc("Python Developer", 200 - 50 * i, platform_name=platforms[i + 1], user_status=s, group_id=root["group_id"])
+        for i, s in enumerate(statuses[1:])
+    ]
+    jobs.docs += [root, *copies]
+    return [root, *copies]
+
+
+def test_a_later_waiting_copy_is_listed_only_in_the_first_ones_copies(client, jobs):
+    root, later = _group(jobs, "pending", "pending")
+
+    items = _get(client, "/jobs", status="new").json()["items"]
+
+    assert [item["id"] for item in items] == [str(root["_id"])]
+    assert items[0]["copies"] == [{"id": str(later["_id"]), "source": "Dou", "status": "new"}]
+
+
+def test_a_lookup_by_link_finds_the_waiting_copy_it_names(client, jobs):
+    _, later = _group(jobs, "pending", "pending")
+    later["link"] = "https://jobs.dou.ua/companies/acme/vacancies/777/"
+
+    items = _get(client, "/jobs", url="jobs.dou.ua/companies/acme/vacancies/777").json()["items"]
+
+    assert [item["id"] for item in items] == [str(later["_id"])]
+
+
+def test_a_copy_after_a_blocked_one_is_listed(client, jobs):
+    # Djinni would not let him apply: the Dou copy is the one to answer.
+    blocked, waiting = _group(jobs, "blocked", "pending")
+
+    items = _get(client, "/jobs").json()["items"]
+
+    assert {item["id"] for item in items} == {str(blocked["_id"]), str(waiting["_id"])}
+    listed = next(item for item in items if item["id"] == str(waiting["_id"]))
+    assert listed["copies"] == [{"id": str(blocked["_id"]), "source": "Djinni", "status": "blocked"}]
+
+
+def test_a_root_from_before_groups_still_hides_its_later_copy(client, jobs):
+    root = _doc("Python Developer", 300, platform_name="Djinni")  # no group_id of its own
+    later = _doc("Python Developer", 100, group_id=str(root["_id"]))
+    jobs.docs += [root, later]
+
+    items = _get(client, "/jobs").json()["items"]
+
+    assert [item["id"] for item in items] == [str(root["_id"])]
+
+
+def test_a_vacancy_without_a_group_has_no_copies(client, jobs):
+    jobs.docs.append(_doc())
+
+    assert _get(client, "/jobs").json()["items"][0]["copies"] == []
+
+
+def test_one_vacancy_lists_the_copies_found_in_later_runs(client, jobs):
+    root, *_ = _group(jobs, "applied", "duplicate", "duplicate")
+
+    body = client.get(f"/jobs/{root['_id']}", headers=AUTH).json()
+
+    assert [(c["source"], c["status"]) for c in body["copies"]] == [("Dou", "duplicate"), ("Work.ua", "duplicate")]
 
 
 @pytest.mark.parametrize("job_id", [str(ObjectId()), "not-an-id"])
@@ -432,7 +497,13 @@ def test_the_list_example_in_the_contract_is_a_real_answer(client, jobs):
             "salary": example["salary"],
             "search_url": example["search"],
             "cv_track": example["cv"],
+            "group_id": example["id"],
         }
+    )
+    # The same vacancy on Dou, found by a later run while the group was unanswered: listed in copies only.
+    copy = example["copies"][0]
+    jobs.docs.append(
+        _doc(_id=ObjectId(copy["id"]), platform_name=copy["source"], group_id=example["id"], minutes_ago=60 * 24)
     )
 
     body = _get(client, "/jobs").json()
