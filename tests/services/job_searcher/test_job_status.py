@@ -304,7 +304,7 @@ def test_the_event_example_in_the_contract_has_the_real_keys(jobs, kick):
     from pathlib import Path
 
     text = (Path(__file__).resolve().parents[3] / "docs" / "contracts" / "jobs-api.md").read_text(encoding="utf-8")
-    section = text[text.index("Событие журнала (B):") :]
+    section = text[text.index("Journal event (B):") :]
     block = section[section.index("```json") + 7 : section.index("```", section.index("```json") + 7)]
     doc = _applied(jobs)
 

@@ -505,7 +505,7 @@ def _contract_json(after_heading: str) -> dict[str, Any]:
 
 
 def test_the_list_example_in_the_contract_is_a_real_answer(client, jobs):
-    example = _contract_json("## GET /jobs — список")["items"][0]
+    example = _contract_json("## GET /jobs — list")["items"][0]
     jobs.docs.append(
         {
             "_id": ObjectId(example["id"]),
