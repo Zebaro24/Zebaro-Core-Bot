@@ -80,8 +80,9 @@ whether a newer parent releases it (aiogram 3.31 released `aiohttp`).
 2. `python Zebaro-Core-Bot/scripts/gate.py --strict`.
 3. `python Zebaro-Core-Bot/scripts/release.py --bump <kind> --dry-run`, then without `--dry-run`:
    one step — bumps `pyproject.toml`, stamps the CHANGELOG, commits `chore(release): vX.Y.Z`, tags.
-   It does not push and mints nothing.
-4. `python scripts/approve.py release` at the workspace root (needs the owner's word "release").
+   It does not push; the markers it mints are the repo's own and the workspace guard ignores them.
+4. `python scripts/approve.py release` at the workspace root (needs the owner's word "release") — a
+   call of its own, never chained to step 3: the auto-mode classifier refuses that chain whole.
 5. Tell the owner: the bot container restarts, Telegram and Discord are offline for a few seconds.
 6. `git -C Zebaro-Core-Bot push origin main`, then `git -C Zebaro-Core-Bot push origin vX.Y.Z` — CD.
 7. `gh run list --limit 3`; when CD is green: `scripts\prod.bat health` must show the **new** version
