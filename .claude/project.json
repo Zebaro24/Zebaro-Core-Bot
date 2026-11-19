@@ -1,6 +1,6 @@
 {
   "template": {
-    "version": "1.5.2",
+    "version": "1.5.4",
     "profile": "solo",
     "addons": [],
     "overrides": [
@@ -22,5 +22,8 @@
     "_note": "this repo's checks live in its own scripts/gate.py (declared in template.overrides); CI runs it with --strict",
     "base_ref": "origin/main",
     "targets": {}
+  },
+  "release": {
+    "version_file": "pyproject.toml"
   }
 }
