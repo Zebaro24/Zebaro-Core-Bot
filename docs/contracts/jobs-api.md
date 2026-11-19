@@ -161,7 +161,7 @@ Full form (`GET /jobs/{id}`) — everything from the short form, plus:
 | `cv_match` | string[] | skills from the `cv` CV that are in the text: `Python`, `FastAPI`, `PostgreSQL`, ... |
 | `cv_gaps` | string[] | what the vacancy requires and the CV lacks: `Celery`, `AWS`, `Kubernetes`, ... |
 | `cv_gaps_plus` | string[] | the same, but only "a plus" |
-| `requirements` | string \| null | the mandatory-requirements section of `description` as written (under a heading Requirements / Required skills / What we're looking for / Вимоги / Що ми очікуємо / Требования…, up to the next section; "Nice to have" is not included); up to 35 lines and 2500 characters. `null` — no such heading, read `description`. Computed on read, since 17.11.2026 |
+| `requirements` | string \| null | the mandatory-requirements section of `description` as written (under a heading `Requirements / Required skills / What we're looking for / Вимоги / Що ми очікуємо / Требования…`, up to the next section; "Nice to have" is not included); up to 35 lines and 2500 characters. `null` — no such heading, read `description`. Computed on read, since 17.11.2026 |
 | `work_hours` | string[] | lines of `description` about hours, timezone or schedule ("Overlap with CET 10:00–14:00"), up to three |
 | `history` | `[event]` | **B.** status journal, oldest to newest; `[]` while there are no events |
 
