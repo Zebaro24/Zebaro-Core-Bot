@@ -23,6 +23,7 @@ from src.interfaces.tg.handlers.admin import (
     vpn,
 )
 from src.interfaces.tg.handlers.callbacks import docker, job
+from src.interfaces.tg.notification import notify
 from src.interfaces.tg.notification.job_notification import job_notification
 from src.interfaces.tg.notification.job_stats_notification import job_stats_notification
 from src.interfaces.tg.notification.job_status import SYNC_JOB_ID, SYNC_MINUTES, sync_job_messages
@@ -43,6 +44,7 @@ from src.services.job_searcher.service import (
     search_job_id,
 )
 from src.services.job_searcher.silence import SILENCE_HOUR, SILENCE_JOB_ID, silence_job
+from src.services.notify import SWEEP_JOB_ID, SWEEP_MINUTES
 from src.services.spotify.schedule import EVENING, MORNING
 from src.services.spotify.service import (
     EVENING_HOUR,
@@ -81,6 +83,7 @@ async def start_bot() -> None:
     dp.include_router(vpn.router)
     dp.include_router(spotify.router)
     dp.include_router(services.router)
+    dp.include_router(notify.router)
 
     # Scheduler jobs (added with IDs so they can be paused/resumed)
     for hour in SEARCH_HOURS:
@@ -102,6 +105,11 @@ async def start_bot() -> None:
     scheduler.add_job(spotify_poll, "cron", hour=POLL_HOUR, minute=POLL_MINUTE, args=[bot], id=POLL_JOB_ID)
     scheduler.add_job(spotify_tick, "cron", hour=MORNING_HOUR, args=[bot, MORNING], id=MORNING_JOB_ID)
     scheduler.add_job(spotify_tick, "cron", hour=EVENING_HOUR, args=[bot, EVENING], id=EVENING_JOB_ID)
+    # Claude's notifications nobody cleared go after 12 hours (services/notify.py).
+    scheduler.add_job(
+        notify.notify_sweep, "interval", minutes=SWEEP_MINUTES, args=[bot], id=SWEEP_JOB_ID,
+        max_instances=1, coalesce=True,
+    )  # fmt: skip
     # Once, when the web server is surely up: Monobank checks the URL the moment it is set.
     scheduler.add_job(ensure_webhook, "date", run_date=datetime.now() + timedelta(seconds=30), args=[bot])
     # After the webhook check: both use client-info, which answers once a minute.

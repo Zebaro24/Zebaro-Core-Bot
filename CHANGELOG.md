@@ -9,6 +9,11 @@
 
 ## Unreleased
 
+- **Уведомления Claude приходят через бота.** `POST /notify` (токен `NOTIFY_API_TOKEN`): в чате
+  одно живое сообщение на проект — «✅ Zebaro-Core · mcp — готово», новое заменяет прежнее. Исчезает,
+  когда ты ответил в Claude (`DELETE /notify?session=…`), по кнопке ✓ или через 12 часов. Контракт —
+  `docs/contracts/notify.md`. Заработает, когда в GitHub появится секрет `NOTIFY_API_TOKEN`.
+
 ## v0.23.0 — 2026-11-17
 
 - **МСП понимает «сайт не пустил».** `GET /jobs/reasons` отдаёт и коды статуса `blocked`

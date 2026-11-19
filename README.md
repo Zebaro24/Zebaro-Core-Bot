@@ -159,6 +159,7 @@ See `scripts/README.md` for the release and production helpers.
 | `WEBHOOK_URL` | yes | — | Public base URL for webhooks and vacancy links |
 | `JOBS_API_TOKEN` | no | empty (endpoints refuse) | Bearer token for the Jobs API (`/jobs/*` except `/jobs/r/<id>`), the MCP's client |
 | `SITE_CONTACT_TOKEN` | no | empty (endpoint refuses) | Shared with zebaro.dev (`CONTACT_TOKEN` there) for `/site/contact` |
+| `NOTIFY_API_TOKEN` | no | empty (endpoint refuses) | Bearer token for `/notify` — Claude's notifications from the owner's PC (`docs/contracts/notify.md`) |
 | `WG_PASSWORD` | yes for compose | — | wg-easy admin password (12+ chars); the bot gets it as `WG_EASY_PASSWORD` |
 | `HOME_PROXY_URL` | no | empty (boards go direct) | `http://user:pass@10.0.0.2:8899` — HTTP proxy on the owner's PC in the VPN; Work.ua, Robota.ua and LinkedIn are opened through it (they block the server's IP) and skipped in 2 s when it is off |
 | `WG_HOST` | no | `server.zebaro.dev` | Endpoint clients connect to; must resolve straight to the server (no Cloudflare proxy) |

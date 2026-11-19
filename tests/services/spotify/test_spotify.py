@@ -17,6 +17,7 @@ from alembic.migration import MigrationContext
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import src.services.notify  # noqa: F401 — its table is in the migrations too
 from src.db import sql
 from src.interfaces.tg.handlers.admin.spotify import parse_adjustment, parse_day
 from src.interfaces.tg.keyboards.spotify import sender_key

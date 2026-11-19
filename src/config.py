@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # Shared secret with zebaro.dev's contact form; empty = the endpoint refuses everything.
     site_contact_token: str = ""
 
+    # Claude's notifications from the owner's PC (/notify, docs/contracts/notify.md); empty = refused.
+    notify_api_token: str = ""
+
     # wg-easy (the VPN server) API: host network, web UI bound to the Docker bridge.
     wg_easy_url: str = "http://host.docker.internal:51821"
     wg_easy_username: str = "zebaro"

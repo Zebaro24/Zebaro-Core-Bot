@@ -21,6 +21,7 @@ services/
                   (LinkedIn), repair (one-off at enable); Jobs API: jobs_api, status (writes), reasons,
                   events (by=event), journal (SQL), silence (S3), backfill
   site_contact.py zebaro.dev contact form: model + rate limit (POST /site/contact)
+  notify.py       Claude's notifications: model + SQL records of live messages (/notify, tg/notification/notify.py)
   spotify/        family plan: monobank client, sync, ledger (pure), schedule, report
   vpn/            wg-easy API client, addresses 10.0.0.x, profiles, traffic, installer/ (EXE)
   speedtest/      SpeedTestManager (speed.cloudflare.com over httpx)

@@ -10,6 +10,7 @@ from src.interfaces.webhooks.routes.jobs import PREFIX as JOBS_PREFIX
 from src.interfaces.webhooks.routes.jobs import ApiError, api_error_handler, validation_error_handler
 from src.interfaces.webhooks.routes.jobs import public_router as jobs_public_router
 from src.interfaces.webhooks.routes.jobs import router as jobs_router
+from src.interfaces.webhooks.routes.notify import router as notify_router
 from src.interfaces.webhooks.routes.site import router as site_router
 
 logger = logging.getLogger("webhooks.main")
@@ -36,6 +37,8 @@ app.add_exception_handler(ApiError, api_error_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
 # zebaro.dev's contact form, from the site container inside the compose network only.
 app.include_router(site_router, prefix="/site", tags=["site"])
+# Claude's notifications from the owner's PC (docs/contracts/notify.md): public, Bearer only.
+app.include_router(notify_router, prefix="/notify", tags=["notify"])
 
 
 @app.get("/health", tags=["health"])

@@ -46,6 +46,7 @@ services:
       - WEBHOOK_URL
       - JOBS_API_TOKEN
       - SITE_CONTACT_TOKEN
+      - NOTIFY_API_TOKEN
       - WG_EASY_PASSWORD=${WG_PASSWORD:-}
       - HOME_PROXY_URL
       - MONOBANK_TOKEN

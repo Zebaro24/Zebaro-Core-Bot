@@ -13,6 +13,7 @@ Worked on from the workspace (`../CLAUDE.md`). Name this repo in every call: `gi
 | Rules for services/storage/infra · for Telegram/Discord/webhooks | `.claude/rules/` (load with those paths) |
 | What the bot does, env variables                              | `README.md`                    |
 | The Jobs API — **owned here**, mirrored in MCP                | `docs/contracts/jobs-api.md`   |
+| The Notify API — **owned here**, called by the Claude harness | `docs/contracts/notify.md`     |
 
 ## Layout
 
