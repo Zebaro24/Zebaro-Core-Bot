@@ -1,0 +1,26 @@
+{
+  "template": {
+    "version": "1.5.2",
+    "profile": "solo",
+    "addons": [],
+    "overrides": [
+      "scripts/gate.py",
+      "scripts/release.py"
+    ]
+  },
+  "project": {
+    "name": "zebaro-core-bot",
+    "description": "Telegram bot and HTTP API \u2014 jobs backend, notify endpoint",
+    "ui_language": null
+  },
+  "git": {
+    "main_branch": "main",
+    "protected_branches": [],
+    "release_tag_pattern": "^v\\d+\\.\\d+\\.\\d+"
+  },
+  "gate": {
+    "_note": "this repo's checks live in its own scripts/gate.py (declared in template.overrides); CI runs it with --strict",
+    "base_ref": "origin/main",
+    "targets": {}
+  }
+}
