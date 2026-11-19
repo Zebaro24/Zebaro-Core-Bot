@@ -16,7 +16,7 @@ What it does:
   2. bumps the version in pyproject.toml,
   3. stamps `## Unreleased` as `## vX.Y.Z — date` and opens a new empty one,
   4. commits `chore(release): vX.Y.Z` and tags locally,
-  5. mints the one-shot markers .approve-push and .approve-release,
+  5. writes no approval: the approval is written by `python scripts/approve.py release` at the workspace root,
   6. prints the two push commands — /release runs them after the owner's go.
 
 Notes are written BEFORE the release, not after: stamping a placeholder and then
@@ -167,14 +167,7 @@ def main() -> int:
             print(f"✗ git {' '.join(step)} упал:\n{out}")
             return 1
 
-    for marker in (".approve-push", ".approve-release"):
-        path = os.path.join(ROOT, ".claude", marker)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(tag)
-
     print("  ✓ pyproject.toml, CHANGELOG, коммит, тег.")
-    print("  ✓ одобрение выписано (одноразовое, живёт 15 минут).")
     print("  Выкатывать после «го»:")
     print("    git push origin main")
     print(f"    git push origin {tag}")
