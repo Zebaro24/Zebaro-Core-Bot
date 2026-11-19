@@ -1,154 +1,154 @@
-# Запись статусов (Jobs API, часть B) — анализ
+# Status writes (Jobs API, part B) — analysis
 
-Фаза 1 по ТЗ `B2-partB-status.md` (03.11.2026). Для каждого пункта: как сейчас → рекомендация →
-цена → что может сломаться (failure mode). Код не написан.
+Phase 1 of the spec `B2-partB-status.md` (03.11.2026). For each item: how it is now → recommendation →
+cost → what can break (failure mode). No code written.
 
-## 1. Инвентаризация: где меняется статус
+## 1. Inventory: where the status changes
 
-**Хранение** (`container.py:Job`): `user_status` (`pending|applied|mismatch|not_interested|blocked|duplicate`),
-`status_reason` (**код** причины владельца), `status_updated_at`; после отклика — `outcome`
-(`reply|interview|offer|rejected`) и `outcome_at`; `tg_chat_id/tg_message_id/tg_message_kind`
-(с 29.10). Журнала нет: каждая дата перезаписывается последним нажатием.
+**Storage** (`container.py:Job`): `user_status` (`pending|applied|mismatch|not_interested|blocked|duplicate`),
+`status_reason` (the owner's reason **code**), `status_updated_at`; after applying — `outcome`
+(`reply|interview|offer|rejected`) and `outcome_at`; `tg_chat_id/tg_message_id/tg_message_kind`
+(since 29.10). No journal: every date is overwritten by the last button press.
 
-**Публичный статус** (`jobs_api.public_status`): `pending→new`, `applied`+`outcome` → `replied|interview|offer|rejected_by_employer`,
-остальное как есть. Обратного отображения пока нет.
+**Public status** (`jobs_api.public_status`): `pending→new`, `applied`+`outcome` → `replied|interview|offer|rejected_by_employer`,
+the rest as is. No reverse mapping yet.
 
-**Кто пишет:** только кнопки TG (`handlers/callbacks/job.py`): `job_action_callback` — `find_one`,
-потом `find_one_and_update` **без условия на старый статус**, плюс копии группы `pending → duplicate`;
-`_record_outcome` — условие только `user_status: applied`. Читают `digest.py`, `dedup.py`, `jobs_api.py`.
+**Who writes:** only the TG buttons (`handlers/callbacks/job.py`): `job_action_callback` — `find_one`,
+then `find_one_and_update` **with no condition on the old status**, plus the group's copies `pending → duplicate`;
+`_record_outcome` — the only condition is `user_status: applied`. Readers: `digest.py`, `dedup.py`, `jobs_api.py`.
 
-**Рекомендация.** Одна функция записи `services/job_searcher/status.py:set_status(job, to, expected, actor, …)`:
-валидирует, делает один `find_one_and_update({_id, <условие expected>}, {$set: legacy-поля + tg_sync, $push: history})`,
-раскладывает публичный статус обратно в `user_status`/`outcome`/`status_reason`/даты — чтобы дайджест,
-dedup и кнопки работали без правок. **Через неё же идут кнопки TG** (`actor: user`).
-**Цена:** правка `callbacks/job.py`. **Без этого** события от кнопок в `history` не попадают —
-аналитика «по событиям» видит только AI.
+**Recommendation.** One write function `services/job_searcher/status.py:set_status(job, to, expected, actor, …)`:
+validates, does one `find_one_and_update({_id, <expected condition>}, {$set: legacy fields + tg_sync, $push: history})`,
+maps the public status back into `user_status`/`outcome`/`status_reason`/dates — so the digest,
+dedup and the buttons work without changes. **The TG buttons go through it too** (`actor: user`).
+**Cost:** a change to `callbacks/job.py`. **Without it** button events do not reach `history` —
+"by event" analytics sees only AI.
 
-## 2. Причины отказа: имя и место
+## 2. Rejection reasons: name and place
 
-Сейчас три разных понятия: `filter_reason` (автофильтр: `senior`, `office`), `status_reason` =
-код владельца для `mismatch|not_interested`, в API — `status_reason_code`; фильтр списка
-`reason_code` ищет **по нему**, а не по автофильтру (в ТЗ здесь ошибка). Контракт уже держит
-одно поле `status_reason_code` со словарём **на каждый статус**, включая `rejected_by_employer`,
-и `status_reason` для текста (сейчас всегда `null` — «придёт в части B»).
+Today there are three different notions: `filter_reason` (the auto-filter: `senior`, `office`), `status_reason` =
+the owner's code for `mismatch|not_interested`, in the API — `status_reason_code`; the list filter
+`reason_code` searches **by it**, not by the auto-filter (the spec is wrong here). The contract already holds
+one field `status_reason_code` with a vocabulary **per status**, including `rejected_by_employer`,
+and `status_reason` for text (always `null` now — "comes in part B").
 
-**Рекомендация:** новых имён не вводить. Причина отказа работодателя — тот же `status_reason_code`
-со словарём статуса `rejected_by_employer`; в событии — `reason_code`, `reason`, `suggested_code`,
-`evidence`. `GET /jobs/reasons` → `{status: [{code, description}]}` для всех трёх словарей.
-Фильтр `reason_code` и `funnel.reasons.rejected_by_employer` заработают сами.
-В хранилище: `status_reason` остаётся кодом, текст — новое `status_reason_text`.
+**Recommendation:** introduce no new names. The employer's rejection reason is the same `status_reason_code`
+with the `rejected_by_employer` status vocabulary; in an event — `reason_code`, `reason`, `suggested_code`,
+`evidence`. `GET /jobs/reasons` → `{status: [{code, description}]}` for all three vocabularies.
+The `reason_code` filter and `funnel.reasons.rejected_by_employer` will work on their own.
+In storage: `status_reason` stays a code, the text is a new `status_reason_text`.
 
-**Правки стартового списка** (`rejected_by_employer`): взять слова из словаря `mismatch`, чтобы
-сравнивать «я сам не прошёл» и «мне отказали»: `experience` (вместо `seniority`), `stack`
-(вместо `stack_mismatch`), `location` (вместо `location_permit`), `english` (вместо `language`);
-плюс `salary`, `position_closed`, `no_response` (в контракте был `no_reply` — не выпущен, меняем),
-**`no_reason`** — шаблонное «выбрали другого кандидата», самое частое письмо; без него половина уйдёт
-в `other`. `other` требует `suggested_code`. **Failure mode:** модель ставит `other`, когда подходит
-`no_reason` → лечится описаниями в `/jobs/reasons` и скриптом переразметки.
+**Changes to the starting list** (`rejected_by_employer`): take the words from the `mismatch` vocabulary, to
+compare "I didn't make the cut myself" with "they rejected me": `experience` (instead of `seniority`), `stack`
+(instead of `stack_mismatch`), `location` (instead of `location_permit`), `english` (instead of `language`);
+plus `salary`, `position_closed`, `no_response` (the contract had `no_reply` — not released, we change it),
+**`no_reason`** — the template "we chose another candidate", the most common email; without it half would go
+to `other`. `other` requires `suggested_code`. **Failure mode:** the model sets `other` where
+`no_reason` fits → cured by the descriptions in `/jobs/reasons` and a relabelling script.
 
-## 3. Фоновые задачи
+## 3. Background jobs
 
-Есть: APScheduler (`scheduler`, TZ, задачи по `id` в `tg/main.py`), сервисы ставят свои задачи на
-паузу в `on_disable`; разовые `asyncio.create_task` (вебхуки). Очереди отправки нет.
+There is: APScheduler (`scheduler`, TZ, jobs by `id` in `tg/main.py`), services pause their jobs
+in `on_disable`; one-off `asyncio.create_task` (webhooks). No send queue.
 
-**Рекомендация:**
-- `tg_sync` — интервальная задача раз в минуту (`max_instances=1` → один отправитель = очередь
-  из контракта) + после PATCH «пинок» `job.modify(next_run_time=now)`, чтобы правка была через секунды,
-  а не через минуту. Состояние в документе: `tg_sync: {state: pending|done|gone, event_id, notify,
-  attempts, next_at}` — переживает рестарт. Воркер рендерит сообщение **из текущего документа**, а не из события.
-- S3 — cron раз в сутки (10:00 по TZ).
-- Обе **не** привязывать к паузе `job_searcher`: он зависит от Playwright, а API и синк — нет.
-- Логика — `services/job_searcher/`, отправка — `interfaces/tg/notification/job_status.py`, HTML — `formatters/job.py`.
+**Recommendation:**
+- `tg_sync` — an interval job once a minute (`max_instances=1` → one sender = the queue
+  from the contract) + after a PATCH a "kick" `job.modify(next_run_time=now)`, so the edit lands in seconds,
+  not a minute. State in the document: `tg_sync: {state: pending|done|gone, event_id, notify,
+  attempts, next_at}` — survives a restart. The worker renders the message **from the current document**, not from the event.
+- S3 — a daily cron (10:00 TZ).
+- Neither is tied to pausing `job_searcher`: it depends on Playwright, the API and the sync do not.
+- Logic — `services/job_searcher/`, sending — `interfaces/tg/notification/job_status.py`, HTML — `formatters/job.py`.
 
-**Цена / failure mode:** правка «plain»-сообщений сейчас дописывает статус к `message.html_text`;
-у воркера объекта `Message` нет → plain рендерим заново из документа (текст чуть изменится).
-Два PATCH подряд: `tg_sync` перезаписывается, реплика уходит только про последнее событие —
-приемлемо, «Отменить» и нужен к последнему. Реплика не идемпотентна: таймаут после реальной
-отправки → дубль реплики. Редко; принимаем.
+**Cost / failure mode:** editing "plain" messages today appends the status to `message.html_text`;
+the worker has no `Message` object → plain is re-rendered from the document (the text changes slightly).
+Two PATCHes in a row: `tg_sync` is overwritten, the reply goes out only about the last event —
+acceptable, "Undo" is needed for the last one anyway. The reply is not idempotent: a timeout after an actual
+send → a duplicate reply. Rare; accepted.
 
-## 4. Гонка: кнопка TG и PATCH от AI
+## 4. Race: a TG button and a PATCH from AI
 
-Сейчас кнопка пишет без условия → последняя запись выигрывает молча. Варианты: (а) так и оставить;
-(б) кнопка делает CAS по статусу, прочитанному перед записью; (в) кнопка несёт ожидаемый статус в `callback_data`.
-**Рекомендация (б):** окно между чтением и записью закрыто; при конфликте — «Статус уже изменён»
-и перерисовка сообщения из БД. (в) не нужна: старые кнопки её не несут, а лимит 64 байта тесный.
-**Что видит пользователь:** AI поставил `rejected`, правка ещё не дошла, он жмёт «Интервью» на старых
-кнопках → запись проходит (это его более позднее намерение), сообщение перерисовано, у AI-реплики
-«↩️ Отменить» отвечает «уже изменено» (CAS по `expected_status` = поставленному AI). Итог всегда сходится
-к БД, потому что любая правка рендерит текущий документ.
-`↩️ Отменить` = `job:undo:<job_id>:<event_id>` (≈43 байта): обработчик берёт `from`/`to` из события.
+Today the button writes with no condition → the last write silently wins. Options: (a) leave it;
+(b) the button does a CAS on the status read before the write; (c) the button carries the expected status in `callback_data`.
+**Recommendation (b):** the window between read and write is closed; on a conflict — «Статус уже изменён»
+(status already changed) and the message is redrawn from the DB. (c) is not needed: old buttons do not carry it, and the 64-byte limit is tight.
+**What the user sees:** AI set `rejected`, the edit has not arrived yet, they press «Интервью» on the old
+buttons → the write goes through (it is their later intent), the message is redrawn, the AI reply's
+«↩️ Отменить» answers "already changed" (CAS on `expected_status` = the one AI set). The result always converges
+to the DB, because every edit renders the current document.
+`↩️ Отменить` = `job:undo:<job_id>:<event_id>` (≈43 bytes): the handler takes `from`/`to` from the event.
 
-**Failure mode:** решение по копии переводит ждущие копии в `duplicate`; отмена их **не** возвращает.
-Предлагаю у системных событий `cause: <event_id>` и откатывать их вместе с отменой.
+**Failure mode:** a decision on a copy turns the waiting copies into `duplicate`; an undo does **not** bring them back.
+Proposal: system events get `cause: <event_id>` and are rolled back together with the undo.
 
-## 5. Даты для backfill
+## 5. Dates for the backfill
 
-| Поле | Что значит | Точность |
+| Field | What it means | Precision |
 |---|---|---|
-| `found_at` | бот нашёл | точно |
-| `status_updated_at` | последнее нажатие кнопки статуса (или перевод в `duplicate`) | ≈ время отклика / решения, ±часы |
-| `outcome_at` | **последний** нажатый исход (с 22.10) | время нажатия, не письма; промежуточные (`reply` до `interview`) потеряны |
+| `found_at` | the bot found it | exact |
+| `status_updated_at` | the last status button press (or the switch to `duplicate`) | ≈ time of application / decision, ±hours |
+| `outcome_at` | the **last** outcome pressed (since 22.10) | press time, not email time; intermediate ones (`reply` before `interview`) are lost |
 
-**Рекомендация:** до двух событий на вакансию: `new→<решение>` по `status_updated_at`
-и, если есть `outcome`, `applied→<исход>` по `outcome_at`; все `actor: system`, `approximate: true`.
-Нет даты → `found_at`. Идемпотентность: пишем только где `history` отсутствует
-(`{history: {$exists: false}}`). `--dry-run` печатает числа по статусам и сколько без дат.
+**Recommendation:** up to two events per vacancy: `new→<decision>` at `status_updated_at`
+and, if there is an `outcome`, `applied→<outcome>` at `outcome_at`; all `actor: system`, `approximate: true`.
+No date → `found_at`. Idempotency: write only where `history` is absent
+(`{history: {$exists: false}}`). `--dry-run` prints the numbers by status and how many lack dates.
 
-## 6. Правки к ТЗ (не сходится с кодом/контрактом)
+## 6. Corrections to the spec (it disagrees with the code/contract)
 
-1. Контракт лежит в `docs/contracts/jobs-api.md`, а не `jobs-api-v1.md`.
-2. `reason_code` в `jobs_list` — причины **владельца**, не автофильтра (п. 2).
-3. Контракт против ТЗ: «тот же статус, **другая причина** → новое событие» (контракт) vs «тот же статус → без события» (ТЗ).
-   **Предлагаю контракт:** уточнение причины после письма — ценное событие.
-4. Нет сообщения / `message to edit not found`: контракт шлёт **новое сообщение вакансии** для громких статусов,
-   ТЗ — ничего. **Предлагаю середину:** `tg_sync: gone`, вакансию заново не шлём, но реплику-уведомление с
-   «Отменить» отправляем отдельным сообщением (`allow_sending_without_reply`) — иначе AI-изменение по вакансии из 👀
-   владелец не увидит вовсе.
-5. Реплика: контракт — только `replied|interview|offer`; ТЗ (D2) — на любое AI-изменение, тихо кроме этих трёх.
-   Беру ТЗ, контракт поправлю.
-6. `PUT /jobs/{id}/ai_verdict` есть в контракте части B, в ТЗ нет. **Предлагаю** оставить вне этой части, в «Открыто».
-7. Журнал (D3) в Mongo противоречит правилу `CLAUDE.md`: новое хранилище — SQLAlchemy + Alembic.
-   `history` — в документе Mongo (атомарно со статусом, иначе нет одного update); `journal`
-   самостоятельный → **предлагаю SQL** (таблица `job_journal`, уже на пути к P2).
-8. `actor` в PATCH: клиент шлёт только `ai|user`; `system` → 400 (его ставит только бот).
-9. Кнопочные события: «Откликнулся» — `approximate: false` (жмут сразу), исходы кнопками —
-   `approximate: true` (время нажатия ≠ время письма). Иначе `time_to_reply` пуст до прихода AI.
-10. `status_changed_at` сейчас = время записи; предлагаю считать его по `occurred_at` последнего события
-    (смысл поля «когда изменился» не меняется, значение станет точнее).
-11. S3: первый прогон после backfill переведёт в `no_response` все старые `applied` разом (у них
-    approximate-даты >21 дня). Числа покажет dry-run; предлагаю первым прогоном прислать одну тихую сводку.
-    Для `actor: system` реплик не шлём — только тихая правка + строка в недельном дайджесте.
-12. `replied` без предшествующего `applied` (письмо по вакансии, где отклик не отмечен) — допустим; в
-    `time_to_reply` не входит (нет начала отсчёта).
+1. The contract is at `docs/contracts/jobs-api.md`, not `jobs-api-v1.md`.
+2. `reason_code` in `jobs_list` is the **owner's** reasons, not the auto-filter's (item 2).
+3. Contract vs spec: "same status, **different reason** → new event" (contract) vs "same status → no event" (spec).
+   **Proposal: the contract.** Refining the reason after an email is a valuable event.
+4. No message / `message to edit not found`: the contract sends a **new vacancy message** for loud statuses,
+   the spec — nothing. **Proposal, the middle:** `tg_sync: gone`, the vacancy is not re-sent, but the notification reply with
+   "Undo" is sent as a separate message (`allow_sending_without_reply`) — otherwise an AI change to a vacancy from 👀
+   would never reach the owner.
+5. Reply: the contract — only `replied|interview|offer`; the spec (D2) — on every AI change, silent except those three.
+   Taking the spec; I will fix the contract.
+6. `PUT /jobs/{id}/ai_verdict` is in the part B contract, not in the spec. **Proposal:** keep it out of this part, under "Open".
+7. The journal (D3) in Mongo contradicts the `CLAUDE.md` rule: new storage is SQLAlchemy + Alembic.
+   `history` — in the Mongo document (atomic with the status, otherwise no single update); `journal`
+   stands alone → **proposal: SQL** (table `job_journal`, already on the way to P2).
+8. `actor` in PATCH: the client sends only `ai|user`; `system` → 400 (only the bot sets it).
+9. Button events: «Откликнулся» (applied) — `approximate: false` (pressed right away), outcome buttons —
+   `approximate: true` (press time ≠ email time). Otherwise `time_to_reply` is empty until AI arrives.
+10. `status_changed_at` is the write time now; proposal: compute it from the last event's `occurred_at`
+    (the field's meaning "when it changed" stays, the value becomes more precise).
+11. S3: the first run after the backfill would turn every old `applied` into `no_response` at once (their
+    approximate dates are >21 days old). The dry-run will show the numbers; proposal: on the first run send one silent summary.
+    No replies for `actor: system` — only a silent edit + a line in the weekly digest.
+12. `replied` with no preceding `applied` (an email about a vacancy where the application was not marked) — allowed; not in
+    `time_to_reply` (no starting point).
 
-## Пробелы
+## Gaps
 
-- Сколько вакансий в проде с `outcome` / `status_updated_at` / `tg_message_id` — без БД прода не знаю; покажет dry-run backfill.
-- Как MCP читает `reason_code` и `status_reason` — репо MCP вне границ.
-- Работает ли правка rich-сообщения через `bot.edit_message_text(chat_id, message_id, rich_message=…)` без
-  объекта `Message` — проверю первым шагом Фазы 2.
+- How many vacancies in prod have `outcome` / `status_updated_at` / `tg_message_id` — unknown without the prod DB; the backfill dry-run will show it.
+- How MCP reads `reason_code` and `status_reason` — the MCP repo is out of bounds.
+- Whether editing a rich message through `bot.edit_message_text(chat_id, message_id, rich_message=…)` works without
+  a `Message` object — I will check it as the first step of Phase 2.
 
-## Решения владельца (03.11.2026)
+## The owner's decisions (03.11.2026)
 
-1. Смена только причины при том же статусе → новое событие; тот же статус и та же причина → без события.
-2. Нет сообщения → отдельная реплика с «↩️ Отменить» и ссылкой на вакансию; новое сообщение вакансии не шлём.
-3. Журнал → SQL-таблица (SQLAlchemy + Alembic). БД — SQLite `state/zebaro.db` на сервере
-   (`/srv/zebaro-core/state/`, `DATABASE_URL`), та же, где Spotify. **Бэкапа в репо нет** — ни этой
-   БД, ни MongoDB (ни скрипта, ни шага в CD); есть ли он на сервере вне репо, без SSH не проверить.
-4. `ai_verdict` отложен — в «Открыто» контракта.
-5. Коды: слова словаря `mismatch` + `no_reason` + отдельный `work_permit` (≠ `location`).
-6. Старые `applied` старше 21 дня переводит **разовая миграция в скрипте backfill** (dry-run → числа
-   владельцу → запуск): `no_response`, `actor: system`, `approximate: true`, без Telegram.
-   Ежедневный S3 включается только после неё.
+1. Changing only the reason at the same status → a new event; same status and same reason → no event.
+2. No message → a separate reply with «↩️ Отменить» and a link to the vacancy; no new vacancy message is sent.
+3. Journal → an SQL table (SQLAlchemy + Alembic). The DB is SQLite `state/zebaro.db` on the server
+   (`/srv/zebaro-core/state/`, `DATABASE_URL`), the same one Spotify uses. **There is no backup in the repo** — neither of this
+   DB nor of MongoDB (no script, no CD step); whether there is one on the server outside the repo cannot be checked without SSH.
+4. `ai_verdict` postponed — under "Open" in the contract.
+5. Codes: the `mismatch` vocabulary words + `no_reason` + a separate `work_permit` (≠ `location`).
+6. Old `applied` older than 21 days are moved by a **one-off migration in the backfill script** (dry-run → numbers
+   to the owner → run): `no_response`, `actor: system`, `approximate: true`, no Telegram.
+   The daily S3 is switched on only after it.
 
-Фаза 2 — два стопа: (1) правка rich-сообщения, `status.py` + PATCH + `/jobs/reasons` + `history`,
-кнопки через общую запись + «Отменить», TG-синк; (2) журнал, `funnel?by=event`, S3, backfill и переразметка.
+Phase 2 — two stops: (1) the rich-message edit, `status.py` + PATCH + `/jobs/reasons` + `history`,
+buttons through the shared write + "Undo", the TG sync; (2) the journal, `funnel?by=event`, S3, backfill and relabelling.
 
-**Шаг 1 (rich по `chat_id`/`message_id`):** работает без обхода — `Message.edit_text` в aiogram 3.31
-сам собирает `EditMessageText(chat_id, message_id, rich_message=…)`, тот же запрос шлёт `bot.edit_message_text`.
+**Step 1 (rich by `chat_id`/`message_id`):** works with no workaround — `Message.edit_text` in aiogram 3.31
+builds `EditMessageText(chat_id, message_id, rich_message=…)` itself, and `bot.edit_message_text` sends the same request.
 
-**Стоп 2 (добавки владельца 03.11):** `by=event` и `time_to_reply` выкидывают пары «событие + его
-отмена» (`undo_of`) и повторы, сделанные отменённым (`cause`). Backfill ставит восстановленные события
-перед первым реальным, их последний `to` = его `from`; даты на нём или позже не доверяем (их записал
-он сам) → `found_at`. Ежедневный S3 молчит, пока нет маркера `meta.jobs_backfill`. Перед запуском на проде:
-`mongodump` + копия `state/zebaro.db` локально → dry-run с числами → «ок» → `--apply`.
+**Stop 2 (the owner's additions, 03.11):** `by=event` and `time_to_reply` drop "event + its
+undo" pairs (`undo_of`) and the repeats made by the undone event (`cause`). The backfill puts restored events
+before the first real one, their last `to` = its `from`; dates on it or later are not trusted (it wrote
+them itself) → `found_at`. The daily S3 stays silent until the `meta.jobs_backfill` marker exists. Before running in prod:
+`mongodump` + a local copy of `state/zebaro.db` → dry-run with numbers → "ok" → `--apply`.
