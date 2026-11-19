@@ -1,210 +1,215 @@
-# Jobs API — контракт
+# Jobs API — contract
 
-Бот Zebaro-Core-Bot — backend поиска работы. Этот документ — **единственный источник** для
-клиента (MCP `zebaro-core-mcp`, tools `jobs_*`): по нему работают с вакансиями, не читая код
-бота. Схемы ответов дублирует `/openapi.json` бота; при расхождении прав этот файл.
+The Zebaro-Core-Bot bot is the job-search backend. This document is the **single source** for the
+client (MCP `zebaro-core-mcp`, tools `jobs_*`): it works with vacancies from this document, without
+reading the bot's code. The bot's `/openapi.json` duplicates the response schemas; if they disagree,
+this file is right.
 
-- Часть **A** — чтение: `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/funnel`, `GET /jobs/digest`.
-- Часть **B** — запись и аналитика по событиям: `PATCH /jobs/{id}/status`,
+- Part **A** — reading: `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/funnel`, `GET /jobs/digest`.
+- Part **B** — writing and event analytics: `PATCH /jobs/{id}/status`,
   `POST /jobs/status/batch`, `GET /jobs/reasons`,
-  поле `history` в `GET /jobs/{id}`, правка сообщений в Telegram, журнал владельца
-  (`POST/GET /jobs/journal`), `GET /jobs/funnel?by=event`, отказ по тишине. Ещё не вышло
-  (см. «Открыто»): `PUT /jobs/{id}/ai_verdict`.
-- `/jobs/r/{id}` — не часть API, хоть и есть в `/openapi.json`: публичная ссылка за кнопкой
-  вакансии в Telegram (считает клики и перенаправляет на площадку), без токена.
+  the `history` field in `GET /jobs/{id}`, Telegram message edits, the owner's journal
+  (`POST/GET /jobs/journal`), `GET /jobs/funnel?by=event`, rejection by silence. Not shipped yet
+  (see "Open"): `PUT /jobs/{id}/ai_verdict`.
+- `/jobs/r/{id}` is not part of the API, although it is in `/openapi.json`: the public link behind
+  a vacancy's button in Telegram (counts clicks and redirects to the platform), no token.
 
-## Общие правила
+## General rules
 
-**Адрес и доступ.** `https://<host>/jobs...`, заголовок `Authorization: Bearer <JOBS_API_TOKEN>`.
-Без токена или с чужим → `401` (раньше любой проверки параметров).
+**Address and access.** `https://<host>/jobs...`, header `Authorization: Bearer <JOBS_API_TOKEN>`.
+No token or a wrong one → `401` (before any parameter check).
 
-**Совместимость.** Правило одно: изменения **только добавляют** — новые поля, новые значения
-enum, новые параметры, новые эндпоинты. Ничего не удаляется и не переименовывается. Клиент —
-tolerant reader: неизвестные поля пропускает, неизвестное значение enum показывает как есть.
+**Compatibility.** One rule: changes **only add** — new fields, new enum values, new parameters,
+new endpoints. Nothing is removed or renamed. The client is a tolerant reader: it skips unknown
+fields and shows an unknown enum value as is.
 
-**Даты.** ISO 8601 в UTC с `Z`: `2026-10-29T14:03:00Z`. Параметры `from` / `to` принимают дату
-(`2026-10-01` = `2026-10-01T00:00:00Z`) или дату-время; `from` включительно, `to` — нет.
-Пример «за октябрь»: `from=2026-10-01&to=2026-11-01`.
+**Dates.** ISO 8601 in UTC with `Z`: `2026-10-29T14:03:00Z`. The `from` / `to` parameters take a
+date (`2026-10-01` = `2026-10-01T00:00:00Z`) or a date-time; `from` is inclusive, `to` is not.
+Example "for October": `from=2026-10-01&to=2026-11-01`.
 
-**Идентификатор.** `id` — непрозрачная строка. Не разбирать, не сравнивать на «больше-меньше».
-Тот же `id` стоит в кнопках вакансии в Telegram.
+**Identifier.** `id` is an opaque string. Do not parse it, do not compare it as "greater-less".
+The same `id` is in the vacancy's buttons in Telegram.
 
-**Охват (`scope`).** Списки и агрегаты несут поле `"scope": "own_searches"`: данные — это
-вакансии, **найденные поисками бота** (его набор площадок и запросов), а не рынок. «Вакансий
-про AI стало больше» может значить «поиски стали шире». Выводы о рынке из этих данных не делать.
+**Scope (`scope`).** Lists and aggregates carry the field `"scope": "own_searches"`: the data are
+vacancies **found by the bot's searches** (its set of platforms and queries), not the market. "More
+vacancies about AI" may mean "the searches got wider". Do not draw conclusions about the market
+from this data.
 
-**Ошибки.** Всегда так:
+**Errors.** Always like this:
 
 ```json
 {"error": {"code": "invalid_parameter", "message": "limit: 500 is more than 200"}}
 ```
 
-`message` пишется для читателя-LLM: какой параметр и почему.
+`message` is written for an LLM reader: which parameter and why.
 
-| HTTP | `code` | Когда |
+| HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid_parameter` | неизвестный параметр-значение, `from >= to`, `limit` вне 1–200, неизвестный статус, кривой `cursor`; в PATCH — запрещённый статус, неизвестное поле или код, нет `evidence` у `actor: ai` |
-| 401 | `unauthorized` | нет токена или неверный |
-| 404 | `not_found` | нет вакансии с таким `id` |
-| 409 | `status_conflict` | `expected_status` не совпал с текущим (B); в `error` есть `current_status` |
-| 409 | `is_duplicate` | статус ставят повтору, решение живёт на другой копии (B); в `error` есть `duplicate_of` |
-| 503 | `storage_unavailable` | база недоступна; повторить позже |
+| 400 | `invalid_parameter` | unknown parameter value, `from >= to`, `limit` outside 1–200, unknown status, malformed `cursor`; in PATCH — a forbidden status, an unknown field or code, no `evidence` with `actor: ai` |
+| 401 | `unauthorized` | no token or a wrong one |
+| 404 | `not_found` | no vacancy with this `id` |
+| 409 | `status_conflict` | `expected_status` does not match the current one (B); `error` has `current_status` |
+| 409 | `is_duplicate` | a status is set on a repeat, the decision lives on another copy (B); `error` has `duplicate_of` |
+| 503 | `storage_unavailable` | the database is unavailable; retry later |
 
-Пустой период или фильтр, под который ничего не попало, — это `200` с пустым списком или
-нулями, а не ошибка.
+An empty period, or a filter nothing matched, is a `200` with an empty list or zeros, not an
+error.
 
-## Статусы
+## Statuses
 
-Один публичный `status` — где вакансия на пути «нашли → откликнулся → чем кончилось».
+One public `status` — where the vacancy is on the path "found → applied → how it ended".
 
-| `status` | Смысл | Ставит |
+| `status` | Meaning | Set by |
 |---|---|---|
-| `new` | ещё не решено | бот при нахождении |
-| `applied` | откликнулся, ответа пока нет | владелец, AI |
-| `replied` | работодатель ответил | владелец, AI |
-| `interview` | назначено или прошло интервью | владелец, AI |
-| `offer` | оффер | владелец, AI |
-| `rejected_by_employer` | отказ работодателя (на любом этапе после отклика) | владелец, AI |
-| `mismatch` | владелец не проходит по требованиям | владелец, AI |
-| `not_interested` | владельцу не интересно | владелец, AI |
-| `blocked` | площадка не пускает откликнуться (Djinni); копия с другой площадки придёт сама | **только кнопка в Telegram** |
-| `duplicate` | повтор вакансии, решение по которой живёт на другой копии (`duplicate_of`) | только бот |
+| `new` | not decided yet | the bot when found |
+| `applied` | applied, no answer yet | owner, AI |
+| `replied` | the employer answered | owner, AI |
+| `interview` | an interview is scheduled or done | owner, AI |
+| `offer` | offer | owner, AI |
+| `rejected_by_employer` | rejected by the employer (at any stage after applying) | owner, AI |
+| `mismatch` | the owner does not meet the requirements | owner, AI |
+| `not_interested` | the owner is not interested | owner, AI |
+| `blocked` | the platform does not let the owner apply (Djinni); a copy from another platform will arrive on its own | **only the Telegram button** |
+| `duplicate` | a repeat of a vacancy whose decision lives on another copy (`duplicate_of`) | only the bot |
 
-**Причина** — два поля, оба необязательные:
+**Reason** — two fields, both optional:
 
-- `status_reason_code` — код из словаря статуса (`GET /jobs/reasons` отдаёт их с описаниями):
+- `status_reason_code` — a code from the status's vocabulary (`GET /jobs/reasons` returns them with
+  descriptions):
   - `mismatch`: `experience | location | english | stack | other`;
   - `not_interested`: `role | stack | domain | conditions | other | muted` (`muted` =
-    «компанию больше не присылать», ставится **только кнопкой**);
+    "don't send this company any more", set **only by the button**);
   - `rejected_by_employer`: `no_response | no_reason | position_closed | experience | stack |
-    location | work_permit | english | salary | other`. Слова те же, что у `mismatch`, где смысл тот же:
-    «сам не прохожу по опыту» и «отказали по опыту» сравнимы. `no_reason` — шаблонный отказ
-    («выбрали другого кандидата»), `no_response` — тишина после отклика, `work_permit` — нет
-    разрешения на работу (≠ `location`).
-  - Не подошёл ни один → `other` + `suggested_code` (какой код бы подошёл, `snake_case`) + `reason`.
-- `status_reason` — свободный текст (например, выжимка из письма с отказом). Хранится всегда,
-  даже при подходящем коде.
+    location | work_permit | english | salary | other`. The words are the same as in `mismatch`
+    where the meaning is the same: "I don't meet the experience bar myself" and "rejected for
+    experience" are comparable. `no_reason` — a template rejection ("we chose another
+    candidate"), `no_response` — silence after applying, `work_permit` — no work permit
+    (≠ `location`).
+  - None fits → `other` + `suggested_code` (which code would fit, `snake_case`) + `reason`.
+- `status_reason` — free text (for example, a summary of the rejection email). Always stored, even
+  when a code fits.
 
-Это причины **решения** (владельца или работодателя). Почему вакансию отбросил фильтр бота —
-другое поле, `filter_reason`; фильтры списка: `reason_code` — по `status_reason_code`,
-`filter_reason` — по `filter_reason`.
+These are reasons for a **decision** (the owner's or the employer's). Why the bot's filter dropped
+a vacancy is a different field, `filter_reason`; list filters: `reason_code` — by
+`status_reason_code`, `filter_reason` — by `filter_reason`.
 
-**Отбор фильтром (`tier`)** — отдельная ось, не статус: как бот оценил вакансию при нахождении.
+**Filter tier (`tier`)** is a separate axis, not a status: how the bot rated the vacancy when found.
 
-| `tier` | Смысл |
+| `tier` | Meaning |
 |---|---|
-| `top` | точно в стек владельца, пришла в Telegram со звуком |
-| `sent` | подходит, пришла в Telegram |
-| `review` | частичное совпадение, пришла в общей сводке 👀 |
-| `filtered_out` | фильтр отбросил, в Telegram не приходила; почему — `filter_reason` |
+| `top` | exactly the owner's stack, came to Telegram with sound |
+| `sent` | fits, came to Telegram |
+| `review` | partial match, came in the shared 👀 digest |
+| `filtered_out` | the filter dropped it, it did not come to Telegram; why — `filter_reason` |
 
-## Поиск по словам (список и воронка)
+## Keyword search (list and funnel)
 
-| Параметр | Смысл |
+| Parameter | Meaning |
 |---|---|
-| `any=ai,llm,rag` | есть **хотя бы одно** из слов |
-| `all=python,react` | есть **все** слова |
-| `none=senior,php` | нет **ни одного** из слов |
-| `where=title\|description\|both` | где искать, по умолчанию `both` |
+| `any=ai,llm,rag` | has **at least one** of the words |
+| `all=python,react` | has **all** the words |
+| `none=senior,php` | has **none** of the words |
+| `where=title\|description\|both` | where to search, `both` by default |
 
-- Слова через запятую; фраза с пробелом — одно слово (`any=machine learning`). До 20 слов на
-  параметр, каждое от 1 до 50 символов.
-- Совпадение — **целое слово без учёта регистра**: соседний символ не буква и не цифра.
-  `any=ai` находит «AI Engineer», «AI/ML», «AI-powered», но **не** «email» и не «training».
-  Кириллица так же: `any=джун` находит «Джун», но не «Джуніор».
-- Символы внутри слова буквальные: `any=c#,next.js,node.js` работают как написано.
-- Параметры складываются через «И»: `any=ai,llm&none=senior&where=title`.
+- Words are comma-separated; a phrase with a space is one word (`any=machine learning`). Up to 20
+  words per parameter, each 1 to 50 characters.
+- A match is a **whole word, case-insensitive**: the neighbouring character is not a letter or a
+  digit. `any=ai` finds "AI Engineer", "AI/ML", "AI-powered", but **not** "email" and not
+  "training". Cyrillic the same way: `any=джун` finds «Джун», but not «Джуніор».
+- Characters inside a word are literal: `any=c#,next.js,node.js` work as written.
+- Parameters combine with AND: `any=ai,llm&none=senior&where=title`.
 
-## Вакансия
+## Vacancy
 
-Краткая форма (элемент списка):
+Short form (a list item):
 
-| Поле | Тип | Смысл |
+| Field | Type | Meaning |
 |---|---|---|
-| `id` | string | идентификатор |
-| `title` | string | название |
-| `company` | string \| null | компания; бывает `null`, когда площадка её не показала |
-| `source` | string | площадка: `Djinni`, `Dou`, `Work.ua`, `Robota.ua`, `LinkedIn`, ... |
-| `url` | string | ссылка на вакансию на площадке |
-| `found_at` | datetime | когда бот её нашёл |
-| `published_at` | datetime \| null | дата публикации на площадке, если она известна |
-| `status` | enum | см. «Статусы» |
-| `status_reason_code` | string \| null | код причины |
-| `status_reason` | string \| null | текст причины |
-| `status_changed_at` | datetime \| null | последнее изменение статуса: `occurred_at` последнего события журнала (до журнала — время записи) |
-| `tier` | enum | см. «Отбор фильтром» |
-| `filter_reason` | string \| null | почему отброшена (`senior`, `experience`, `office`, ...) |
-| `stack` | string[] | технологии, найденные в тексте: `Python`, `React`, `LLM`, ... |
+| `id` | string | identifier |
+| `title` | string | title |
+| `company` | string \| null | company; may be `null` when the platform did not show it |
+| `source` | string | platform: `Djinni`, `Dou`, `Work.ua`, `Robota.ua`, `LinkedIn`, ... |
+| `url` | string | link to the vacancy on the platform |
+| `found_at` | datetime | when the bot found it |
+| `published_at` | datetime \| null | publication date on the platform, if known |
+| `status` | enum | see "Statuses" |
+| `status_reason_code` | string \| null | reason code |
+| `status_reason` | string \| null | reason text |
+| `status_changed_at` | datetime \| null | last status change: `occurred_at` of the last journal event (before the journal — the write time) |
+| `tier` | enum | see "Filter tier" |
+| `filter_reason` | string \| null | why it was dropped (`senior`, `experience`, `office`, ...) |
+| `stack` | string[] | technologies found in the text: `Python`, `React`, `LLM`, ... |
 | `work_format` | string \| null | `remote \| office \| hybrid \| office_or_remote` |
 | `english` | string \| null | `A1`..`C2`, `none` |
-| `required_years` | int \| null | требуемый опыт, лет |
-| `salary` | string \| null | как написано на площадке |
-| `search` | string \| null | URL поиска бота, который нашёл вакансию (`null` у найденных до 06.10.2026) |
-| `duplicate_of` | string \| null | `id` копии, где живёт решение (у `status=duplicate`) |
-| `cv` | string \| null | резюме, под которое подходит вакансия: `backend \| fullstack \| ai` (с 13.11.2026; у старых проставлено задним числом, у отброшенных фильтром `null`) |
-| `cv_sent` | string \| null | с каким резюме ушёл отклик: `backend \| fullstack \| ai \| universal` (`universal` — одно CV до 09.11.2026); `null`, пока отклика нет |
-| `copies` | `[{id, source, status}]` | та же вакансия на других площадках или повторно выложенная — остальные вакансии её группы, от старых к новым, со статусом (`null` — сохранённая копия, которой больше нет). С 17.11.2026 и в краткой форме, считается по группе (раньше — только копии из того же прогона) |
+| `required_years` | int \| null | required experience, years |
+| `salary` | string \| null | as written on the platform |
+| `search` | string \| null | URL of the bot's search that found the vacancy (`null` for those found before 06.10.2026) |
+| `duplicate_of` | string \| null | `id` of the copy where the decision lives (with `status=duplicate`) |
+| `cv` | string \| null | the CV the vacancy fits: `backend \| fullstack \| ai` (since 13.11.2026; old ones were back-filled, those dropped by the filter are `null`) |
+| `cv_sent` | string \| null | which CV the application went with: `backend \| fullstack \| ai \| universal` (`universal` — the single CV before 09.11.2026); `null` while there is no application |
+| `copies` | `[{id, source, status}]` | the same vacancy on other platforms or reposted — the other vacancies of its group, oldest to newest, with status (`null` — a stored copy that no longer exists). Since 17.11.2026 also in the short form, computed by group (before — only copies from the same run) |
 
-Полная форма (`GET /jobs/{id}`) — всё из краткой и ещё:
+Full form (`GET /jobs/{id}`) — everything from the short form, plus:
 
-| Поле | Тип | Смысл |
+| Field | Type | Meaning |
 |---|---|---|
-| `description` | string | полный текст. Бывает коротким: часть площадок (Work.ua) не отдаёт страницу вакансии, тогда это фрагмент из списка |
-| `location` | string \| null | как написано на площадке |
-| `countries` | string \| null | откуда берут кандидатов |
-| `applicants` | int \| null | сколько уже откликнулось (показывает Djinni; у других площадок `null`) |
-| `warnings` | string[] | что может не подойти владельцу, по мнению фильтра: `english` (просят B2), `abroad` (на DOU не отмечено «за кордоном»), `ukraine` (надо быть в Украине), `no_description` (текст не загрузился), `no_python`, `python_plus` (Python только «будет плюсом»), `early_startup` (founding / seed / stealth: такая вакансия не выше review) |
-| `cv_match` | string[] | навыки из резюме `cv`, которые есть в тексте: `Python`, `FastAPI`, `PostgreSQL`, ... |
-| `cv_gaps` | string[] | что вакансия требует, а в резюме нет: `Celery`, `AWS`, `Kubernetes`, ... |
-| `cv_gaps_plus` | string[] | то же, но только «будет плюсом» |
-| `requirements` | string \| null | раздел обязательных требований из `description` как написан (под заголовком Requirements / Required skills / What we're looking for / Вимоги / Що ми очікуємо / Требования…, до следующего раздела; «Nice to have» не входит); до 35 строк и 2500 символов. `null` — заголовка нет, читать `description`. Считается при чтении, с 17.11.2026 |
-| `work_hours` | string[] | строки `description` про часы, часовой пояс или график («Overlap with CET 10:00–14:00»), до трёх |
-| `history` | `[event]` | **B.** журнал статусов, от старых к новым; `[]`, пока событий нет |
+| `description` | string | full text. Can be short: some platforms (Work.ua) do not serve the vacancy page, then it is the snippet from the list |
+| `location` | string \| null | as written on the platform |
+| `countries` | string \| null | where candidates are hired from |
+| `applicants` | int \| null | how many have applied already (Djinni shows it; `null` on other platforms) |
+| `warnings` | string[] | what may not suit the owner, in the filter's opinion: `english` (B2 asked), `abroad` (on DOU "abroad" is not ticked), `ukraine` (must be in Ukraine), `no_description` (the text did not load), `no_python`, `python_plus` (Python only "a plus"), `early_startup` (founding / seed / stealth: such a vacancy is no higher than review) |
+| `cv_match` | string[] | skills from the `cv` CV that are in the text: `Python`, `FastAPI`, `PostgreSQL`, ... |
+| `cv_gaps` | string[] | what the vacancy requires and the CV lacks: `Celery`, `AWS`, `Kubernetes`, ... |
+| `cv_gaps_plus` | string[] | the same, but only "a plus" |
+| `requirements` | string \| null | the mandatory-requirements section of `description` as written (under a heading Requirements / Required skills / What we're looking for / Вимоги / Що ми очікуємо / Требования…, up to the next section; "Nice to have" is not included); up to 35 lines and 2500 characters. `null` — no such heading, read `description`. Computed on read, since 17.11.2026 |
+| `work_hours` | string[] | lines of `description` about hours, timezone or schedule ("Overlap with CET 10:00–14:00"), up to three |
+| `history` | `[event]` | **B.** status journal, oldest to newest; `[]` while there are no events |
 
-Событие журнала (B):
+Journal event (B):
 
 ```json
 {"id": "5f1c9a02be7d", "occurred_at": "2026-11-02T09:41:00Z", "recorded_at": "2026-11-03T08:15:12Z",
  "from": "replied", "to": "interview", "actor": "ai",
- "reason_code": null, "suggested_code": null, "reason": "Приглашение на тех. интервью 4.11",
+ "reason_code": null, "suggested_code": null, "reason": "Invited to a tech interview on 4.11",
  "evidence": "gmail:18c2f0a1b2", "approximate": false, "undo_of": null, "cause": null}
 ```
 
-- `occurred_at` — когда это **произошло** (дата письма; клиент передаёт, по умолчанию — момент
-  записи); `recorded_at` — когда бот записал. Аналитика — по `occurred_at`.
-- `approximate: true` — время события — догадка: запись без `occurred_at`, нажатие кнопки исхода
-  (нажали позже, чем пришло письмо), восстановленные события. В метрики времени не входят.
-- `actor`: `user` (владелец: кнопка или его просьба через клиента) | `ai` (решение AI) |
-  `system` (бот: повторы, отказ по тишине, начальное заполнение журнала). `actor` заявляет
-  клиент — это аудит, а не защита.
-- `evidence` — откуда известно: id письма Gmail или цитата.
-- `undo_of` — `id` события, которое это отменило; `cause` — событие на другой копии, из-за
-  которого эта стала повтором.
+- `occurred_at` — when it **happened** (the email's date; the client passes it, by default the
+  moment of writing); `recorded_at` — when the bot wrote it. Analytics go by `occurred_at`.
+- `approximate: true` — the event time is a guess: a write without `occurred_at`, an outcome
+  button press (pressed later than the email arrived), restored events. Not included in time
+  metrics.
+- `actor`: `user` (the owner: a button or their request through the client) | `ai` (an AI
+  decision) | `system` (the bot: repeats, rejection by silence, initial journal fill). The client
+  declares `actor` — it is an audit, not protection.
+- `evidence` — how it is known: a Gmail message id or a quote.
+- `undo_of` — `id` of the event this one undid; `cause` — the event on another copy that made this
+  one a repeat.
 
-## GET /jobs — список
+## GET /jobs — list
 
-Сортировка всегда от новых к старым: `found_at`, затем `id`. Без текста вакансии, если не
-попросить `with_description=true` (тогда у каждой есть `description`, как в полной форме).
+Always sorted newest to oldest: `found_at`, then `id`. Without the vacancy text unless
+`with_description=true` is asked (then each has `description`, as in the full form).
 
-| Параметр | По умолчанию | Смысл |
+| Parameter | Default | Meaning |
 |---|---|---|
-| `status` | все, кроме `duplicate` | статусы через запятую |
-| `tier` | все, кроме `filtered_out` | через запятую; `filtered_out` — только явно |
-| `source` | все | площадки через запятую |
-| `any` / `all` / `none` / `where` | — | поиск по словам |
-| `company` | — | подстрока в названии компании, без учёта регистра |
-| `url` | — | ссылка на вакансию (из письма); сравнивается без `www.`, параметров и хвостового `/` |
-| `source_id` | — | id вакансии на самой площадке (как в её ссылке) |
-| `search` | — | часть URL поиска, который нашёл вакансию, без учёта регистра |
-| `filter_reason` | — | причины фильтра через запятую (`senior,office`); без `tier` ищет среди всех, не только дошедших |
-| `reason_code` | — | коды причин через запятую (`english,experience`) |
-| `with_description` | `false` | добавить полный текст каждой вакансии |
-| `ai_fit` | — | **B.** `yes,maybe,no,none` (`none` = AI ещё не оценивал) |
-| `from` / `to` | последние 30 дней | по `found_at` |
+| `status` | all except `duplicate` | comma-separated statuses |
+| `tier` | all except `filtered_out` | comma-separated; `filtered_out` — only explicitly |
+| `source` | all | comma-separated platforms |
+| `any` / `all` / `none` / `where` | — | keyword search |
+| `company` | — | substring of the company name, case-insensitive |
+| `url` | — | link to the vacancy (from an email); compared without `www.`, parameters and trailing `/` |
+| `source_id` | — | the vacancy's id on the platform itself (as in its link) |
+| `search` | — | part of the URL of the search that found the vacancy, case-insensitive |
+| `filter_reason` | — | comma-separated filter reasons (`senior,office`); without `tier` searches among all, not only those that came through |
+| `reason_code` | — | comma-separated reason codes (`english,experience`) |
+| `with_description` | `false` | add the full text of each vacancy |
+| `ai_fit` | — | **B.** `yes,maybe,no,none` (`none` = AI has not rated yet) |
+| `from` / `to` | last 30 days | by `found_at` |
 | `limit` | 50 | 1–200 |
-| `cursor` | — | `next_cursor` прошлой страницы |
+| `cursor` | — | `next_cursor` of the previous page |
 
-Ответ:
+Response:
 
 ```json
 {
@@ -224,55 +229,56 @@ tolerant reader: неизвестные поля пропускает, неиз�
 }
 ```
 
-**Одна вакансия на группу (с 17.11.2026).** Повтор, найденный в следующем прогоне, пока группа
-ещё не решена, остаётся `new` рядом с первой копией; решение по любой из них решает за обе (вторая
-становится `duplicate`). Поэтому из ждущих копий группы, **подходящих под фильтры запроса**, список
-показывает только самую позднюю (по `found_at`), а остальные — в её `copies` со `status: "new"`.
-Копия вне периода, площадки или слов запроса другую не прячет: `?from=<сегодня>` покажет сегодняшний
-повтор, `?source=Djinni` — копию на Djinni. С `url` или `source_id` видна именно та копия, о которой
-спросили: письмо может быть про отклик через неё. Воронка и дайджест считают копии как раньше.
+**One vacancy per group (since 17.11.2026).** A repeat found in a later run, while the group is
+still undecided, stays `new` next to the first copy; a decision on either of them decides for both
+(the second becomes `duplicate`). So of the group's waiting copies **that match the request's
+filters**, the list shows only the latest one (by `found_at`), and the others are in its `copies`
+with `status: "new"`. A copy outside the request's period, platform or words does not hide the
+other: `?from=<today>` shows today's repeat, `?source=Djinni` — the copy on Djinni. With `url` or
+`source_id` you see exactly the copy asked about: the email may be about an application through
+it. The funnel and the digest count copies as before.
 
-`next_cursor: null` — страниц больше нет. Пагинация по ключу (а не offset): вакансии, найденные,
-пока клиент листает, не дают дублей и пропусков, а попадут на первую страницу следующего запроса.
+`next_cursor: null` — no more pages. Keyset pagination (not offset): vacancies found while the
+client is paging cause no duplicates or gaps, and land on the first page of the next request.
 
-Типовые запросы:
+Typical requests:
 
-- свежие без решения: `?status=new&from=2026-10-27`
-- письмо пришло от компании: `?company=acme&status=applied,replied,interview` или `?url=<ссылка из письма>`
-- про AI в названии: `?any=ai,llm,ml,genai,agentic&where=title`
-- ждут ручного просмотра (сводка 👀): `?tier=review&status=new&from=<2 недели назад>`
-- отклики с текстами для анализа: `?status=applied,replied,interview,offer,rejected_by_employer&with_description=true`
+- fresh, undecided: `?status=new&from=2026-10-27`
+- an email came from a company: `?company=acme&status=applied,replied,interview` or `?url=<link from the email>`
+- about AI in the title: `?any=ai,llm,ml,genai,agentic&where=title`
+- waiting for manual review (👀 digest): `?tier=review&status=new&from=<2 weeks ago>`
+- applications with texts for analysis: `?status=applied,replied,interview,offer,rejected_by_employer&with_description=true`
 
-## GET /jobs/{id} — одна вакансия
+## GET /jobs/{id} — one vacancy
 
-Полная форма. `404 not_found`, если такой нет.
+The full form. `404 not_found` if there is no such vacancy.
 
-## GET /jobs/funnel — воронка
+## GET /jobs/funnel — funnel
 
-Считает бот. По умолчанию (`by=found`) когорта — вакансии, **найденные** в `[from, to)`;
-`by=event` — события журнала в этом периоде, см. ниже. «Откликов в октябре» здесь —
-отклики на вакансии, найденные в октябре. Повторы (`duplicate`) в воронку не входят (одна
-вакансия — одно решение), их число — отдельно в `repeats`.
+The bot computes it. By default (`by=found`) the cohort is vacancies **found** in `[from, to)`;
+`by=event` — journal events in that period, see below. "Applications in October" here means
+applications to vacancies found in October. Repeats (`duplicate`) are not in the funnel (one
+vacancy — one decision); their number is separate, in `repeats`.
 
-| Параметр | По умолчанию | Смысл |
+| Parameter | Default | Meaning |
 |---|---|---|
-| `from` / `to` | последние 30 дней | по `found_at` (`by=event` — по `occurred_at` событий) |
+| `from` / `to` | last 30 days | by `found_at` (`by=event` — by the events' `occurred_at`) |
 | `by` | `found` | `found \| event` |
 | `group_by` | `none` | `none \| source \| stack \| week \| tier \| search \| cv` |
-| `source`, `any`, `all`, `none`, `where`, `company`, `search` | — | те же фильтры, что у списка |
+| `source`, `any`, `all`, `none`, `where`, `company`, `search` | — | the same filters as the list |
 
-- `group_by=stack`: одна вакансия попадает во все свои технологии, поэтому сумма групп больше
-  итога.
-- `group_by=week`: ISO-неделя по времени `Europe/Berlin`, ключ `2026-W44`.
-- `group_by=search`: эффективность поисков бота. `key` — URL поиска (`(unknown)` для вакансий
-  до 06.10.2026), `label` — он же коротко («Djinni · Python»). У остальных группировок
-  `label` = `key`.
-- `group_by=cv`: по резюме, под которое вакансия подходит (`cv`), отклики тоже; `(none)` — без
-  резюме (отброшенные фильтром). С каким резюме ушли отклики группы — в `applied_with`
-  (`universal` — одно CV до 09.11.2026). До 17.11.2026 отклик шёл в группу по `cv_sent`, и
-  `universal` была группой из одних откликов со 100%.
+- `group_by=stack`: one vacancy goes into all its technologies, so the sum of the groups is larger
+  than the total.
+- `group_by=week`: ISO week in `Europe/Berlin` time, key `2026-W44`.
+- `group_by=search`: effectiveness of the bot's searches. `key` — the search URL (`(unknown)` for
+  vacancies before 06.10.2026), `label` — the same, short ("Djinni · Python"). For the other
+  groupings `label` = `key`.
+- `group_by=cv`: by the CV the vacancy fits (`cv`), applications too; `(none)` — no CV (dropped by
+  the filter). Which CV the group's applications went with is in `applied_with` (`universal` — the
+  single CV before 09.11.2026). Before 17.11.2026 an application went into a group by `cv_sent`,
+  and `universal` was a group of applications only, at 100%.
 
-Ответ:
+Response:
 
 ```json
 {
@@ -302,27 +308,32 @@ tolerant reader: неизвестные поля пропускает, неиз�
 }
 ```
 
-- `found` — найдено без повторов; `repeats` — повторы, в остальные числа не входят.
-- `surfaced` — дошли до Telegram (`tier` не `filtered_out`); `decided` — из них со статусом не `new`.
-- `tiers` — сколько найденного попало в каждый `tier`.
-- `opened` — сколько дошедших владелец открыл по ссылке; `clicks` — всего переходов.
-- `reached.X` — дошли **до этапа X или дальше**. Отказ работодателя — это ответ, поэтому он
-  входит в `replied`; кроме `no_response` — тишина не ответ, такой отклик остаётся в `applied`.
-- `applied_with` — отклики группы по резюме, с которым ушли (`cv_sent`); сумма = `reached.applied`.
-- `rejected_after` — на каком этапе отказали. `unknown` — отказ записан до журнала (B).
-- `by` — `found`; `journal` — записи журнала владельца за период (см. `GET /jobs/journal`),
-  `[]` — изменений не было. Хранилище журнала недоступно → `journal: null` и
-  `journal_error: "unavailable"`: это «неизвестно», а не «изменений не было»; цифры воронки от
-  журнала не зависят и приходят как обычно.
+- `found` — found, without repeats; `repeats` — repeats, not included in the other numbers.
+- `surfaced` — reached Telegram (`tier` not `filtered_out`); `decided` — of them, with a status
+  other than `new`.
+- `tiers` — how many of the found landed in each `tier`.
+- `opened` — how many of the surfaced the owner opened via the link; `clicks` — total click-throughs.
+- `reached.X` — reached **stage X or further**. An employer rejection is an answer, so it counts in
+  `replied`; except `no_response` — silence is not an answer, such an application stays in
+  `applied`.
+- `applied_with` — the group's applications by the CV they went with (`cv_sent`); the sum =
+  `reached.applied`.
+- `rejected_after` — at which stage the rejection came. `unknown` — the rejection was recorded
+  before the journal (B).
+- `by` — `found`; `journal` — the owner's journal entries for the period (see
+  `GET /jobs/journal`), `[]` — there were no changes. The journal storage is unavailable →
+  `journal: null` and `journal_error: "unavailable"`: this means "unknown", not "there were no
+  changes"; the funnel numbers do not depend on the journal and come as usual.
 
-### `by=event` — что произошло за период (B)
+### `by=event` — what happened in the period (B)
 
-Когорта — события `history`, чей `occurred_at` (когда **произошло**, не когда записано) в
-`[from, to)`. «Сколько откликов я сделал в октябре», «сколько интервью было на неделе».
+The cohort is `history` events whose `occurred_at` (when it **happened**, not when it was recorded)
+is in `[from, to)`. "How many applications did I make in October", "how many interviews were there
+this week".
 
-**Отменённое не считается.** Событие и его отмена (`undo_of`) выпадают оба, вместе с повторами,
-которые событие сделало на других копиях (`cause`): тестовый PATCH или исправленная ошибка AI в
-числах не остаются.
+**Undone events are not counted.** An event and its undo (`undo_of`) both drop out, together with
+the repeats the event made on other copies (`cause`): a test PATCH or a corrected AI mistake does
+not stay in the numbers.
 
 ```json
 {
@@ -342,35 +353,36 @@ tolerant reader: неизвестные поля пропускает, неиз�
     }
   ],
   "journal": [{"id": "3", "occurred_at": "2026-10-14T09:00:00Z", "recorded_at": "2026-10-14T09:02:11Z",
-               "kind": "cv", "text": "CV: AI-проекты наверх", "actor": "user"}],
+               "kind": "cv", "text": "CV: AI projects to the top", "actor": "user"}],
   "journal_error": null
 }
 ```
 
-- `events` — сколько событий в периоде; `entered.X` — сколько из них привели в статус X;
-  `transitions` — переходы «откуда → куда», частые сверху.
-- `applied` — откликов в периоде; `reached.X` — из них дошли до этапа X или дальше **к сегодняшнему
-  дню** (их последующие события, в том числе после `to`); отказ `no_response` — не ответ.
-  `reply_rate` / `interview_rate` — доли.
-- `rejections` — отказы работодателя в периоде: этап, на котором отказали (`from` события), → код
-  причины → число. Код `unknown` — отказ без кода.
-- `time_to_reply` — часы от отклика до **первого** ответа работодателя (`replied`, `interview`,
-  `offer` или отказ), период — по времени ответа. Не входят: события `approximate` (с любой
-  стороны) и отказ `no_response` (тишина — не ответ). `null`, когда пар нет.
-- `group_by` — те же значения; `week` — неделя **события** (у `reached` — неделя отклика,
-  у `time_to_reply` — неделя ответа).
-- Это корреляция, не эксперимент: при десятках откликов и нескольких изменениях подхода подряд
-  причину по `journal` не отделить.
-- `apply_rate` = `reached.applied / decided` — доля «откликнулся» среди решений; `reply_rate` =
-  `reached.replied / reached.applied`; `median_hours_to_decision` — медиана часов от нахождения
-  до решения. `null`, когда делить не на что.
+- `events` — how many events in the period; `entered.X` — how many of them led into status X;
+  `transitions` — "from → to" transitions, most frequent first.
+- `applied` — applications in the period; `reached.X` — of them, reached stage X or further **as of
+  today** (their later events, including after `to`); a `no_response` rejection is not an answer.
+  `reply_rate` / `interview_rate` — shares.
+- `rejections` — employer rejections in the period: the stage at which the rejection came (the
+  event's `from`) → reason code → number. Code `unknown` — a rejection without a code.
+- `time_to_reply` — hours from application to the employer's **first** answer (`replied`,
+  `interview`, `offer` or a rejection), the period is by the answer time. Not included:
+  `approximate` events (on either side) and a `no_response` rejection (silence is not an answer).
+  `null` when there are no pairs.
+- `group_by` — the same values; `week` — the week of the **event** (for `reached` — the week of
+  the application, for `time_to_reply` — the week of the answer).
+- This is correlation, not an experiment: with dozens of applications and several approach changes
+  in a row, the cause cannot be separated out from `journal`.
+- `apply_rate` = `reached.applied / decided` — the share of "applied" among decisions;
+  `reply_rate` = `reached.replied / reached.applied`; `median_hours_to_decision` — the median of
+  hours from finding to decision. `null` when there is nothing to divide by.
 
-## GET /jobs/digest — недельный дайджест
+## GET /jobs/digest — weekly digest
 
-Те же числа, что бот присылает в Telegram по пятницам: рынок и решения владельца за `days`
-дней (1–180, по умолчанию 7) с выводами. В отличие от воронки, решения здесь считаются **по
-моменту решения** (нажатия кнопки), а рынок — по вакансиям его области (без чужого стека и
-не-разработческих ролей).
+The same numbers the bot sends to Telegram on Fridays: the market and the owner's decisions over
+`days` days (1–180, 7 by default) with insights. Unlike the funnel, decisions here are counted **by
+the moment of decision** (the button press), and the market by vacancies of the owner's field
+(without a foreign stack and non-developer roles).
 
 ```json
 {
@@ -384,130 +396,135 @@ tolerant reader: неизвестные поля пропускает, неиз�
 }
 ```
 
-- `market` — что просят: `in_field` / `in_field_prev` (вакансий области, эта и прошлая неделя),
-  `surfaced`, `reach_share`, `by_tier`, `years` / `english` / `work_format` (распределения),
-  `top_tech` (`share` и `delta` к прошлой неделе), `salary` (`median`, `low`, `high`, `n`),
-  `applicants`, `blockers` (что не пускает: `senior`, `experience`, `english`, `office`, ...).
-- `me` — решения: `decisions` / `prev`, `apply_rate` / `apply_rate_prev`, `funnel` (`found`,
-  `surfaced`, `opened`, `applied`), `pending`, `by_platform`, `outcomes` (что вышло из откликов,
-  по площадкам), `by_tier_rate`, `searches` (лучшие и худшие поиски за 4 недели),
+- `market` — what is asked for: `in_field` / `in_field_prev` (vacancies of the field, this and
+  last week), `surfaced`, `reach_share`, `by_tier`, `years` / `english` / `work_format`
+  (distributions), `top_tech` (`share` and `delta` against last week), `salary` (`median`, `low`,
+  `high`, `n`), `applicants`, `blockers` (what keeps the owner out: `senior`, `experience`,
+  `english`, `office`, ...).
+- `me` — decisions: `decisions` / `prev`, `apply_rate` / `apply_rate_prev`, `funnel` (`found`,
+  `surfaced`, `opened`, `applied`), `pending`, `by_platform`, `outcomes` (what came of the
+  applications, by platform), `by_tier_rate`, `searches` (best and worst searches over 4 weeks),
   `dead_searches`, `mismatch_reasons`, `not_interested_reasons`, `filter_misses`,
-  `avg_hours_to_action` (медиана), `applied_tech`.
-- `market_insights` / `my_insights` — до 5 выводов: `{kind, ...числа}`. `kind`: рынок —
+  `avg_hours_to_action` (median), `applied_tech`.
+- `market_insights` / `my_insights` — up to 5 insights: `{kind, ...numbers}`. `kind`: market —
   `seniority_wall`, `english_gate`, `tech_rising`, `tech_falling`, `volume`, `competition`;
-  владелец — `platform_gap`, `tiers`, `main_gap`, `filter_miss`, `speed`, `backlog`,
+  owner — `platform_gap`, `tiers`, `main_gap`, `filter_miss`, `speed`, `backlog`,
   `dead_search`, `trend`.
-- `silent_sources` — площадки, которые бот ищет, но за период они не дали ни одной вакансии
-  (сломался разбор или блокировка).
-- Доли — от 0 до 1. Число, за которым слишком мало данных, — `null`.
-- База недоступна → `503 storage_unavailable` (а не нули).
+- `silent_sources` — platforms the bot searches that gave not a single vacancy in the period
+  (broken parsing or a block).
+- Shares are from 0 to 1. A number with too little data behind it is `null`.
+- The database is unavailable → `503 storage_unavailable` (not zeros).
 
-## Журнал владельца (B)
+## Owner's journal (B)
 
-Изменения подхода — новое CV, другое письмо, стратегия, рынок — с датой, чтобы видеть их на той же
-шкале времени, что и цифры воронки.
+Approach changes — a new CV, a different letter, strategy, the market — with a date, to see them on
+the same timeline as the funnel numbers.
 
 `POST /jobs/journal` → `201`:
 
 ```json
-{"kind": "cv", "text": "CV: AI-проекты наверх, убрал фриланс", "occurred_at": "2026-10-14T09:00:00Z"}
+{"kind": "cv", "text": "CV: AI projects to the top, removed freelance", "occurred_at": "2026-10-14T09:00:00Z"}
 ```
 
-| Поле | Обязательно | Смысл |
+| Field | Required | Meaning |
 |---|---|---|
-| `kind` | да | `cv \| letter \| strategy \| market \| other` |
-| `text` | да | что изменилось и зачем, 1–2000 символов |
-| `occurred_at` | нет | когда изменение сделано; по умолчанию — сейчас; в будущем → `400` |
-| `actor` | нет | `user` (по умолчанию) \| `ai` |
+| `kind` | yes | `cv \| letter \| strategy \| market \| other` |
+| `text` | yes | what changed and why, 1–2000 characters |
+| `occurred_at` | no | when the change was made; now by default; in the future → `400` |
+| `actor` | no | `user` (default) \| `ai` |
 
-Ответ — запись: `{id, occurred_at, recorded_at, kind, text, actor}`. Неизвестное поле → `400`.
+The response is the entry: `{id, occurred_at, recorded_at, kind, text, actor}`. An unknown field →
+`400`.
 
-`GET /jobs/journal?from=&to=` → `{"items": [запись, ...]}` — записи периода по `occurred_at`, от
-старых к новым; по умолчанию последние 30 дней. Те же записи приходят в `journal` воронки.
+`GET /jobs/journal?from=&to=` → `{"items": [entry, ...]}` — the period's entries by `occurred_at`,
+oldest to newest; the last 30 days by default. The same entries come in the funnel's `journal`.
 
-## Отказ по тишине (B)
+## Rejection by silence (B)
 
-Раз в сутки (10:00 по `Europe/Berlin`) бот сам переводит отклик в отказ: `applied` и в `history`
-нет событий 21 день (`NO_RESPONSE_DAYS`) → `rejected_by_employer`, `reason_code: no_response`,
-`actor: system`, тихая правка сообщения без реплики. `occurred_at` отказа — последнее событие + 21
-день (когда тишина набрала срок), а не день проверки. Проверка включается разовой миграцией тишины
-у старых откликов; до неё не делает ничего. Отменить — как любое изменение: PATCH или
-кнопка исхода. Клиенту `no_response` ставить можно, но обычно незачем.
+Once a day (10:00 `Europe/Berlin`) the bot turns an application into a rejection on its own:
+`applied` and no events in `history` for 21 days (`NO_RESPONSE_DAYS`) → `rejected_by_employer`,
+`reason_code: no_response`, `actor: system`, a silent message edit without a reply. The rejection's
+`occurred_at` is the last event + 21 days (when the silence reached the term), not the day of the
+check. The check is switched on by a one-off silence migration of old applications; before it, it
+does nothing. Undo it like any change: PATCH or the outcome button. The client may set
+`no_response`, but usually has no reason to.
 
-## PATCH /jobs/{id}/status — сменить статус (B)
+## PATCH /jobs/{id}/status — change the status (B)
 
 ```json
 {"status": "rejected_by_employer", "expected_status": "applied", "actor": "ai",
- "reason_code": "salary", "reason": "Бюджет до $1500, просил $2500",
+ "reason_code": "salary", "reason": "Budget up to $1500, asked for $2500",
  "evidence": "gmail:18c2f0a1b2", "occurred_at": "2026-11-02T09:41:00Z"}
 ```
 
-| Поле | Обязательно | Смысл |
+| Field | Required | Meaning |
 |---|---|---|
-| `status` | да | новый статус; `blocked` и `duplicate` → `400` |
-| `expected_status` | да | какой статус клиент видел. Не совпал → `409 status_conflict` с `current_status` |
-| `actor` | да | `ai \| user`; `system` → `400` (его ставит только бот) |
-| `reason_code` | нет | из словаря **нового** статуса (`GET /jobs/reasons`); неизвестный, `muted` или код у статуса без словаря → `400` |
-| `suggested_code` | с `other` | какой код бы подошёл, `snake_case`; `other` без него → `400`, без `other` → `400` |
-| `reason` | нет | свободный текст, до 2000 символов |
-| `evidence` | у `ai` | id письма Gmail или цитата, до 1000 символов; `actor: ai` без него → `400` |
-| `occurred_at` | нет | когда это произошло; по умолчанию — сейчас, и тогда событие `approximate`. В будущем или раньше `found_at` → `400` |
+| `status` | yes | the new status; `blocked` and `duplicate` → `400` |
+| `expected_status` | yes | which status the client saw. Does not match → `409 status_conflict` with `current_status` |
+| `actor` | yes | `ai \| user`; `system` → `400` (only the bot sets it) |
+| `reason_code` | no | from the vocabulary of the **new** status (`GET /jobs/reasons`); unknown, `muted`, or a code for a status without a vocabulary → `400` |
+| `suggested_code` | with `other` | which code would fit, `snake_case`; `other` without it → `400`, it without `other` → `400` |
+| `reason` | no | free text, up to 2000 characters |
+| `evidence` | with `ai` | a Gmail message id or a quote, up to 1000 characters; `actor: ai` without it → `400` |
+| `occurred_at` | no | when it happened; now by default, and then the event is `approximate`. In the future or earlier than `found_at` → `400` |
 
-Неизвестное поле в теле → `400` (опечатка не должна пройти как «причины нет»).
+An unknown field in the body → `400` (a typo must not pass as "no reason").
 
-- Любой переход между разрешёнными статусами допустим, в том числе откат (`interview` →
-  `replied`). Откат — это новое событие, история не переписывается.
-- Тот же статус с той же причиной → `200`, `"changed": false`, события нет — в том числе когда
-  клиент повторяет запрос, ответ на который потерял (`expected_status` тогда уже старый). Тот же
-  статус с **другой** причиной → новое событие. Поля причины, которых нет в теле, при том же
-  статусе остаются как были; при смене статуса — пустые.
-- Решение по одной копии решает за группу: ждущие копии становятся `duplicate` (события
-  `actor: system` с `cause`). Вакансия-повтор или копия группы, где решение уже есть, →
-  `409 is_duplicate` с `duplicate_of`: менять статус там.
-- После записи бот правит сообщение о вакансии в Telegram. Ошибка Telegram статус не откатывает.
+- Any transition between allowed statuses is valid, including a rollback (`interview` →
+  `replied`). A rollback is a new event; the history is not rewritten.
+- The same status with the same reason → `200`, `"changed": false`, no event — including when the
+  client repeats a request whose response it lost (`expected_status` is then already stale). The
+  same status with a **different** reason → a new event. Reason fields missing from the body stay
+  as they were for the same status; on a status change they are empty.
+- A decision on one copy decides for the group: waiting copies become `duplicate` (events
+  `actor: system` with `cause`). A repeat vacancy, or a copy of a group that already has a decision,
+  → `409 is_duplicate` with `duplicate_of`: change the status there.
+- After writing, the bot edits the vacancy's message in Telegram. A Telegram error does not roll
+  back the status.
 
-Ответ `200`:
+Response `200`:
 
 ```json
-{"changed": true, "job": { "...": "полная форма" }, "telegram": "queued"}
+{"changed": true, "job": { "...": "full form" }, "telegram": "queued"}
 ```
 
-`telegram`: `queued` — правка и/или реплика поставлены в очередь отправки | `skipped` —
-показывать нечего: сообщения нет, а изменение не от AI. Что Telegram сделал на самом деле,
-видно в логах бота; статус сохранён в любом случае.
+`telegram`: `queued` — the edit and/or reply are queued for sending | `skipped` — nothing to show:
+there is no message, and the change is not from AI. What Telegram actually did is visible in the
+bot's logs; the status is saved either way.
 
-## POST /jobs/status/batch — несколько статусов за раз (B, 16.11.2026)
+## POST /jobs/status/batch — several statuses at once (B, 16.11.2026)
 
-До 25 изменений за вызов. Каждое — как тело `PATCH /jobs/{id}/status` плюс `job_id`:
+Up to 25 changes per call. Each is like the body of `PATCH /jobs/{id}/status` plus `job_id`:
 
 ```json
 {"changes": [
   {"job_id": "6afad4902e80cd0a4f84645b", "status": "not_interested", "expected_status": "new",
-   "actor": "ai", "reason_code": "role", "reason": "Embedded, не software", "evidence": "user:разбор вакансий"},
+   "actor": "ai", "reason_code": "role", "reason": "Embedded, not software", "evidence": "user:vacancy review"},
   {"job_id": "6afad4902e80cd0a4f84645e", "status": "mismatch", "expected_status": "new",
-   "actor": "ai", "reason_code": "stack", "evidence": "user:разбор вакансий"}
+   "actor": "ai", "reason_code": "stack", "evidence": "user:vacancy review"}
 ]}
 ```
 
-Изменения независимы: конфликт или ошибка в одном не останавливает остальные. Пустой список,
-больше 25 изменений или неизвестное поле → `400` на весь вызов; база недоступна → `503`. После
-`503` часть изменений могла уже записаться: при повторе такое придёт как `status_conflict` с
-`current_status`, равным нужному статусу, — это «уже сделано», а не ошибка.
+Changes are independent: a conflict or an error in one does not stop the others. An empty list,
+more than 25 changes, or an unknown field → `400` for the whole call; the database is unavailable →
+`503`. After a `503` some changes may already have been written: on a retry such a change comes back
+as `status_conflict` with `current_status` equal to the wanted status — that means "already done",
+not an error.
 
-Ответ `200`, `results` — в порядке `changes`:
+Response `200`, `results` — in the order of `changes`:
 
 ```json
 {"results": [
-  {"job_id": "6afa…45b", "ok": true, "result": {"changed": true, "job": {"...": "полная форма"}, "telegram": "queued"}},
+  {"job_id": "6afa…45b", "ok": true, "result": {"changed": true, "job": {"...": "full form"}, "telegram": "queued"}},
   {"job_id": "6afa…45e", "ok": false, "error": {"code": "status_conflict", "message": "…", "current_status": "applied"}}
  ],
  "written": 1, "failed": 1}
 ```
 
-`error` — то же, что тело ошибки PATCH (`invalid_parameter`, `not_found`, `status_conflict` с
-`current_status`, `is_duplicate` с `duplicate_of`).
+`error` is the same as a PATCH error body (`invalid_parameter`, `not_found`, `status_conflict` with
+`current_status`, `is_duplicate` with `duplicate_of`).
 
-## GET /jobs/reasons — коды причин (B)
+## GET /jobs/reasons — reason codes (B)
 
 ```json
 {"statuses": {
@@ -518,40 +535,45 @@ tolerant reader: неизвестные поля пропускает, неиз�
 }}
 ```
 
-Коды, которые клиент может поставить (`muted` — кнопка, его здесь нет), и с 17.11.2026 — коды
-`blocked`, только чтобы читать историю (`blocked/site` в событии): сам статус `blocked` клиент
-не ставит (`400`). Список меняется с релизами бота: новый код появляется здесь, события до него
-остаются `other` с `suggested_code`.
+`description` comes from the bot as is, in Russian (the product's language).
 
-## Telegram при изменениях через API (B)
+The codes the client may set (`muted` is a button, it is not here), and since 17.11.2026 the
+`blocked` codes, only for reading the history (`blocked/site` in an event): the client does not set
+the `blocked` status itself (`400`). The list changes with the bot's releases: a new code appears
+here, events before it stay `other` with `suggested_code`.
 
-- **Статус — правка всегда.** Сообщение вакансии правится тихо: строка статуса, кнопки под
-  новый статус, пометка «🤖» для `actor: ai`.
-- **Реплика на изменение от AI.** `replied`, `interview`, `offer` — отдельный ответ на сообщение
-  вакансии («🤖 AI: Откликнулся → **Интервью**», вакансия, причина), со звуком и с кнопкой
-  «↩️ Отменить». Остальные изменения от AI (с 16.11.2026) собираются в одно тихое сообщение
-  сессии: оно дописывается правкой, пока изменения идут с паузой меньше 30 минут, до 12 штук.
-  Кнопка «↩️ Отменить…» под ним спрашивает, какое отменить; отменённое зачёркивается.
-  Изменения от `user` через API — только тихая правка.
-- **Нет сообщения** (вакансия до хранения `message_id`, сводка 👀, сообщение удалено): новое
-  сообщение вакансии не шлётся; реплика от AI приходит отдельным сообщением с «↩️ Отменить» и
-  ссылкой на вакансию (громкие) или попадает в сообщение сессии, где вакансия — ссылка.
-- **Сводка 👀** — одно сообщение в день, дописывается правкой; решённая вакансия получает в ней
-  значок статуса в течение минуты.
+## Telegram on changes through the API (B)
 
-  Старые сообщения бот не удаляет: Telegram разрешает удалять только сообщения младше 48 часов.
-- **«↩️ Отменить»** возвращает статус и причину, что были до события, и копии, которые оно
-  сделало повторами; в журнале — новое событие с `undo_of`. Отменить можно только последнее
-  событие и только пока статус тот, что оно поставило; иначе — «уже изменено», ничего не меняется.
-- **Очередь.** Правки и реплики уходят через одного отправителя: по одной, пауза на `429`
-  (`retry_after`), повтор с растущей паузой на таймаут и `5xx`. Очередь хранится в базе и
-  переживает перезапуск бота; ответ API Telegram не ждёт.
-- Нажатие кнопок в Telegram работает как раньше и реплик не порождает. Если статус успели
-  изменить, пока кнопка висела, бот отвечает «Статус уже изменён» и обновляет сообщение.
+- **Status — always an edit.** The vacancy's message is edited silently: the status line, buttons
+  for the new status, a "🤖" mark for `actor: ai`.
+- **Reply to a change from AI.** `replied`, `interview`, `offer` — a separate reply to the
+  vacancy's message («🤖 AI: Откликнулся → **Интервью**», the vacancy, the reason), with sound and an
+  «↩️ Отменить» (undo) button. The other changes from AI (since 16.11.2026) are collected into one
+  silent session message: it is extended by editing while the changes come with a pause under 30
+  minutes, up to 12 of them. The «↩️ Отменить…» button under it asks which one to undo; the undone
+  one is struck through. Changes from `user` through the API — only a silent edit.
+- **No message** (a vacancy from before `message_id` was stored, the 👀 digest, the message was
+  deleted): no new vacancy message is sent; a reply from AI comes as a separate message with
+  «↩️ Отменить» and a link to the vacancy (loud ones) or goes into the session message, where the
+  vacancy is a link.
+- **The 👀 digest** — one message a day, extended by editing; a decided vacancy gets its status
+  icon in it within a minute.
 
-## Открыто
+  The bot does not delete old messages: Telegram only allows deleting messages younger than 48
+  hours.
+- **«↩️ Отменить»** restores the status and reason that were before the event, and the copies it
+  made repeats; the journal gets a new event with `undo_of`. Only the last event can be undone, and
+  only while the status is the one it set; otherwise — "already changed", nothing changes.
+- **Queue.** Edits and replies go through one sender: one at a time, a pause on `429`
+  (`retry_after`), a retry with a growing pause on a timeout and `5xx`. The queue is stored in the
+  database and survives a bot restart; the API response does not wait for Telegram.
+- Pressing buttons in Telegram works as before and produces no replies. If the status was changed
+  while the button was hanging, the bot answers «Статус уже изменён» (status already changed) and
+  updates the message.
 
-Пока не сделано; добавится без поломок (новое значение параметра, новый эндпоинт).
+## Open
 
-- **B:** `PUT /jobs/{id}/ai_verdict` — оценка AI `{fit: yes|maybe|no, reason, at}` и поле
-  `ai_verdict` в вакансии; статус не меняет. Отложено.
+Not done yet; will be added without breakage (a new parameter value, a new endpoint).
+
+- **B:** `PUT /jobs/{id}/ai_verdict` — the AI rating `{fit: yes|maybe|no, reason, at}` and the
+  `ai_verdict` field in the vacancy; does not change the status. Postponed.
