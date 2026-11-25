@@ -15,6 +15,7 @@ name: CD
 #   deploy  plain ssh: compose files + .env (only the file's ${NAME}s, mode 600) → up → the service's own
 #           compose healthcheck says healthy → health reports X.Y.Z → otherwise the previous compose
 #           and .env come back, and the job is red
+#   release the GitHub Release, its notes = the tag's section of CHANGELOG.md (only after a green deploy)
 
 on:
   push:
@@ -168,3 +169,35 @@ jobs:
       - name: Clean up
         if: always()
         run: rm -rf ~/.ssh/deploy_key "$RUNNER_TEMP/deploy"
+
+  # Only after a green deploy: the GitHub Release carries the tag's own CHANGELOG.md section, so what is
+  # live and what the page says can never disagree. Already there (a re-run) → left as it is.
+  release:
+    name: GitHub Release
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Release from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME exists — left as it is"; exit 0
+          fi
+          # The section under "## v<version> …" up to the next "## " heading.
+          awk -v v="$VERSION" '
+            /^## / { if (found) exit; if ($2 == "v" v || $2 == v) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
+            echo "::warning::CHANGELOG.md has no section for $VERSION — the release gets only its title"
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/notes.md"
