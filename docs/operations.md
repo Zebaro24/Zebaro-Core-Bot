@@ -97,7 +97,7 @@ standard (≤ v0.24.0) ran the old layout in `/srv/zebaro-core`: never redeploy 
 
 **One-time move to the deploy standard** (the first release after v0.24.0; SSH — the owner's word,
 step by step, every path absolute). Before: the site has already moved (its container left project
-`zebaro-core`), and `prod` has the secrets `SERVER_HOST`, `SERVER_SSH_KEY` and the variables
+`zebaro-core`), and `prod` has the secret `SERVER_SSH_KEY` and the variables `SERVER_HOST`,
 `SERVER_USER`, `SERVER_KNOWN_HOSTS`, `APP_PORT=18004`. Then, right before pushing the tag:
 
 1. While the stack runs — the numbers to compare with afterwards and the Mongo dump (the db must be
@@ -119,7 +119,7 @@ step by step, every path absolute). Before: the site has already moved (its cont
 5. Push the tag. The first deploy has nothing to roll back to — watch it.
 6. Check against step 1: `/health` version, the same jobs count, `services.json`, a VPN client
    connects. Only then remove the old `docker-compose.yml`, `services.json/` and `site/` in
-   `/srv/zebaro-core`, and in `prod` `SSH_PRIVATE_KEY`, `SERVER_PORT` and the secret `SERVER_USER`.
+   `/srv/zebaro-core`, and in `prod` `SSH_PRIVATE_KEY`, `SERVER_PORT` and the secrets `SERVER_HOST` / `SERVER_USER`.
 
 ## Production
 

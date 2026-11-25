@@ -36,7 +36,7 @@ echo Не задан адрес сервера. Один раз:
 echo     setx PROD_USER zebaro
 echo     setx PROD_HOST server.zebaro.dev
 echo и открой терминал заново. Те же значения лежат в GitHub - Settings -
-echo Environments - prod: секрет SERVER_HOST и переменная SERVER_USER.
+echo Environments - prod: переменные SERVER_HOST и SERVER_USER.
 echo.
 echo `prod health` работает и без них - он идёт по публичному HTTP.
 goto :end

@@ -4,10 +4,10 @@ name: CD
 # A vX.Y.Z tag is the only thing that reaches production. Nothing below is project-specific: the
 # project's part is its docker-compose.yml — the one source of values, service, server dir and files,
 # checked in the gate by scripts/deploy.py — and the GitHub environment `prod`:
-#   secrets   SERVER_HOST, SERVER_SSH_KEY + the secret ones of the file's ${NAME}s
-#   variables SERVER_USER, SERVER_KNOWN_HOSTS (recommended; hashed with `ssh-keygen -H`, so it does not
-#             name the host), APP_PORT + the other ${NAME}s. A user name is no secret, and as one GitHub
-#             would mask that word — `deploy` — in every log.
+#   secrets   SERVER_SSH_KEY — the one server secret — + the secret ones of the file's ${NAME}s
+#   variables SERVER_HOST, SERVER_USER, SERVER_KNOWN_HOSTS (recommended; `ssh-keygen -H` hashes the
+#             host name out of it), APP_PORT + the other ${NAME}s. A host and a user are no secret on a
+#             key-only server, and as secrets GitHub masks those words in every log.
 #   SERVER_* is how CD reaches the server; APP_VERSION, APP_PORT and DATA_DIR are what the app gets.
 #
 #   ci      waits for CI's "Gate" check on the tag's commit — the gate never runs twice
@@ -132,13 +132,13 @@ jobs:
 
       - name: SSH
         env:
-          HOST: ${{ secrets.SERVER_HOST }}
+          HOST: ${{ vars.SERVER_HOST }}
           USER: ${{ vars.SERVER_USER }}
           KEY: ${{ secrets.SERVER_SSH_KEY }}
           KNOWN: ${{ vars.SERVER_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          [ -n "$HOST" ] || { echo "::error::environment prod has no secret SERVER_HOST"; exit 1; }
+          [ -n "$HOST" ] || { echo "::error::environment prod has no variable SERVER_HOST"; exit 1; }
           [ -n "$USER" ] || { echo "::error::environment prod has no variable SERVER_USER"; exit 1; }
           [ -n "$KEY" ] || { echo "::error::environment prod has no secret SERVER_SSH_KEY"; exit 1; }
           install -m 700 -d ~/.ssh
