@@ -85,18 +85,50 @@ whether a newer parent releases it (aiogram 3.31 released `aiohttp`).
    call of its own, never chained to step 3: the auto-mode classifier refuses that chain whole.
 5. Tell the owner: the bot container restarts, Telegram and Discord are offline for a few seconds.
 6. `git -C Zebaro-Core-Bot push origin main`, then `git -C Zebaro-Core-Bot push origin vX.Y.Z` — CD.
-7. `gh run list --limit 3`; when CD is green: `scripts\prod.bat health` must show the **new** version
-   (`{"status":"ok","version":"X.Y.Z"}`), `prod.bat ps` a fresh uptime, `prod.bat logs zebaro-core-bot 10m`.
-   A green CD with the old version means the container was not recreated → `gh run rerun <id>`.
+7. `gh run watch` on the tag's CD run. CD (the template's addon `deploy`, PRACTICES 2.8) waits for CI's
+   `Gate` on the commit, builds `:X.Y.Z`, writes `.env` from `prod` (every `${NAME}` of
+   `docker-compose.yml`), `up`, waits on the bot's healthcheck alone (an infra switched off in `/services` does not count), and checks `/health` reports the version —
+   or brings the previous compose and `.env` back and goes red. Then `scripts\prod.bat health`,
+   `prod.bat ps`, `prod.bat logs zebaro-core-bot 10m`.
 
-Roll forward, never back: re-pushing an old `v*` tag runs CD and deploys **old** code (if history must
-be rewritten, the owner disables CD first: `gh workflow disable CD`).
+Roll forward, never back by re-tagging: re-pushing an old `v*` tag deploys **old** code (if history
+must be rewritten, the owner disables CD first: `gh workflow disable CD`). Tags before the deploy
+standard (≤ v0.24.0) ran the old layout in `/srv/zebaro-core`: never redeploy them.
+
+**One-time move to the deploy standard** (the first release after v0.24.0; SSH — the owner's word,
+step by step, every path absolute). Before: the site has already moved (its container left project
+`zebaro-core`), and `prod` has the secrets `SERVER_HOST`, `SERVER_SSH_KEY` and the variables
+`SERVER_USER`, `SERVER_KNOWN_HOSTS`, `APP_PORT=18004`. Then, right before pushing the tag:
+
+1. While the stack runs — the numbers to compare with afterwards and the Mongo dump (the db must be
+   up: `docker start zebaro-core-db` if `/services` has it off):
+   `docker exec zebaro-core-db mongo zebaro_core --quiet --eval 'db.jobs.countDocuments({})'`,
+   `sudo cat /srv/zebaro-core/state/services.json`,
+   `docker exec zebaro-core-db mongodump --archive --gzip > ~/zebaro-core-<date>.mongo.gz`.
+2. Stop it by project name, without the old compose file (it needs `WG_PASSWORD`, which only the old
+   CD's session had): `docker compose -p zebaro-core down`. Telegram, Discord and the VPN are off until
+   step 5; removing the network fails while MCP is on it — expected, the network stays.
+3. Now the files are quiet: `sudo tar czf ~/zebaro-core-<date>.tgz -C /srv zebaro-core` (SQLite and the
+   VPN keys included); `tar tzf` and `zcat … | head -c 100` show both backups open.
+4. `sudo mkdir /srv/zebaro-core/data && sudo mv /srv/zebaro-core/mongo_db /srv/zebaro-core/data/mongo &&
+   sudo mv /srv/zebaro-core/state /srv/zebaro-core/data/state && sudo mv /srv/zebaro-core/vpn
+   /srv/zebaro-core/data/vpn` (the same filesystem: a rename, nothing is copied). **Gate before the tag:**
+   `sudo ls /srv/zebaro-core/data/mongo /srv/zebaro-core/data/vpn` shows the Mongo files and
+   `wg-easy.db`, and `/srv/zebaro-core/mongo_db`, `state`, `vpn` are gone. An empty `data/vpn` at the
+   first start makes wg-easy build a new server with new keys — every VPN client breaks.
+5. Push the tag. The first deploy has nothing to roll back to — watch it.
+6. Check against step 1: `/health` version, the same jobs count, `services.json`, a VPN client
+   connects. Only then remove the old `docker-compose.yml`, `services.json/` and `site/` in
+   `/srv/zebaro-core`, and in `prod` `SSH_PRIVATE_KEY`, `SERVER_PORT` and the secret `SERVER_USER`.
 
 ## Production
 
-One VPS: `zebaro@server.zebaro.dev`, compose in `/srv/zebaro-core`, containers `zebaro-core-bot`,
-`zebaro-core-db` (MongoDB 4.4), `zebaro-core-playwright` (browser server), `zebaro-core-vpn`
-(wg-easy); public `https://bot.zebaro.dev`. Use `scripts\prod.bat`, not long `ssh` lines.
+One VPS: `zebaro@server.zebaro.dev`. Compose in `/srv/zebaro-core/zebaro-core-bot` (project
+`zebaro-core-bot`), state in `/srv/zebaro-core/data/{mongo,state,vpn}` — the folder to back up.
+Containers `zebaro-core-bot`, `zebaro-core-db` (MongoDB 4.4), `zebaro-core-playwright` (browser
+server, also used by Zebaro-Core-MCP), `zebaro-core-vpn` (wg-easy); network `zebaro-core_default`
+(named in compose; MCP and the site join it). Public `https://bot.zebaro.dev`. Use `scripts\prod.bat`,
+not long `ssh` lines.
 
 ```bat
 scripts\prod.bat health                     :: public HTTP only — needs no permission
@@ -112,7 +144,7 @@ scripts\prod.bat state                      :: which services are switched on
   `query is too old` shows up again, something blocks the event loop with a synchronous call.
 - `Playwright version mismatch` → `docker-compose.yml` and `poetry.lock` disagree.
 - `/services` all on again after a restart → `prod.bat state`; the file is
-  `/srv/zebaro-core/state/services.json`.
+  `/srv/zebaro-core/data/state/services.json`.
 - **Never print a container's environment** (`docker inspect` without `--format`, `docker exec … env`):
   it holds every bot token.
 - Never edit files on the server, restart containers or write to the database unless the owner asked

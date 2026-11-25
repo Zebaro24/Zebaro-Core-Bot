@@ -1,12 +1,22 @@
+# The deploy standard (scripts/deploy.py, checked in the gate): `name:` = the repo, the server dir is
+# /srv/zebaro-core/zebaro-core-bot, state lives in ${DATA_DIR} = /srv/zebaro-core/data (the one folder
+# to back up; ./data locally), every value below comes from GitHub environment `prod` through CD's
+# .env — this file is the only list of them.
+name: zebaro-core-bot
+
+x-deploy:
+  group: zebaro-core
+
 services:
   zebaro-core-db:
     image: mongo:4.4
     container_name: zebaro-core-db
+    # The bot starts and stops it itself (src/infrastructure/mongodb.py).
     restart: "no"
     environment:
       - MONGO_INITDB_DATABASE=zebaro_core
     volumes:
-      - ./mongo_db:/data/db
+      - ${DATA_DIR:-./data}/mongo:/data/db
     expose:
       - "27017"
     healthcheck:
@@ -17,9 +27,9 @@ services:
       start_period: 20s
 
   zebaro-core-playwright:
-    # Версия должна совпадать с Python-пакетом playwright из poetry.lock (major.minor),
-    # иначе клиент получает 428 "Playwright version mismatch". Проверяется тестом
-    # tests/test_playwright_version.py.
+    # Must match the Python playwright package in poetry.lock (major.minor), or the client gets
+    # 428 "Playwright version mismatch" — tests/test_playwright_version.py checks it. Zebaro-Core-MCP
+    # (tiktok) uses this server too: its package moves with it (../docs/contracts.md).
     image: mcr.microsoft.com/playwright:v1.63.0-noble
     container_name: zebaro-core-playwright
     restart: "no"
@@ -31,58 +41,69 @@ services:
 
   zebaro-core-bot:
     build: .
-    image: ghcr.io/zebaro24/zebaro-core-bot:latest
+    # CD writes APP_VERSION (the tag); `latest` locally. /health reports the version from pyproject.toml.
+    image: ghcr.io/zebaro24/zebaro-core-bot:${APP_VERSION:-latest}
     container_name: zebaro-core-bot
     restart: unless-stopped
     environment:
-      - TELEGRAM_BOT_TOKEN
-      - TELEGRAM_ADMIN_ID
-      - TELEGRAM_DOCKER_ACCESS_IDS
-      - DISCORD_BOT_TOKEN
+      # No default in src/config.py: the bot does not start without these, so neither does a deploy.
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}
+      - TELEGRAM_ADMIN_ID=${TELEGRAM_ADMIN_ID:?TELEGRAM_ADMIN_ID is required}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}
+      - PERSONAL_GITHUB_TOKEN=${PERSONAL_GITHUB_TOKEN:?PERSONAL_GITHUB_TOKEN is required}
+      - PERSONAL_GITHUB_SECRET=${PERSONAL_GITHUB_SECRET:?PERSONAL_GITHUB_SECRET is required}
+      - WEBHOOK_URL=${WEBHOOK_URL:?WEBHOOK_URL is required}
+      # Defaults are empty strings in src/config.py, so `${X:-}` changes nothing when unset.
+      - TELEGRAM_DOCKER_ACCESS_IDS=${TELEGRAM_DOCKER_ACCESS_IDS:-}
+      - JOBS_API_TOKEN=${JOBS_API_TOKEN:-}
+      - SITE_CONTACT_TOKEN=${SITE_CONTACT_TOKEN:-}
+      - NOTIFY_API_TOKEN=${NOTIFY_API_TOKEN:-}
+      - WG_EASY_PASSWORD=${WG_PASSWORD:-}
+      - HOME_PROXY_URL=${HOME_PROXY_URL:-}
+      - MONOBANK_TOKEN=${MONOBANK_TOKEN:-}
+      - MONOBANK_WEBHOOK_SECRET=${MONOBANK_WEBHOOK_SECRET:-}
+      - MONOBANK_JAR_ID=${MONOBANK_JAR_ID:-}
+      - MONOBANK_CARD_ID=${MONOBANK_CARD_ID:-}
+      - SPOTIFY_SINCE=${SPOTIFY_SINCE:-}
       - MONGO_URI=mongodb://zebaro-core-db:27017/zebaro_core
       - PLAYWRIGHT_WS_ENDPOINT=ws://zebaro-core-playwright:9222
-      - PERSONAL_GITHUB_TOKEN
-      - PERSONAL_GITHUB_SECRET
-      - WEBHOOK_URL
-      - JOBS_API_TOKEN
-      - SITE_CONTACT_TOKEN
-      - NOTIFY_API_TOKEN
-      - WG_EASY_PASSWORD=${WG_PASSWORD:-}
-      - HOME_PROXY_URL
-      - MONOBANK_TOKEN
-      - MONOBANK_WEBHOOK_SECRET
-      - MONOBANK_JAR_ID
-      - MONOBANK_CARD_ID
-      - SPOTIFY_SINCE
-      # SQLite в смонтированной state/ — переживает пересборку контейнера.
+      # SQLite in the mounted state/ — survives a rebuild of the container.
       - DATABASE_URL=sqlite+aiosqlite:////app/state/zebaro.db
       - TZ=Europe/Berlin
       - SERVICES_STATE_FILE=/app/state/services.json
-    # API wg-easy живёт в сети хоста на мосту Docker (172.17.0.1) — отсюда он host.docker.internal.
+    # wg-easy's API lives in the host network on the Docker bridge (172.17.0.1) — host.docker.internal from here.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      # Монтируем папку, а не сам файл: если services.json на хосте ещё нет,
-      # Docker создаёт на его месте директорию и состояние перестаёт сохраняться.
-      - ./state:/app/state
+      # A folder, not the file: a bind-mounted missing services.json turns into a directory and the
+      # state stops being saved.
+      - ${DATA_DIR:-./data}/state:/app/state
     # Loopback only: cloudflared on the host forwards bot.zebaro.dev to localhost. Docker publishes
     # past the host firewall, so 0.0.0.0 here would put the bot on the server's IP past Cloudflare.
     ports:
-      - "127.0.0.1:${SERVER_PORT:-8000}:8000"
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
+    # CD waits for this after `up`; `docker ps` shows it.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
 
   zebaro-core-vpn:
-    # WireGuard с веб-API; бот управляет им через /vpn (src/services/vpn/).
-    # Сеть хоста: 10.0.0.1 — это сам сервер, поэтому через VPN видны Samba (\\10.0.0.1) и
-    # домашний ПК 10.0.0.2. Панель слушает только мост Docker (172.17.0.1:51821): из интернета
-    # её не видно, а людям в VPN её закрывает правило на wg0, которое бот сам добавляет в хуки
-    # wg-easy (WgEasy.close_panel_to_peers). Наружу открыт только UDP 51820.
+    # WireGuard with a web API; the bot drives it through /vpn (src/services/vpn/).
+    # Host network: 10.0.0.1 is the server itself, so Samba (\\10.0.0.1) and the home PC 10.0.0.2 are
+    # reachable through the VPN. The panel listens on the Docker bridge only (172.17.0.1:51821): invisible
+    # from the internet, and closed to VPN peers by the wg0 rule the bot adds to wg-easy's hooks
+    # (WgEasy.close_panel_to_peers). Only UDP 51820 is open.
     image: ghcr.io/wg-easy/wg-easy:15.4
     container_name: zebaro-core-vpn
     restart: unless-stopped
     network_mode: host
     environment:
-      # Только при первом запуске, пока в ./vpn пусто; дальше настройки живут в базе wg-easy.
+      # First start only, while the folder is empty; afterwards the settings live in wg-easy's database.
       - INIT_ENABLED=true
       - INIT_USERNAME=zebaro
       - INIT_PASSWORD=${WG_PASSWORD:?WG_PASSWORD is required}
@@ -96,10 +117,16 @@ services:
       - PORT=51821
       - INSECURE=true
     volumes:
-      - ./vpn:/etc/wireguard
+      - ${DATA_DIR:-./data}/vpn:/etc/wireguard
       - /lib/modules:/lib/modules:ro
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
     devices:
       - /dev/net/tun:/dev/net/tun
+
+networks:
+  # The platform's network: Zebaro-Core-MCP and Zebaro-Core-Site join it as `external` to reach the
+  # bot and Playwright. Named explicitly, so it does not follow this compose project's name.
+  default:
+    name: zebaro-core_default

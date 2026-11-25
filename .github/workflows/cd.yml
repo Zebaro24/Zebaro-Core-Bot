@@ -1,113 +1,170 @@
+# template-managed: addons/deploy/.github/workflows/cd.yml — edit in _Claude-Template, not here
 name: CD
+
+# A vX.Y.Z tag is the only thing that reaches production. Nothing below is project-specific: the
+# project's part is its docker-compose.yml — the one source of values, service, server dir and files,
+# checked in the gate by scripts/deploy.py — and the GitHub environment `prod`:
+#   secrets   SERVER_HOST, SERVER_SSH_KEY + the secret ones of the file's ${NAME}s
+#   variables SERVER_USER, SERVER_KNOWN_HOSTS (recommended; hashed with `ssh-keygen -H`, so it does not
+#             name the host), APP_PORT + the other ${NAME}s. A user name is no secret, and as one GitHub
+#             would mask that word — `deploy` — in every log.
+#   SERVER_* is how CD reaches the server; APP_VERSION, APP_PORT and DATA_DIR are what the app gets.
+#
+#   ci      waits for CI's "Gate" check on the tag's commit — the gate never runs twice
+#   build   ghcr.io/<owner>/<repo>:X.Y.Z (+ latest); layer cache in the registry (:buildcache)
+#   deploy  plain ssh: compose files + .env (only the file's ${NAME}s, mode 600) → up → the service's own
+#           compose healthcheck says healthy → health reports X.Y.Z → otherwise the previous compose
+#           and .env come back, and the job is red
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
+  # Fallback when GitHub does not fire the tag event: `gh workflow run cd.yml --ref vX.Y.Z`.
+  workflow_dispatch:
+
+# One deploy per repo at a time, never cancelled half-way.
+concurrency:
+  group: cd-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
-  # The same gate as CI and as `python scripts/gate.py --strict` locally. A tag pushed on
-  # a red commit stops here instead of reaching the server.
-  gate:
-    uses: ./.github/workflows/ci.yml
-
-  build-and-push:
-    needs: gate
+  ci:
+    name: CI passed
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      checks: read
+    steps:
+      - name: Wait for the Gate check on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The release pushes main first, then the tag: CI on that commit is usually still running.
+          for i in $(seq 1 110); do
+            runs=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?check_name=Gate&per_page=100" \
+                   --jq '[.check_runs[] | {status, conclusion}]')
+            ok=$(jq '[.[] | select(.conclusion == "success")] | length' <<<"$runs")
+            pending=$(jq '[.[] | select(.status != "completed")] | length' <<<"$runs")
+            total=$(jq 'length' <<<"$runs")
+            if [ "$ok" -gt 0 ]; then echo "Gate is green on ${GITHUB_SHA::7}"; exit 0; fi
+            if [ "$total" -gt 0 ] && [ "$pending" -eq 0 ]; then
+              echo "::error::Gate is not green on ${GITHUB_SHA::7}: $(jq -r '[.[].conclusion] | join(", ")' <<<"$runs") — fix main, release again"
+              exit 1
+            fi
+            if [ "$total" -eq 0 ] && [ "$i" -gt 12 ]; then
+              echo "::error::no CI run on ${GITHUB_SHA::7} — the tag points at a commit main never had: push main first"
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "::error::Gate on ${GITHUB_SHA::7} did not finish in time"
+          exit 1
+
+  build:
+    name: Build image
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      # Set version from tag
-      - name: Set version
-        id: set-version
+      - name: Version and image
+        id: meta
         run: |
-          VERSION=${GITHUB_REF##*/}
-          VERSION=${VERSION#v}
-          echo "VERSION=$VERSION"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
-      # Set repository name in lowercase
-      - name: Set repository name
-        id: set-repo-name
+      # APP_VERSION / APP_COMMIT and the github_token build secret are offered to every Dockerfile;
+      # one that does not declare them ignores them.
+      - name: Build and push
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          REPO_NAME=$(basename "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          OWNER_NAME=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "REPO_NAME=$REPO_NAME" >> $GITHUB_ENV
-          echo "OWNER_NAME=$OWNER_NAME" >> $GITHUB_ENV
-
-      # Log in to GitHub Container Registry
-      - name: Log in to GHCR
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Build and push Docker image
-      - name: Build and push Docker image
-        run: |
-          docker build -f Dockerfile \
-            -t ghcr.io/$OWNER_NAME/$REPO_NAME:${VERSION} .
-          docker push ghcr.io/$OWNER_NAME/$REPO_NAME:${VERSION}
-
-          docker tag ghcr.io/$OWNER_NAME/$REPO_NAME:${VERSION} \
-                     ghcr.io/$OWNER_NAME/$REPO_NAME:latest
-          docker push ghcr.io/$OWNER_NAME/$REPO_NAME:latest
+          set -euo pipefail
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx create --use --driver docker-container >/dev/null
+          docker buildx build --push --provenance=false \
+            --build-arg "APP_VERSION=$VERSION" --build-arg "APP_COMMIT=${GITHUB_SHA::7}" \
+            --secret id=github_token,env=GH_TOKEN \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.version=$VERSION" \
+            --cache-from "type=registry,ref=$IMAGE:buildcache" \
+            --cache-to "type=registry,ref=$IMAGE:buildcache,mode=max" \
+            -t "$IMAGE:$VERSION" -t "$IMAGE:latest" .
+          docker logout ghcr.io
 
   deploy:
+    name: Deploy
+    needs: build
     runs-on: ubuntu-latest
-    needs: build-and-push
+    timeout-minutes: 15
+    # The server pulls the image with this job's token.
+    permissions:
+      contents: read
+      packages: read
     environment:
       name: prod
     steps:
-      - name: Checkout only docker-compose.yml
-        uses: actions/checkout@v5
-        with:
-          sparse-checkout: docker-compose.yml
-          fetch-depth: 1
-      - name: Copy docker-compose
-        uses: appleboy/scp-action@v0.1.3
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: |
-            docker-compose.yml
-          target: /srv/zebaro-core/
+      - uses: actions/checkout@v7
 
-      - name: Deploy containers via docker-compose
-        uses: appleboy/ssh-action@v0.1.6
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            cd /srv/zebaro-core
-            docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
-            
-            export TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
-            export TELEGRAM_ADMIN_ID=${{ secrets.TELEGRAM_ADMIN_ID }}
-            export DISCORD_BOT_TOKEN=${{ secrets.DISCORD_BOT_TOKEN }}
-            export TELEGRAM_DOCKER_ACCESS_IDS=${{ secrets.TELEGRAM_DOCKER_ACCESS_IDS }}
-            export PERSONAL_GITHUB_TOKEN=${{ secrets.PERSONAL_GITHUB_TOKEN }}
-            export PERSONAL_GITHUB_SECRET=${{ secrets.PERSONAL_GITHUB_SECRET }}
-            export WEBHOOK_URL=${{ vars.WEBHOOK_URL }}
-            export SERVER_PORT=${{ vars.SERVER_PORT }}
-            export JOBS_API_TOKEN=${{ secrets.JOBS_API_TOKEN }}
-            export SITE_CONTACT_TOKEN=${{ secrets.SITE_CONTACT_TOKEN }}
-            export NOTIFY_API_TOKEN=${{ secrets.NOTIFY_API_TOKEN }}
-            export WG_PASSWORD='${{ secrets.WG_PASSWORD }}'
-            export HOME_PROXY_URL='${{ secrets.HOME_PROXY_URL }}'
-            export MONOBANK_TOKEN='${{ secrets.MONOBANK_TOKEN }}'
-            export MONOBANK_WEBHOOK_SECRET='${{ secrets.MONOBANK_WEBHOOK_SECRET }}'
-            export MONOBANK_JAR_ID=${{ vars.MONOBANK_JAR_ID }}
-            export MONOBANK_CARD_ID=${{ vars.MONOBANK_CARD_ID }}
-            export SPOTIFY_SINCE=${{ vars.SPOTIFY_SINCE }}
-            
-            docker compose -p zebaro-core up -d --pull always
-            docker image prune -f
+      # Values travel as environment variables, never pasted into a script: a secret with a quote in
+      # it cannot break the script or run as shell code. Only the ${NAME}s of docker-compose.yml reach .env.
+      - name: Bundle
+        env:
+          SECRETS_JSON: ${{ toJSON(secrets) }}
+          VARS_JSON: ${{ toJSON(vars) }}
+          APP_VERSION: ${{ needs.build.outputs.version }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: python3 scripts/deploy.py bundle "$RUNNER_TEMP/deploy"
+
+      - name: SSH
+        env:
+          HOST: ${{ secrets.SERVER_HOST }}
+          USER: ${{ vars.SERVER_USER }}
+          KEY: ${{ secrets.SERVER_SSH_KEY }}
+          KNOWN: ${{ vars.SERVER_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [ -n "$HOST" ] || { echo "::error::environment prod has no secret SERVER_HOST"; exit 1; }
+          [ -n "$USER" ] || { echo "::error::environment prod has no variable SERVER_USER"; exit 1; }
+          [ -n "$KEY" ] || { echo "::error::environment prod has no secret SERVER_SSH_KEY"; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          if [ -n "$KNOWN" ]; then
+            printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -T 15 "$HOST" > ~/.ssh/known_hosts 2>/dev/null
+            echo "::warning::variable SERVER_KNOWN_HOSTS is not set — the server's host key was taken on trust"
+          fi
+          printf 'Host prod\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/deploy_key\n  IdentitiesOnly yes\n  ServerAliveInterval 15\n' \
+            "$HOST" "$USER" > ~/.ssh/config
+
+      - name: Upload
+        run: |
+          set -euo pipefail
+          dir=$(python3 scripts/deploy.py get dir)
+          ssh prod "mkdir -p '$dir' && rm -rf '$dir/.incoming' && mkdir -m 700 '$dir/.incoming'"
+          tar -C "$RUNNER_TEMP/deploy" -czf - . | ssh prod "tar -C '$dir/.incoming' -xzf -"
+          rm -rf "$RUNNER_TEMP/deploy"
+
+      - name: Start, check health, roll back on failure
+        run: |
+          dir=$(python3 scripts/deploy.py get dir)
+          ssh prod "bash '$dir/.incoming/.deploy.sh'"
+
+      - name: Clean up
+        if: always()
+        run: rm -rf ~/.ssh/deploy_key "$RUNNER_TEMP/deploy"

@@ -2,7 +2,7 @@
   "template": {
     "version": "1.5.4",
     "profile": "solo",
-    "addons": [],
+    "addons": ["deploy"],
     "overrides": [
       "scripts/gate.py",
       "scripts/release.py"

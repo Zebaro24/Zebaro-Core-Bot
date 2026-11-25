@@ -1,56 +1,99 @@
+# template-managed: addons/deploy/.github/workflows/ci.yml — edit in _Claude-Template, not here
 name: CI
 
-# CI runs THE SAME command you run locally: scripts/gate.py. That is deliberate — a
-# pipeline that re-implements the checks drifts from the local one, and then
-# "у меня зелено" and "CI красный" become a regular, unexplainable event.
+# CI runs THE SAME command as a local check: scripts/gate.py --strict. A pipeline that re-implements
+# the checks drifts from the local one, and "green for me, red in CI" becomes a regular event.
 #
-# CD calls this workflow before building the image (workflow_call), so a tag on a red
-# commit never reaches the server.
+# One file for every stack: a step runs when its lock file is in the repo (poetry.lock → Python,
+# pnpm-lock.yaml → Node, a playwright.config → Chromium). CD never runs the gate again: it waits for
+# this job's check — "Gate" — on the tag's commit.
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-  workflow_call:
+  workflow_dispatch:
 
+# A newer push to a PR cancels the older run. On main every commit keeps its own run: a release tag
+# lands on one of them, and CD needs that commit's Gate to finish.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   gate:
     name: Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      # Python first, then Poetry: the other way round Poetry lands on the runner's
-      # system interpreter.
-      - uses: actions/setup-python@v6
+      # The gate itself is Python in every project.
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
-      # pipx is preinstalled on the runner — one third-party action less.
+      # ── Python projects ────────────────────────────────────────────────────────────────────────
+      # pipx is preinstalled on the runner; Python first, then Poetry, or Poetry lands on the
+      # runner's system interpreter.
       - name: Install Poetry
+        if: hashFiles('poetry.lock') != ''
         run: pipx install poetry
 
       - name: Cache Poetry
-        uses: actions/cache@v4
+        if: hashFiles('poetry.lock') != ''
+        uses: actions/cache@v6
         with:
           path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('poetry.lock') }}
           restore-keys: ${{ runner.os }}-poetry-
 
-      - name: Install dependencies
+      - name: Install Python dependencies
+        if: hashFiles('poetry.lock') != ''
         run: poetry install --no-interaction
 
+      # ── Node projects (pnpm; the Node version from .nvmrc) ─────────────────────────────────────
+      - uses: pnpm/action-setup@v6
+        if: hashFiles('pnpm-lock.yaml') != ''
+
+      - uses: actions/setup-node@v7
+        if: hashFiles('pnpm-lock.yaml') != ''
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install Node dependencies
+        if: hashFiles('pnpm-lock.yaml') != ''
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium for e2e
+        if: hashFiles('playwright.config.ts', 'playwright.config.js', 'playwright.config.mjs') != ''
+        run: pnpm exec playwright install --with-deps chromium
+
+      # ── The gate ───────────────────────────────────────────────────────────────────────────────
       - name: Gate
         run: python scripts/gate.py --strict
 
-      - name: Upload coverage to Codecov
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: codecov/codecov-action@v4
+      # On when the repo sets the variable CODECOV=true (and, for a private repo, CODECOV_TOKEN).
+      - name: Coverage to Codecov
+        if: github.event_name == 'push' && vars.CODECOV == 'true' && hashFiles('coverage.xml') != ''
+        uses: codecov/codecov-action@v7
         with:
           files: ./coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+
+      - name: Gate logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gate-logs
+          path: |
+            _temp/gate/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7

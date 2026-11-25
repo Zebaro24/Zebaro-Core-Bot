@@ -68,7 +68,9 @@ state/
 
 # Dev version
 docker-compose.override.yml
-mongo_db/
 
-# wg-easy data (keys) when the stack runs locally
+# State when the stack runs locally: ${DATA_DIR:-./data} in docker-compose.yml (mongo/, state/, vpn/ keys)
+/data/
+# The layout before the deploy standard — move them into data/ (mongo_db → data/mongo)
+mongo_db/
 /vpn/

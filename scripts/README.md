@@ -37,7 +37,8 @@ scripts\prod.bat logs zebaro-core-playwright 1h
 
 ## Прод
 
-`zebaro@server.zebaro.dev`, системный ключ `id_ed25519`, compose в `/srv/zebaro-core`,
+`zebaro@server.zebaro.dev`, системный ключ `id_ed25519`, compose в `/srv/zebaro-core/zebaro-core-bot`,
+данные в `/srv/zebaro-core/data`,
 публичный адрес `https://bot.zebaro.dev`. Адрес берётся из переменных `PROD_USER` /
 `PROD_HOST` (один раз `setx`), `PROD_URL` переопределяет публичный адрес.
 

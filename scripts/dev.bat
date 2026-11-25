@@ -5,7 +5,7 @@ rem dev.bat - run a piece of Zebaro-Core-Bot locally, without remembering the co
 rem
 rem   dev                the bot (Telegram polling + webhooks + Discord, from .env)
 rem   dev infra          MongoDB + Playwright in Docker, ports published to localhost
-rem   dev stop           stop them (data in mongo_db/ survives)
+rem   dev stop           stop them (data in data/mongo/ survives)
 rem   dev gate [flags]   the quality gate (the same one CI runs)
 rem   dev install        poetry install
 rem
@@ -18,7 +18,10 @@ if "!CMD!"=="" set "CMD=bot"
 
 rem docker-compose.override.yml publishes 27017 and 9222 to localhost; it is
 rem gitignored, so without it the containers run but the local bot cannot reach them.
-set "COMPOSE=docker compose -p zebaro-core -f "%ROOT%\docker-compose.yml""
+rem The project name (zebaro-core-bot) comes from the file itself; state goes to .\data.
+rem Moving from the old local layout, once: docker compose -p zebaro-core down,
+rem then  mkdir data ^& move mongo_db data\mongo  (otherwise the local bot starts on an empty DB).
+set "COMPOSE=docker compose -f "%ROOT%\docker-compose.yml""
 if exist "%ROOT%\docker-compose.override.yml" set "COMPOSE=!COMPOSE! -f "%ROOT%\docker-compose.override.yml""
 
 if /i "!CMD!"=="help" (

@@ -17,7 +17,9 @@ rem   prod restart <c>        restart one container  (touches prod - ask first)
 rem   prod <anything...>      run the rest as a raw command on the server
 rem
 rem Containers: zebaro-core-bot, zebaro-core-db, zebaro-core-playwright.
-rem Compose: /srv/zebaro-core. SSHing in is an outward action - confirm first.
+rem Compose + CD-written .env: /srv/zebaro-core/zebaro-core-bot (project zebaro-core-bot);
+rem state: /srv/zebaro-core/data. The .env holds every token: never print it whole.
+rem SSHing in is an outward action - confirm first.
 
 if "%PROD_URL%"=="" set "PROD_URL=https://bot.zebaro.dev"
 set "TARGET=%PROD_USER%@%PROD_HOST%"
@@ -34,7 +36,7 @@ echo Не задан адрес сервера. Один раз:
 echo     setx PROD_USER zebaro
 echo     setx PROD_HOST server.zebaro.dev
 echo и открой терминал заново. Те же значения лежат в GitHub - Settings -
-echo Environments - prod как секреты SERVER_USER и SERVER_HOST.
+echo Environments - prod: секрет SERVER_HOST и переменная SERVER_USER.
 echo.
 echo `prod health` работает и без них - он идёт по публичному HTTP.
 goto :end
@@ -79,7 +81,7 @@ if /i "!CMD!"=="logs" (
 )
 
 if /i "!CMD!"=="state" (
-    ssh !TARGET! "cat /srv/zebaro-core/state/services.json 2>/dev/null || echo 'no state file yet - every service is on by default'"
+    ssh !TARGET! "cat /srv/zebaro-core/data/state/services.json 2>/dev/null || echo 'no state file yet - every service is on by default'"
     goto :end
 )
 
