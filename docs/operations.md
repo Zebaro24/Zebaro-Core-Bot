@@ -95,31 +95,12 @@ Roll forward, never back by re-tagging: re-pushing an old `v*` tag deploys **old
 must be rewritten, the owner disables CD first: `gh workflow disable CD`). Tags before the deploy
 standard (≤ v0.24.0) ran the old layout in `/srv/zebaro-core`: never redeploy them.
 
-**One-time move to the deploy standard** (the first release after v0.24.0; SSH — the owner's word,
-step by step, every path absolute). Before: the site has already moved (its container left project
-`zebaro-core`), and `prod` has the secret `SERVER_SSH_KEY` and the variables `SERVER_HOST`,
-`SERVER_USER`, `SERVER_KNOWN_HOSTS`, `APP_PORT=18004`. Then, right before pushing the tag:
-
-1. While the stack runs — the numbers to compare with afterwards and the Mongo dump (the db must be
-   up: `docker start zebaro-core-db` if `/services` has it off):
-   `docker exec zebaro-core-db mongo zebaro_core --quiet --eval 'db.jobs.countDocuments({})'`,
-   `sudo cat /srv/zebaro-core/state/services.json`,
-   `docker exec zebaro-core-db mongodump --archive --gzip > ~/zebaro-core-<date>.mongo.gz`.
-2. Stop it by project name, without the old compose file (it needs `WG_PASSWORD`, which only the old
-   CD's session had): `docker compose -p zebaro-core down`. Telegram, Discord and the VPN are off until
-   step 5; removing the network fails while MCP is on it — expected, the network stays.
-3. Now the files are quiet: `sudo tar czf ~/zebaro-core-<date>.tgz -C /srv zebaro-core` (SQLite and the
-   VPN keys included); `tar tzf` and `zcat … | head -c 100` show both backups open.
-4. `sudo mkdir /srv/zebaro-core/data && sudo mv /srv/zebaro-core/mongo_db /srv/zebaro-core/data/mongo &&
-   sudo mv /srv/zebaro-core/state /srv/zebaro-core/data/state && sudo mv /srv/zebaro-core/vpn
-   /srv/zebaro-core/data/vpn` (the same filesystem: a rename, nothing is copied). **Gate before the tag:**
-   `sudo ls /srv/zebaro-core/data/mongo /srv/zebaro-core/data/vpn` shows the Mongo files and
-   `wg-easy.db`, and `/srv/zebaro-core/mongo_db`, `state`, `vpn` are gone. An empty `data/vpn` at the
-   first start makes wg-easy build a new server with new keys — every VPN client breaks.
-5. Push the tag. The first deploy has nothing to roll back to — watch it.
-6. Check against step 1: `/health` version, the same jobs count, `services.json`, a VPN client
-   connects. Only then remove the old `docker-compose.yml`, `services.json/` and `site/` in
-   `/srv/zebaro-core`, and in `prod` `SSH_PRIVATE_KEY`, `SERVER_PORT` and the secrets `SERVER_HOST` / `SERVER_USER`.
+**The move to the deploy standard — done 2026-11-25 with v0.24.1.** The old project `zebaro-core` in
+`/srv/zebaro-core` was taken down by name, `mongo_db/`, `state/` and `vpn/` were renamed into
+`/srv/zebaro-core/data/`, and the first deploy came up with every number as before (2882 jobs, the same
+VPN keys). Backups of that moment: `~zebaro/zebaro-core-20261125-1903.{mongo.gz,tgz}` on the server.
+For a move like it: **stop** the old containers (`docker stop`), never `down` — a stopped stack comes
+back with `docker start`, a removed one only through CD, the one place that has the secrets.
 
 ## Production
 
