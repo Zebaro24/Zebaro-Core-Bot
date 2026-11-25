@@ -66,8 +66,10 @@ services:
       # Монтируем папку, а не сам файл: если services.json на хосте ещё нет,
       # Docker создаёт на его месте директорию и состояние перестаёт сохраняться.
       - ./state:/app/state
+    # Loopback only: cloudflared on the host forwards bot.zebaro.dev to localhost. Docker publishes
+    # past the host firewall, so 0.0.0.0 here would put the bot on the server's IP past Cloudflare.
     ports:
-      - "${SERVER_PORT:-8000}:8000"
+      - "127.0.0.1:${SERVER_PORT:-8000}:8000"
 
   zebaro-core-vpn:
     # WireGuard с веб-API; бот управляет им через /vpn (src/services/vpn/).

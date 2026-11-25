@@ -115,7 +115,8 @@ docker compose up -d
 Starts four containers:
 - `zebaro-core-db` — MongoDB
 - `zebaro-core-playwright` — Playwright browser server
-- `zebaro-core-bot` — bot + webhooks on port 8000 (configurable via `SERVER_PORT`)
+- `zebaro-core-bot` — bot + webhooks on `127.0.0.1:8000` (port configurable via `SERVER_PORT`; the
+  Cloudflare Tunnel is the only way in)
 - `zebaro-core-vpn` — wg-easy (WireGuard, UDP 51820; API on the Docker bridge only); needs `WG_PASSWORD`
 
 ---
