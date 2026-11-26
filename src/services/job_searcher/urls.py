@@ -68,7 +68,10 @@ urls = [
     # LinkedIn's guest search — Ukrainian companies' postings that never reach DOU or Djinni.
     # Remote only (f_WT=2), the last 24 hours, newest first: with a run every hour one page of
     # ten covers it. Opened through the home PC: LinkedIn answers 429 after a few dozen requests.
-    f"{_LINKEDIN}?keywords=python&{_LINKEDIN_FILTERS}",
+    # Two phrases, not plain "python" (26.11.2026): over four weeks plain "python" gave 39 answers,
+    # 7.7% of them applications, 26 "not the role" — QA, data and DevOps that mention Python once.
+    # Quoted, or LinkedIn reads OR between single words.
+    f"{_LINKEDIN}?keywords=%22python%20developer%22%20OR%20%22python%20engineer%22&{_LINKEDIN_FILTERS}",
     f"{_LINKEDIN}?keywords=AI%20engineer&{_LINKEDIN_FILTERS}",
     # Off, the listeners stay ready:
     # HappyMonday (05.11.2026) — Cloudflare answers 403 even through the home PC; nothing since 15.10.

@@ -184,6 +184,17 @@ def test_warnings_tell_what_to_check_before_applying():
     assert "⚠️" in job_to_html(job)
 
 
+def test_no_python_is_a_blocker_above_the_reasons_not_a_warning_among_them():
+    job = _job(moderation="review", warnings=["no_python", "english"])
+
+    rich, plain = job_to_rich_html(job), job_to_html(job)
+
+    assert "⛔ <b>Python в тексте нет — проверь стек до отклика</b>" in rich
+    assert rich.index("⛔") < rich.index("👀 <b>") < rich.index("⚠️ просят английский B2")
+    assert "Python в тексте" not in rich.split("⚠️")[1]
+    assert "⛔ <b>Python в тексте нет" in plain
+
+
 def test_the_description_marks_the_stack_and_the_red_flags():
     from src.interfaces.tg.formatters.job import highlight
 
@@ -232,5 +243,5 @@ def test_the_review_summary_numbers_the_vacancies_from_where_the_part_starts():
     text = review_summary_html(jobs, first_number=21, total=22)
 
     assert text.startswith("<h3>👀 Частичные совпадения — 22</h3>")
-    assert "<p>21. <b>AI Engineer</b> — Acme · Dou · Python, FastAPI, React, TypeScript · ⚠️ Python" in text
+    assert "<p>21. <b>AI Engineer</b> — Acme · Dou · Python, FastAPI, React, TypeScript · ⛔ Python нет" in text
     assert "<p>22. <b>Python Dev</b>" in text and "📌 компания знакома" in text

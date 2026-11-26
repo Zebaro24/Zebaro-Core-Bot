@@ -261,6 +261,7 @@ def test_the_reasons_are_listed_per_status(jobs):
     employer = [reason["code"] for reason in statuses["rejected_by_employer"]]
     assert {"no_reason", "work_permit", "location", "no_response", "other"} <= set(employer)
     assert "muted" not in [reason["code"] for reason in statuses["not_interested"]]
+    assert "position_closed" in [reason["code"] for reason in statuses["not_interested"]]  # closed before applying
     assert all(reason["description"] for codes in statuses.values() for reason in codes)
 
 

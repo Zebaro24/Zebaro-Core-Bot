@@ -77,7 +77,8 @@ One public `status` — where the vacancy is on the path "found → applied → 
 - `status_reason_code` — a code from the status's vocabulary (`GET /jobs/reasons` returns them with
   descriptions):
   - `mismatch`: `experience | location | english | stack | other`;
-  - `not_interested`: `role | stack | domain | conditions | other | muted` (`muted` =
+  - `not_interested`: `role | stack | domain | conditions | position_closed | other | muted`
+    (`position_closed` = closed before the owner could apply; `muted` =
     "don't send this company any more", set **only by the button**);
   - `rejected_by_employer`: `no_response | no_reason | position_closed | experience | stack |
     location | work_permit | english | salary | other`. The words are the same as in `mismatch`

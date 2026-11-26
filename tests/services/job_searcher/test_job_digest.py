@@ -121,6 +121,11 @@ def test_salary_value(text, value):
             "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=data%20engineer&f_WT=2",
             "LinkedIn · data engineer",
         ),
+        (
+            "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
+            "?keywords=%22python%20developer%22%20OR%20%22python%20engineer%22&f_WT=2",
+            "LinkedIn · python developer OR python engineer",
+        ),
         ("https://www.work.ua/jobs-remote-python+developer/", "Work.ua · remote python developer"),
         (None, "?"),
     ],
@@ -176,6 +181,18 @@ def test_a_search_never_lands_on_both_lists_or_under_a_thumbs_up_at_zero():
 
     assert [s["label"] for s in searches["best"]] == ["Djinni · python"]
     assert [s["label"] for s in searches["worst"]] == ["Djinni · react"]
+
+
+def test_a_search_no_longer_searched_is_not_compared():
+    kept, gone = "https://djinni.co/jobs/keyword-python/", "https://djinni.co/jobs/?primary_keyword=Data+Engineer"
+    window = [_doc(user_status="applied", search_url=kept)] * 8 + [
+        _doc(user_status="not_interested", search_url=gone)
+    ] * 8
+    window += [_doc(user_status="not_interested", search_url=kept)] * 8
+
+    me = my_stats([], [], window, [], NOW, [], current_searches={kept})
+
+    assert me["dead_searches"] == [] and me["searches"] is None  # one search left: nothing to compare
 
 
 def test_what_came_of_the_applications_counts_each_step_with_the_ones_past_it():

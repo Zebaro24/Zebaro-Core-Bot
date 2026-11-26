@@ -27,10 +27,13 @@ _WARNINGS = {
     "english": "просят английский B2",
     "ukraine": "в тексте про нахождение в Украине",
     "no_description": "стек не проверен — сужу только по названию",
-    "no_python": "Python в тексте не упомянут",
     "python_plus": "Python только «будет плюсом» — основной стек другой",
     "early_startup": "ранний стартап (founding / seed) — сейчас цель от ~50 человек",
 }
+# Warnings that stop an application until checked, on a line of their own above the reasons
+# (26.11.2026): a ⚠️ among the others let Gismart through with no Python in it.
+_BLOCKERS = {"no_python": "Python в тексте нет — проверь стек до отклика"}
+_BLOCKERS_SHORT = {"no_python": "Python нет"}
 
 # What the description says about the stack, marked where it says it (22.10.2026): the core
 # stack, the bonus one, and what may not fit — another main stack, 4+ years, senior, an English
@@ -226,6 +229,11 @@ def conditions_line(job: Job) -> str | None:
     return html.escape(line) if line else None
 
 
+def blocker_line(job: Job) -> str | None:
+    texts = [_BLOCKERS[warning] for warning in job.warnings if warning in _BLOCKERS]
+    return "⛔ <b>" + html.escape("; ".join(texts)) + "</b>" if texts else None
+
+
 def warnings_line(job: Job) -> str | None:
     texts = [_WARNINGS[warning] for warning in job.warnings if warning in _WARNINGS]
     return "⚠️ " + html.escape("; ".join(texts)) if texts else None
@@ -376,7 +384,7 @@ def job_to_rich_html(job: Job, status: str | None = None) -> str:
         parts.append(f"<p>{status}</p>")
 
     if job.moderation in _TIERS:
-        lines = _why_lines(job, emoji, mark=True)
+        lines = [line for line in (blocker_line(job),) if line] + _why_lines(job, emoji, mark=True)
         lines += [line for line in (cv_line(job), gaps_line(job), conditions_line(job), warnings_line(job)) if line]
         if lines:
             parts.append("<p>" + "<br>".join(lines) + "</p>")
@@ -408,6 +416,9 @@ def _summary_item(job: Job, rich: bool) -> str:
         html.escape(job.platform_name or "") or None,
         f"📎 {html.escape(resume.short)}" if resume else None,
         html.escape(", ".join(stack)) if stack else None,
+        "⛔ " + html.escape(", ".join(_BLOCKERS_SHORT[w] for w in job.warnings if w in _BLOCKERS_SHORT))
+        if any(w in _BLOCKERS_SHORT for w in job.warnings)
+        else None,
         "⚠️ " + html.escape(", ".join(_WARNINGS[w] for w in job.warnings if w in _WARNINGS))
         if any(w in _WARNINGS for w in job.warnings)
         else None,
@@ -487,7 +498,8 @@ def job_to_html(job: Job) -> str:
 
     if emoji:
         extra = (cv_line(job), gaps_line(job), conditions_line(job), warnings_line(job))
-        why = _why_lines(job, emoji, mark=False) + [line for line in extra if line]
+        why = [line for line in (blocker_line(job),) if line] + _why_lines(job, emoji, mark=False)
+        why += [line for line in extra if line]
         if why:
             text += "\n" + "\n".join(why)
 

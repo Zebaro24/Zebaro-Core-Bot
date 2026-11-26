@@ -42,7 +42,8 @@ MISMATCH_REASONS = {
     "other": "другое",
 }
 REJECT_REASONS = {
-    "role": "роль", "stack": "стек", "domain": "домен", "conditions": "условия", "other": "просто нет",
+    "role": "роль", "stack": "стек", "domain": "домен", "conditions": "условия",
+    "position_closed": "уже закрыта", "other": "просто нет",
     "muted": "компания в 🔕",
 }  # fmt: skip
 _FORMATS = {"remote": "удалённо", "office_or_remote": "офис / удалённо", "hybrid": "гибрид", "office": "офис"}

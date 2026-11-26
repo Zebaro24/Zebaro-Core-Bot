@@ -99,7 +99,7 @@ class Job:
     # buttons under it; "universal" — the one CV before 09.11.2026.
     cv_sent: str | None = None
     # Why the owner said no: "experience" | "location" | "english" | "site" | "stack" (mismatch),
-    # "role" | "stack" | "domain" | "conditions" | "other" (not_interested).
+    # "role" | "stack" | "domain" | "conditions" | "position_closed" | "other" (not_interested).
     status_reason: str | None = None
     # After "applied": how it went — "reply" | "interview" | "offer" | "rejected".
     outcome: str | None = None

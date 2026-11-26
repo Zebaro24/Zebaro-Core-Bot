@@ -97,7 +97,9 @@ async def get_digest(days: int = 7, *, strict: bool = False) -> dict[str, Any]:
     this_week = [doc for doc in decided if doc["status_updated_at"] >= since]
     last_week = [doc for doc in decided if doc["status_updated_at"] < since]
     market = market_stats(found, found_prev)
-    me = my_stats(this_week, last_week, window, pending, now, found)
+    from src.services.job_searcher.urls import urls
+
+    me = my_stats(this_week, last_week, window, pending, now, found, current_searches=set(urls))
     me["by_cv"] = cv_stats(applied_all, window, found)
     return {
         "period_days": days,
@@ -278,7 +280,7 @@ def search_label(url: str | None) -> str:
     path = [part for part in parsed.path.split("/") if part and part not in _PATH_NOISE and ";" not in part]
     if not words:
         words = [part.removeprefix("keyword-").replace("jobs-remote-", "remote ") for part in path[:2]]
-    text = " ".join(words).replace("jobPosition=", "").replace("'", "").replace("+", " ")
+    text = " ".join(words).replace("jobPosition=", "").replace("'", "").replace('"', "").replace("+", " ")
     return f"{site} · {text}".strip(" ·")
 
 
@@ -341,7 +343,10 @@ def my_stats(
     pending: list[dict[str, Any]],
     now: datetime,
     found: list[dict[str, Any]] | None = None,
+    current_searches: set[str] | None = None,
 ) -> dict[str, Any]:
+    """`current_searches`: the searches in urls.py now. A search removed within the four-week
+    window is not compared (26.11.2026): the review kept advising to remove what was gone."""
     by_platform: dict[str, list[dict[str, Any]]] = {}
     for doc in this_week:
         by_platform.setdefault(doc.get("platform_name") or "?", []).append(doc)
@@ -353,7 +358,7 @@ def my_stats(
 
     by_search: dict[str, list[dict[str, Any]]] = {}
     for doc in window:
-        if doc.get("search_url"):
+        if doc.get("search_url") and (current_searches is None or doc["search_url"] in current_searches):
             by_search.setdefault(search_label(doc["search_url"]), []).append(doc)
     searches: list[dict[str, Any]] = [
         {"label": label, "n": len(docs), "rate": _rate(docs) or 0.0}

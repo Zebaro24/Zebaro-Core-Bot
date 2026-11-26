@@ -48,6 +48,7 @@ REJECT_REASONS = (
     ("stack", "🧰 Не тот стек"),
     ("domain", "🏭 Домен / компания"),
     ("conditions", "💸 Условия"),
+    ("position_closed", "🚪 Уже закрыта"),
     ("other", "🤷 Просто нет"),
     # The company is never sent again (services/job_searcher/dedup.py, "muted").
     ("muted", "🔕 Компанию не присылать"),

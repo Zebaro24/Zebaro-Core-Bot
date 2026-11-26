@@ -37,6 +37,8 @@ REASONS: dict[str, dict[str, str]] = {
         "stack": "Стек не интересен",
         "domain": "Не интересны домен или компания",
         "conditions": "Не устраивают условия",
+        # 26.11.2026: three vacancies of one review got `other` for it.
+        "position_closed": "Вакансия закрыта, снята или уже занята до отклика — откликнуться было некуда",
         OTHER: "Просто нет: обязательно suggested_code и reason",
         MUTED: "Компанию больше не присылать (только кнопкой в Telegram)",
     },
