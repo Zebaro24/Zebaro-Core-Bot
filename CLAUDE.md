@@ -14,6 +14,7 @@ Worked on from the workspace (`../CLAUDE.md`). Name this repo in every call: `gi
 | What the bot does, env variables                              | `README.md`                    |
 | The Jobs API — **owned here**, mirrored in MCP                | `docs/contracts/jobs-api.md`   |
 | The Notify API — **owned here**, called by the Claude harness | `docs/contracts/notify.md`     |
+| `/site/contact` — **owned here**, mirrored in the site        | `docs/contracts/site-contact.md` |
 
 ## Layout
 
