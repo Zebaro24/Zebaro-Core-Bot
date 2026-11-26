@@ -11,6 +11,8 @@ The `vX.Y.Z` tag is the only thing that deploys to the server.
 
 ## Unreleased
 
+## v0.28.0 — 2026-11-26
+
 - **Everything the bot keeps is in PostgreSQL now** — the vacancies with their whole history, the
   Telegram status sync, the 👀 summaries and AI notes, the VPN traffic, Spotify, GitHub. Moved with every
   value checked against the old store: 2888 vacancies, 906 status events, nothing lost. The vacancy ids
