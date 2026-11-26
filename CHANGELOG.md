@@ -11,6 +11,23 @@ The `vX.Y.Z` tag is the only thing that deploys to the server.
 
 ## Unreleased
 
+- **The day's 👀 message opens with the search figures**: cards seen, new, filtered out and the main
+  reasons why, sent — and a verdict: "✅ Площадки отвечают — … это рынок, а не поломка", a board whose
+  pages showed no card (a broken parser), pages that did not open, or the boards skipped because the
+  home PC was off. Refreshed every hourly run, there from 10:00 even with no partial match; the
+  breakdown per board and per filter is folded under "📋 По площадкам и всем фильтрам".
+- **No separate "🏠 Домашний ПК не отвечает" message any more** — it is a line in the day's message.
+- **An AI vacancy whose text never names Python** gets "⛔ Python в тексте нет — проверь стек до
+  отклика" as its own first line, and "⛔ Python нет" in the 👀 list.
+- **"🚪 Уже закрыта"** among the "👎 Не интересно" reasons (`not_interested/position_closed` in the
+  Jobs API): the vacancy closed before you could apply.
+- **LinkedIn's Python search** looks for "python developer" OR "python engineer" instead of any text
+  that mentions Python — most of its answers were "not the role".
+- **The weekly digest stops calling boards silent that were only skipped**: a board is silent when its
+  pages loaded and showed nothing; boards left for the home PC are listed apart. A field that shrank
+  because of a new filter while everything found did not is said to be the bot's rule, not the market;
+  searches removed in the last four weeks are no longer compared.
+
 ## v0.28.1 — 2026-11-26
 
 - **`/github` right after a server reboot lists the repos** instead of "Репо нет" for its first minutes.
