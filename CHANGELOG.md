@@ -11,6 +11,8 @@ The `vX.Y.Z` tag is the only thing that deploys to the server.
 
 ## Unreleased
 
+## v0.28.1 — 2026-11-26
+
 - **`/github` right after a server reboot lists the repos** instead of "Репо нет" for its first minutes.
   (v0.28.0 never reached the server for this: its check failed in CI. v0.28.1 carries all of it.)
 
