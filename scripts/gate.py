@@ -70,6 +70,7 @@ CHECKS = [
     Spec("ruff-format", ["ruff", "format", "--check", *LINT_PATHS], "lint", False),
     Spec("ruff", ["ruff", "check", "--output-format", "concise", *LINT_PATHS], "lint", False),
     Spec("mypy", ["mypy", *PATHS], "lint", True),
+    Spec("deploy", ["python", "scripts/deploy.py"], "lint", False),
     # Needs the network (advisory database). A new CVE can turn this red without any
     # change on our side — that is the point of it, not a flake.
     Spec("pip-audit", ["pip-audit", "--progress-spinner", "off"], "security", True),
