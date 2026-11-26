@@ -569,13 +569,26 @@ def test_the_schema_lists_the_api_routes():
 
 
 def test_the_vacancy_link_stays_public_and_answers_in_fastapis_format(client, mocker):
-    from src.interfaces.webhooks.routes import jobs as routes
-
-    mocker.patch.object(routes, "jobs_collection", MagicMock(find_one_and_update=AsyncMock(return_value=None)))
+    mocker.patch.object(jobs_api, "jobs_collection", MagicMock(find_one_and_update=AsyncMock(return_value=None)))
 
     response = client.get(f"/jobs/r/{ObjectId()}", headers={})
 
     assert response.status_code == 404 and response.json() == {"detail": "Job not found"}
+
+
+def test_a_vacancy_link_counts_the_click_and_leads_to_the_vacancy(client, mocker):
+    update = AsyncMock(return_value={"link": "https://djinni.co/jobs/1"})
+    mocker.patch.object(jobs_api, "jobs_collection", MagicMock(find_one_and_update=update))
+    job_id = ObjectId()
+
+    response = client.get(f"/jobs/r/{job_id}", headers={})  # httpx does not follow redirects by default
+
+    assert response.status_code == 302 and response.headers["location"] == "https://djinni.co/jobs/1"
+    update.assert_awaited_once_with({"_id": job_id}, {"$inc": {"click_count": 1}})
+
+
+def test_a_vacancy_link_with_a_broken_id_is_a_404(client):
+    assert client.get("/jobs/r/not-an-id", headers={}).status_code == 404
 
 
 # --- what moved here from the old routes ----------------------------------------------------------

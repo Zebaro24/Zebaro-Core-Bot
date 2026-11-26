@@ -10,8 +10,6 @@ import secrets
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from bson import ObjectId
-from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
@@ -21,7 +19,6 @@ from pymongo.errors import PyMongoError
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.config import settings
-from src.db.client import jobs_collection
 from src.interfaces.tg.notification.job_status import kick_status_sync
 from src.services.job_searcher import events, jobs_api, journal, status
 from src.services.job_searcher.digest import get_digest
@@ -627,17 +624,10 @@ async def get_job(job_id: str) -> Any:
 @public_router.get("/r/{job_id}")
 async def redirect_to_job(job_id: str) -> RedirectResponse:
     try:
-        object_id = ObjectId(job_id)
-    except InvalidId:
-        raise HTTPException(status_code=404, detail="Job not found") from None
-
-    try:
-        doc = await jobs_collection.find_one_and_update({"_id": object_id}, {"$inc": {"click_count": 1}})
+        link = await jobs_api.open_link(job_id)
     except Exception as e:
         logger.warning("DB unavailable for job redirect: %s", e)
         raise HTTPException(status_code=503, detail="Job storage unavailable") from None
-
-    if not doc:
+    if link is None:
         raise HTTPException(status_code=404, detail="Job not found")
-
-    return RedirectResponse(url=doc["link"], status_code=302)
+    return RedirectResponse(url=link, status_code=302)

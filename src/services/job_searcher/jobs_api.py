@@ -441,6 +441,17 @@ async def get_job(job_id: str) -> dict[str, Any] | None:
     return job_full(doc, targets.get(job_id), copies.get(job_id))
 
 
+async def open_link(job_id: str) -> str | None:
+    """A tap on a vacancy button: count the click, return where it leads. None — no such vacancy.
+
+    A storage failure is raised: the caller answers 503, not 404.
+    """
+    if not ObjectId.is_valid(job_id):
+        return None
+    doc = await jobs_collection.find_one_and_update({"_id": ObjectId(job_id)}, {"$inc": {"click_count": 1}})
+    return str(doc["link"]) if doc and doc.get("link") else None
+
+
 # --- the funnel --------------------------------------------------------------------------------
 
 UNKNOWN_SEARCH = "(unknown)"  # vacancies stored before 06.10.2026 keep no search
