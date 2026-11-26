@@ -1,10 +1,12 @@
 """GitHub in Telegram: the forum's quiet lines and the owner's loud ones. Everything from GitHub is escaped.
 
 A live message is rendered from its stored state, so an edit always shows the whole picture: a commit with
-every workflow that ran on it, a release with its CD run and the first line of its notes.
+every workflow that ran on it, a release with its CD run and its whole changelog section (Markdown turned
+into Telegram's HTML, in a collapsible quote).
 """
 
 import html
+import re
 from typing import Any
 
 from src.services.github.events import Alert, NewRepos, Outside, Run
@@ -12,6 +14,8 @@ from src.services.github.store import Level, RepoConfig, Topic
 
 LEVEL_LABEL: dict[str, str] = {"all": "🔔 всё", "fails": "⚠️ только сбои", "off": "⛔ выкл"}
 _RUN_ICON = {"success": "✅", "failure": "❌", "timed_out": "❌", "startup_failure": "❌", "cancelled": "⏹"}
+# A Telegram message holds 4096 characters; the notes get what is left after the head and the links.
+NOTES_MAX = 3000
 
 
 def short(repo: str) -> str:
@@ -49,40 +53,114 @@ def overall(runs: dict[str, dict[str, Any]]) -> str:
 
 
 def _runs_line(runs: dict[str, dict[str, Any]]) -> str:
+    """`✅ CI 1м 23с · ⏳ CD` — each workflow linked to its run; a failure says where."""
     parts = []
     for name, run in runs.items():
-        part = f"{_link(run.get('url', ''), name)} {run_icon(run)}"
+        part = f"{run_icon(run)} {_link(run.get('url', ''), name)}"
         if run.get("seconds") is not None:
             part += f" {duration(run['seconds'])}"
         if run.get("step"):
-            part += f" — {_e(run['step'])}"
+            part += f" — <i>{_e(run['step'])}</i>"
         parts.append(part)
     return " · ".join(parts)
 
 
+# ── Markdown (a CHANGELOG section) → Telegram HTML ─────────────────────────────
+
+_BULLET = re.compile(r"^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$")
+_HEADING = re.compile(r"^#{1,6}\s+(.*)$")
+_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
+_BOLD = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _inline(text: str) -> str:
+    """Escape, then `code`, **bold** and [links](https://…) — code first, so nothing inside it is touched."""
+    out = []
+    for i, part in enumerate(text.split("`")):
+        if i % 2:
+            out.append(f"<code>{_e(part)}</code>")
+            continue
+        part = _e(part)
+        part = _LINK.sub(lambda m: f'<a href="{m.group(2)}">{m.group(1)}</a>', part)
+        out.append(_BOLD.sub(r"<b>\1</b>", part))
+    return "".join(out)
+
+
+def markdown(text: str) -> str:
+    """Paragraphs, headings and (nested) bullets; a line wrapped in the file joins the line it continues."""
+    blocks: list[tuple[str, int, str]] = []  # kind, depth, text
+    for raw in text.replace("\r\n", "\n").split("\n"):
+        line = raw.rstrip()
+        if not line.strip():
+            blocks.append(("gap", 0, ""))
+            continue
+        heading = _HEADING.match(line.strip())
+        bullet = _BULLET.match(line)
+        if heading:
+            blocks.append(("head", 0, heading.group(1)))
+        elif bullet:
+            blocks.append(("item", len(bullet.group(1)) // 2, bullet.group(2)))
+        elif blocks and blocks[-1][0] in ("item", "para"):
+            kind, depth, so_far = blocks[-1]
+            blocks[-1] = (kind, depth, f"{so_far} {line.strip()}")
+        else:
+            blocks.append(("para", 0, line.strip()))
+    lines: list[str] = []
+    for kind, depth, body in blocks:
+        if kind == "gap":
+            if lines and lines[-1] != "":
+                lines.append("")
+        elif kind == "head":
+            lines.append(f"<b>{_inline(body)}</b>")
+        elif kind == "item":
+            lines.append(f"{'   ' * depth}{'•' if depth == 0 else '◦'} {_inline(body)}")
+        else:
+            lines.append(_inline(body))
+    return "\n".join(lines).strip()
+
+
+def _cut(text: str, limit: int) -> str:
+    """At most `limit` characters of Markdown, cut at a line, so no tag is ever split."""
+    if len(text) <= limit:
+        return text
+    kept = text[:limit].rsplit("\n", 1)[0]
+    return f"{kept}\n…"
+
+
+# ── forum messages ─────────────────────────────────────────────────────────────
+
+
 def commit_message(state: dict[str, Any]) -> str:
-    """`✅ MCP · main · refactor(arch): … (+2)` and the workflows under it."""
+    """Head (status, repo, branch), the commit, and the workflows that ran on it."""
     runs: dict[str, dict[str, Any]] = state.get("runs") or {}
-    head = f"{overall(runs) if runs else '📌'} <b>{_e(short(state['repo']))}</b> · {_e(state.get('branch', ''))}"
+    branch = f"<code>{_e(state.get('branch', ''))}</code>"
+    head = f"{overall(runs) if runs else '📌'} <b>{_e(short(state['repo']))}</b> · {branch}"
     title = _link(state.get("url", ""), state.get("title") or state.get("sha", "")[:7])
     count = int(state.get("count") or 1)
-    text = f"{head} · {title}" + (f" (+{count - 1})" if count > 1 else "")
-    return text + (f"\n{_runs_line(runs)}" if runs else "")
+    lines = [head, title + (f" <i>+{count - 1}</i>" if count > 1 else "")]
+    if runs:
+        lines.append(_runs_line(runs))
+    return "\n".join(lines)
 
 
 def release_message(state: dict[str, Any]) -> str:
-    """`🚀 MCP v0.13.1 · на проде ✅ 2м 10с` and the first line of the release notes."""
+    """`🚀 MCP v0.13.1 · на проде ✅ 2м 10с`, the changelog section as a collapsible quote, links."""
     runs: dict[str, dict[str, Any]] = state.get("runs") or {}
     icon = overall(runs) if runs else ("✅" if state.get("release_url") else "⏳")
     word = {"✅": "на проде", "❌": "релиз не прошёл", "⏳": "релиз идёт"}.get(icon, "релиз")
-    name = _link(state.get("release_url", ""), f"{short(state['repo'])} {state['tag']}")
     seconds = [r["seconds"] for r in runs.values() if r.get("seconds") is not None]
-    text = f"🚀 <b>{name}</b> · {word} {icon}" + (f" {duration(max(seconds))}" if seconds and icon == "✅" else "")
+    took = f" · {duration(max(seconds))}" if seconds and icon == "✅" else ""
+    lines = [f"🚀 <b>{_e(short(state['repo']))} {_e(state['tag'])}</b> · {word} {icon}{took}"]
     if icon != "✅" and runs:
-        text += f"\n{_runs_line(runs)}"
-    if state.get("note"):
-        text += f"\n{_e(state['note'])}"
-    return text
+        lines.append(_runs_line(runs))
+    notes = markdown(_cut(str(state.get("notes") or ""), NOTES_MAX))
+    if notes:
+        lines.append(f"<blockquote expandable>{notes}</blockquote>")
+    links = [_link(state.get("release_url", ""), "Release")] if state.get("release_url") else []
+    links += [_link(r["url"], name) for name, r in runs.items() if r.get("url")]
+    if links:
+        lines.append(" · ".join(links))
+    return "\n".join(lines)
 
 
 def outside_line(event: Outside) -> str:
@@ -99,10 +177,10 @@ def run_failed(run: Run, step: str | None) -> str:
         text = f"⚠️ <b>{_e(short(run.repo))} {_e(run.ref)}</b> — релиз не прошёл ({_e(run.workflow)})"
         tail = "Прод остался на прошлой версии: CD откатывает сам."
     else:
-        text = f"🔴 <b>{_e(short(run.repo))}</b> · {_e(run.ref)} · {_e(run.workflow)} упал"
+        text = f"🔴 <b>{_e(short(run.repo))}</b> · <code>{_e(run.ref)}</code> · {_e(run.workflow)} упал"
         tail = _e(run.title)
     if step:
-        text += f"\nШаг: «{_e(step)}»"
+        text += f"\nШаг: <i>{_e(step)}</i>"
     return f"{text}\n{tail}" if tail else text
 
 
@@ -145,10 +223,12 @@ def topic_broken(topic: Topic, repos: list[str]) -> str:
 # ── admin ──────────────────────────────────────────────────────────────────────
 
 
-def admin_list(repos: list[tuple[RepoConfig, bool]], has_forum: bool) -> str:
+def admin_list(total: int, page: int, pages: int, has_forum: bool) -> str:
     """The /github screen's text; the repos themselves are its buttons."""
     lines = ["🐙 <b>GitHub</b>", "Уровень · тема в форуме. Сбои приходят сюда у всех репо, кроме «выкл»."]
-    if not repos:
+    if total:
+        lines.append(f"Репо: {total}" + (f" · страница {page + 1} из {pages}" if pages > 1 else ""))
+    else:
         lines.append("\nРепо нет: App не установлен или ничего не видит.")
     if not has_forum:
         lines.append(

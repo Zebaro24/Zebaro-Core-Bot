@@ -101,7 +101,11 @@ async def test_a_push_and_its_ci_are_one_quiet_forum_message(db, settings, bot, 
     assert send.kwargs["message_thread_id"] == 7 and send.kwargs["disable_notification"] is True
     assert "reply_markup" not in send.kwargs
     last = bot.edit_message_text.await_args.args[0]
-    assert last.startswith("✅ <b>Zebaro-Core-MCP</b> · main") and "(+1)" in last and "1м 23с" in last
+    assert last.split("\n") == [
+        "✅ <b>Zebaro-Core-MCP</b> · <code>main</code>",
+        '<a href="https://github.com/c/abc">feat: b</a> <i>+1</i>',
+        '✅ <a href="https://github.com/run/9">CI</a> 1м 23с',
+    ]
     assert _sent(bot, ADMIN) == []
 
 
@@ -199,11 +203,17 @@ async def test_a_release_is_one_message_with_its_note(db, settings, bot, app):
     tag = {"workflow": "CD", "ref": "v0.13.1", "tag": True, "default_branch": False}
     await delivery.handle(bot, app, _run(status="in_progress", conclusion=None, seconds=None, **tag))
     await delivery.handle(bot, app, _run(seconds=130, **tag))
-    await delivery.handle(bot, app, Release(REPO, "v0.13.1", "https://github.com/r/1", "Code got simpler."))
+    notes = "- **Simpler.** The code got\n  simpler, see `app/`.\n- Two"
+    await delivery.handle(bot, app, Release(REPO, "v0.13.1", "https://github.com/r/1", notes))
 
     assert len(_sent(bot, FORUM)) == 1
     last = bot.edit_message_text.await_args.args[0]
-    assert "Zebaro-Core-MCP v0.13.1" in last and "на проде ✅ 2м 10с" in last and "Code got simpler." in last
+    assert last.split("\n") == [
+        "🚀 <b>Zebaro-Core-MCP v0.13.1</b> · на проде ✅ · 2м 10с",
+        "<blockquote expandable>• <b>Simpler.</b> The code got simpler, see <code>app/</code>.",
+        "• Two</blockquote>",
+        '<a href="https://github.com/r/1">Release</a> · <a href="https://github.com/run/9">CD</a>',
+    ]
 
 
 @pytest.mark.asyncio
@@ -388,3 +398,23 @@ async def test_topics_of_a_forum_the_bot_does_not_write_to_are_not_kept(db):
     created.forum_topic_created.name = "New one"
     await admin.topic_seen(created)
     assert sorted(t.name for t in await store.topics()) == ["New one", "Zebaro Core"]
+
+
+@pytest.mark.asyncio
+async def test_github_pages_its_repos_followed_first(db, mocker):
+    names = [f"Zebaro24/repo-{n:02d}" for n in range(23)]
+    mocker.patch.object(admin, "_app", MagicMock(configured=True, repos=AsyncMock(
+        return_value=[MagicMock(full_name=n, private=False, archived=False) for n in names])))  # fmt: skip
+    mocker.patch.object(admin, "_names", (0.0, []))
+    followed = await store.repo("Zebaro24/repo-22")
+    await store.set_topic(followed.id, (await store.save_topic(FORUM, 7, "Core")).id)
+
+    text, keyboard = await admin._list_screen(page=0)
+    rows = keyboard.inline_keyboard
+    assert "страница 1 из 3" in text
+    assert rows[0][0].text.endswith("repo-22 · Core") and len(rows) == admin.PAGE_SIZE + 1
+    assert [b.text for b in rows[-1]] == ["1/3", "›"]
+
+    _, last = await admin._list_screen(page=9)
+    assert [b.text for b in last.inline_keyboard[-1]] == ["‹", "3/3"]
+    assert len(last.inline_keyboard) == 3 + 1

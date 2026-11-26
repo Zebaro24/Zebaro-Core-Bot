@@ -6,6 +6,7 @@ when someone creates or renames a topic in a forum the bot already writes to.
 """
 
 import logging
+import time
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramAPIError
@@ -18,7 +19,7 @@ from src.interfaces.tg.keyboards.github import GhLevel, GhNewTopic, GhOpen, GhRe
 from src.interfaces.tg.middlewares.admin import AdminMiddleware
 from src.services.github import store
 from src.services.github.api import GithubApiError, GithubApp
-from src.services.github.store import LEVELS
+from src.services.github.store import LEVELS, RepoConfig
 
 logger = logging.getLogger("tg.handlers.admin.github")
 
@@ -29,8 +30,14 @@ router.callback_query.middleware(AdminMiddleware())
 # read), and /bind from anyone — the admin check is silent there, so the forum never sees a refusal.
 topics_router = Router()
 
+PAGE_SIZE = 10
+# The App's repo list is read at most this often: paging through /github does not ask GitHub each time.
+REPOS_TTL = 60.0
+
 _app: GithubApp | None = None
 _private: dict[str, bool] = {}
+_names: tuple[float, list[str]] = (0.0, [])
+_page = 0  # the list page the owner came from: one admin, so module state is enough
 
 
 def use_app(app: GithubApp) -> None:
@@ -38,19 +45,38 @@ def use_app(app: GithubApp) -> None:
     _app = app
 
 
-async def _list_screen() -> tuple[str, InlineKeyboardMarkup]:
-    names: list[str] = []
-    if _app is not None and _app.configured:
-        try:
-            found = await _app.repos()
-            _private.update({r.full_name: r.private for r in found})
-            names = [r.full_name for r in found if not r.archived]
-        except GithubApiError as e:
-            logger.warning("Repos of the App not listed: %s", e)
-    repos = await store.sync_repos(names) if names else []
-    rows = [(cfg, _private.get(cfg.full_name, False)) for cfg in repos]
+async def _repo_names() -> list[str]:
+    global _names
+    if time.monotonic() - _names[0] < REPOS_TTL:
+        return _names[1]
+    if _app is None or not _app.configured:
+        return []
+    try:
+        found = await _app.repos()
+    except GithubApiError as e:
+        logger.warning("Repos of the App not listed: %s", e)
+        return _names[1]
+    _private.update({r.full_name: r.private for r in found})
+    _names = (time.monotonic(), [r.full_name for r in found if not r.archived])
+    return _names[1]
+
+
+def _followed_first(cfg: RepoConfig) -> tuple[int, str]:
+    """Repos with a topic first, then those still on, then the switched-off ones; by name inside."""
+    rank = 0 if cfg.topic and cfg.level != "off" else 1 if cfg.level != "off" else 2
+    return rank, cfg.full_name.lower()
+
+
+async def _list_screen(page: int = 0) -> tuple[str, InlineKeyboardMarkup]:
+    global _page
+    names = await _repo_names()
+    repos = sorted(await store.sync_repos(names), key=_followed_first) if names else []
+    pages = max(1, -(-len(repos) // PAGE_SIZE))
+    _page = min(max(page, 0), pages - 1)
+    shown = repos[_page * PAGE_SIZE : (_page + 1) * PAGE_SIZE]
+    rows = [(cfg, _private.get(cfg.full_name, False)) for cfg in shown]
     has_forum = bool(await store.forum_chats())
-    return fmt.admin_list(rows, has_forum), list_kb(rows)
+    return fmt.admin_list(len(repos), _page, pages, has_forum), list_kb(rows, _page, pages)
 
 
 async def _repo_screen(repo_id: int) -> tuple[str, InlineKeyboardMarkup] | None:
@@ -59,7 +85,7 @@ async def _repo_screen(repo_id: int) -> tuple[str, InlineKeyboardMarkup] | None:
         return None
     private = _private.get(cfg.full_name, False)
     topics = await store.topics()
-    return fmt.admin_repo(cfg, private), repo_kb(cfg, topics, can_create=bool(topics))
+    return fmt.admin_repo(cfg, private), repo_kb(cfg, topics, can_create=bool(topics), back_page=_page)
 
 
 async def _show(query: CallbackQuery, screen: tuple[str, InlineKeyboardMarkup] | None) -> None:
@@ -82,8 +108,8 @@ async def github_command(message: Message) -> None:
 
 
 @router.callback_query(GhOpen.filter())
-async def open_callback(query: CallbackQuery) -> None:
-    await _show(query, await _list_screen())
+async def open_callback(query: CallbackQuery, callback_data: GhOpen) -> None:
+    await _show(query, await _list_screen(callback_data.page))
 
 
 @router.callback_query(GhRepo.filter())

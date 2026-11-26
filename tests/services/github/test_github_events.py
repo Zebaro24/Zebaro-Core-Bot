@@ -95,11 +95,11 @@ def test_new_repos_of_the_installation():
     assert parse("installation_repositories", payload) == NewRepos(("Zebaro24/New",))
 
 
-def test_a_published_release_keeps_the_first_line_of_its_notes():
+def test_a_published_release_keeps_its_whole_notes():
     release = {"tag_name": "v1.0.0", "html_url": "https://github.com/r/1", "body": "\n### Changed\n- x"}
     payload = {"action": "published", "repository": REPO, "sender": OWNER, "release": release}
     assert parse("release", payload) == Release(
-        "Zebaro24/Zebaro-Core-MCP", "v1.0.0", "https://github.com/r/1", "Changed"
+        "Zebaro24/Zebaro-Core-MCP", "v1.0.0", "https://github.com/r/1", release["body"]
     )
 
 
@@ -115,3 +115,35 @@ def test_text_from_github_is_escaped():
 
 def test_durations_read_like_the_chat():
     assert (fmt.duration(83), fmt.duration(9), fmt.duration(None)) == ("1м 23с", "9с", "")
+
+
+def test_changelog_markdown_reads_well_in_telegram():
+    text = """### Changed
+
+- **GitHub rebuilt.** The bot is now a GitHub App on all your repos: new repos show up at
+  once, see [docs](https://github.com/o/r/blob/main/README.md) and `/github`.
+  - nested <tag> & more
+- Second item
+
+A paragraph wrapped
+in the file."""
+    assert fmt.markdown(text).splitlines() == [
+        "<b>Changed</b>",
+        "",
+        "• <b>GitHub rebuilt.</b> The bot is now a GitHub App on all your repos: new repos show up at once, see "
+        '<a href="https://github.com/o/r/blob/main/README.md">docs</a> and <code>/github</code>.',
+        "   ◦ nested &lt;tag&gt; &amp; more",
+        "• Second item",
+        "",
+        "A paragraph wrapped in the file.",
+    ]
+
+
+def test_code_keeps_its_stars_and_a_link_needs_https():
+    assert fmt.markdown("`**x**` [a](javascript:alert(1))") == "<code>**x**</code> [a](javascript:alert(1))"
+
+
+def test_long_notes_are_cut_at_a_line():
+    notes = "\n".join(f"- item {n} " + "x" * 50 for n in range(200))
+    text = fmt.release_message({"repo": "o/r", "tag": "v1.0.0", "notes": notes, "release_url": "https://github.com/r"})
+    assert len(text) < 4096 and text.count("<blockquote") == 1 and "…" in text

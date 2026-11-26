@@ -21,7 +21,7 @@ class GhRecreate(CallbackData, prefix="ghtr"):
 
 
 class GhOpen(CallbackData, prefix="ghop"):
-    pass
+    page: int = 0
 
 
 class GhRepo(CallbackData, prefix="ghr"):
@@ -70,15 +70,25 @@ def broken_kb(topic_id: int) -> InlineKeyboardMarkup:
     )
 
 
-def list_kb(repos: list[tuple[RepoConfig, bool]]) -> InlineKeyboardMarkup:
+def list_kb(repos: list[tuple[RepoConfig, bool]], page: int, pages: int) -> InlineKeyboardMarkup:
+    """One page of repos, one per row; ‹ › under them when there is more than one page."""
     builder = InlineKeyboardBuilder()
     for cfg, private in repos:
         builder.button(text=repo_button(cfg, private), callback_data=GhRepo(repo_id=cfg.id))
-    builder.adjust(1)
+    nav = []
+    if page > 0:
+        nav.append(("‹", page - 1))
+    if pages > 1:
+        nav.append((f"{page + 1}/{pages}", page))
+    if page < pages - 1:
+        nav.append(("›", page + 1))
+    for text, target in nav:
+        builder.button(text=text, callback_data=GhOpen(page=target))
+    builder.adjust(*([1] * len(repos)), len(nav) or 1)
     return builder.as_markup()
 
 
-def repo_kb(cfg: RepoConfig, topics: list[Topic], can_create: bool) -> InlineKeyboardMarkup:
+def repo_kb(cfg: RepoConfig, topics: list[Topic], can_create: bool, back_page: int = 0) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for level in LEVELS:
         mark = "• " if cfg.level == level else ""
@@ -92,6 +102,6 @@ def repo_kb(cfg: RepoConfig, topics: list[Topic], can_create: bool) -> InlineKey
     )
     if can_create:
         builder.button(text="➕ Новая тема с именем репо", callback_data=GhNewTopic(repo_id=cfg.id))
-    builder.button(text="← Все репо", callback_data=GhOpen())
+    builder.button(text="← Все репо", callback_data=GhOpen(page=back_page))
     builder.adjust(len(LEVELS), *([1] * (len(topics) + 3)))
     return builder.as_markup()

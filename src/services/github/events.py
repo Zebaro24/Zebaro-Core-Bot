@@ -12,6 +12,8 @@ from typing import Any
 _RELEASE_TAG = re.compile(r"^v\d+\.\d+\.\d+$")
 _FAILED = {"failure", "timed_out", "startup_failure"}
 _GITHUB = "https://github.com/"
+# A release body is kept up to this long; the message shows what fits (formatters/github.py).
+NOTES_KEPT = 6000
 
 
 @dataclass(frozen=True)
@@ -58,7 +60,7 @@ class Release:
     repo: str
     tag: str
     url: str
-    note: str
+    notes: str  # the release body: the tag's CHANGELOG section, Markdown
 
 
 @dataclass(frozen=True)
@@ -166,7 +168,7 @@ def parse(event: str, payload: dict[str, Any], me: str = "") -> Event | None:
             repo=repo,
             tag=str(release.get("tag_name") or ""),
             url=safe_url(release.get("html_url")),
-            note=first_line(release.get("body")),
+            notes=str(release.get("body") or "")[:NOTES_KEPT],
         )
 
     if event in ("issues", "pull_request"):

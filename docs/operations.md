@@ -67,7 +67,8 @@ whether a newer parent releases it (aiogram 3.31 released `aiohttp`).
 - One version, in `pyproject.toml`: `src/config.py` reads it (served by `/health`), `release.py` bumps
   it there. The `vX.Y.Z` tag is the only thing that deploys.
 - **CHANGELOG** is written **before** a release, under `## Unreleased`: what changed for the owner as a
-  user of the bot, in English from now on (earlier entries stay as they are). `release.py` stamps the
+  user of the bot, in English (the whole history was translated on 26.11.2026); the section becomes
+  the GitHub Release and the forum's release message, so plain Markdown only. `release.py` stamps the
   section with the version and date and refuses an empty one.
 - Dependencies: Poetry, `poetry.lock` committed (the gate checks it matches). The `playwright` package
   and the `mcr.microsoft.com/playwright` image move together (a test checks major.minor).

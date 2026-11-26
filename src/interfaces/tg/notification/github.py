@@ -68,7 +68,7 @@ async def handle(bot: Bot, app: GithubApp, event: Event) -> None:
         await _run(bot, app, cfg, event)
     elif isinstance(event, Release):
         key = f"tag:{event.repo}:{event.tag}"
-        update = {"repo": event.repo, "tag": event.tag, "note": event.note, "release_url": event.url}
+        update = {"repo": event.repo, "tag": event.tag, "notes": event.notes, "release_url": event.url}
         await _live_forum(bot, cfg, key, update, show=cfg.level == "all")
     elif isinstance(event, Outside):
         if cfg.level == "all" and cfg.topic:
