@@ -3,18 +3,20 @@
 WireGuard's transfer counters live in the kernel and start from zero whenever the interface
 restarts (a container restart, a reboot). A snapshot every few minutes turns them into running
 totals that survive that, and into per-day traffic for "today" and "this week".
+
+Stored in SQL (`vpn_clients`, `vpn_traffic_daily`); one writer — the snapshot job — so a read
+followed by a write needs no locking.
 """
 
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, Integer, String, Text
+from sqlalchemy import BigInteger, Integer, String, Text, delete, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.db.client import vpn_clients_collection, vpn_daily_collection
-from src.db.sql import Base
+from src.db import sql
+from src.db.sql import Base, UtcDateTime
 from src.services.vpn.client import VpnClient
 
 logger = logging.getLogger("vpn.traffic")
@@ -32,8 +34,8 @@ class ClientState(Base):
     last_tx: Mapped[int | None] = mapped_column(BigInteger)
     total_rx: Mapped[int | None] = mapped_column(BigInteger)
     total_tx: Mapped[int | None] = mapped_column(BigInteger)
-    seen_at: Mapped[datetime | None] = mapped_column(DateTime)
-    first_connected_at: Mapped[datetime | None] = mapped_column(DateTime)
+    seen_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    first_connected_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     expiry_noticed_for: Mapped[str | None] = mapped_column(String(40))
 
 
@@ -86,52 +88,55 @@ async def snapshot(clients: list[VpnClient], now: datetime | None = None) -> Eve
     """Fold the current counters into the totals; return what the owner should hear about."""
     now = now or datetime.now(UTC)
     events = Events()
-    for client in clients:
-        state: dict[str, Any] = await vpn_clients_collection.find_one({"_id": client.id}) or {}
-        rx = delta(state.get("last_rx"), client.rx)
-        tx = delta(state.get("last_tx"), client.tx)
-        update: dict[str, Any] = {
-            "name": client.name,
-            "ipv4": client.ipv4,
-            "last_rx": client.rx,
-            "last_tx": client.tx,
-            "total_rx": int(state.get("total_rx") or 0) + rx,
-            "total_tx": int(state.get("total_tx") or 0) + tx,
-            "seen_at": now,
-        }
-        if client.latest_handshake and not state.get("first_connected_at"):
-            update["first_connected_at"] = client.latest_handshake
-            known_since_creation = bool(state) or (
-                client.created_at is not None and now - client.created_at <= FIRST_CONNECT_WINDOW
-            )
-            if known_since_creation:
-                events.first_connected.append(client)
-        # A string: Mongo hands datetimes back without a timezone, and a naive one never
-        # equals the aware one from wg-easy — the notice would repeat every snapshot.
-        if (
-            client.expires_at
-            and client.enabled
-            and now < client.expires_at <= now + EXPIRY_NOTICE
-            and state.get("expiry_noticed_for") != client.expires_at.isoformat()
-        ):
-            update["expiry_noticed_for"] = client.expires_at.isoformat()
-            events.expiring.append(client)
-        await vpn_clients_collection.update_one({"_id": client.id}, {"$set": update}, upsert=True)
-        if rx or tx:
-            await vpn_daily_collection.update_one(
-                {"_id": f"{client.id}:{_day(now)}"},
-                {"$inc": {"rx": rx, "tx": tx}, "$set": {"client_id": client.id, "day": _day(now)}},
-                upsert=True,
-            )
+    async with sql.session() as s:
+        for client in clients:
+            state = await s.get(ClientState, client.id)
+            known = state is not None
+            if state is None:
+                state = ClientState(id=client.id)
+                s.add(state)
+            rx = delta(state.last_rx, client.rx)
+            tx = delta(state.last_tx, client.tx)
+            state.name, state.ipv4 = client.name, client.ipv4
+            state.last_rx, state.last_tx = client.rx, client.tx
+            state.total_rx = int(state.total_rx or 0) + rx
+            state.total_tx = int(state.total_tx or 0) + tx
+            state.seen_at = now
+            if client.latest_handshake and not state.first_connected_at:
+                state.first_connected_at = client.latest_handshake
+                known_since_creation = known or (
+                    client.created_at is not None and now - client.created_at <= FIRST_CONNECT_WINDOW
+                )
+                if known_since_creation:
+                    events.first_connected.append(client)
+            # A string: stored datetimes come back without a timezone, and a naive one never
+            # equals the aware one from wg-easy — the notice would repeat every snapshot.
+            if (
+                client.expires_at
+                and client.enabled
+                and now < client.expires_at <= now + EXPIRY_NOTICE
+                and state.expiry_noticed_for != client.expires_at.isoformat()
+            ):
+                state.expiry_noticed_for = client.expires_at.isoformat()
+                events.expiring.append(client)
+            if rx or tx:
+                day = await s.get(TrafficDay, (client.id, _day(now)))
+                if day is None:
+                    s.add(TrafficDay(client_id=client.id, day=_day(now), rx=rx, tx=tx))
+                else:
+                    day.rx += rx
+                    day.tx += tx
+        await s.commit()
     return events
 
 
 async def totals(client_ids: list[int]) -> dict[int, Totals]:
-    """Traffic since the client was created, across counter restarts. Empty when Mongo is down."""
+    """Traffic since the client was created, across counter restarts. Empty when the DB is down."""
     result = {client_id: Totals() for client_id in client_ids}
     try:
-        async for doc in vpn_clients_collection.find({"_id": {"$in": client_ids}}):
-            result[doc["_id"]] = Totals(int(doc.get("total_rx") or 0), int(doc.get("total_tx") or 0))
+        async with sql.session() as s:
+            for row in await s.scalars(select(ClientState).where(ClientState.id.in_(client_ids))):
+                result[row.id] = Totals(int(row.total_rx or 0), int(row.total_tx or 0))
     except Exception as e:
         logger.warning("VPN totals unavailable (DB): %s", e)
     return result
@@ -143,10 +148,12 @@ async def period(client_ids: list[int], days: int, now: datetime | None = None) 
     first = _day(now - timedelta(days=days - 1))
     result = {client_id: Totals() for client_id in client_ids}
     try:
-        async for doc in vpn_daily_collection.find({"client_id": {"$in": client_ids}, "day": {"$gte": first}}):
-            entry = result.setdefault(doc["client_id"], Totals())
-            entry.rx += int(doc.get("rx") or 0)
-            entry.tx += int(doc.get("tx") or 0)
+        async with sql.session() as s:
+            query = select(TrafficDay).where(TrafficDay.client_id.in_(client_ids), TrafficDay.day >= first)
+            for row in await s.scalars(query):
+                entry = result.setdefault(row.client_id, Totals())
+                entry.rx += int(row.rx or 0)
+                entry.tx += int(row.tx or 0)
     except Exception as e:
         logger.warning("VPN traffic history unavailable (DB): %s", e)
     return result
@@ -154,8 +161,10 @@ async def period(client_ids: list[int], days: int, now: datetime | None = None) 
 
 async def forget(client_id: int) -> None:
     try:
-        await vpn_clients_collection.delete_one({"_id": client_id})
-        await vpn_daily_collection.delete_many({"client_id": client_id})
+        async with sql.session() as s:
+            await s.execute(delete(ClientState).where(ClientState.id == client_id))
+            await s.execute(delete(TrafficDay).where(TrafficDay.client_id == client_id))
+            await s.commit()
     except Exception as e:
-        # The peer is already gone from wg-easy; stale history only costs a few documents.
+        # The peer is already gone from wg-easy; stale history only costs a few rows.
         logger.warning("Could not forget VPN client %s history: %s", client_id, e)

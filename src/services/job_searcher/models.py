@@ -18,10 +18,10 @@ Ids are the 24-hex strings MongoDB gave them (`sql.new_id` for new ones).
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.db.sql import Base, Json
+from src.db.sql import Base, Json, UtcDateTime
 
 ID = String(24)
 
@@ -37,9 +37,9 @@ class JobRow(Base):
     company: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
     location: Mapped[str | None] = mapped_column(Text)
-    date: Mapped[datetime | None] = mapped_column(DateTime)  # posted, as the board says
+    date: Mapped[datetime | None] = mapped_column(UtcDateTime)  # posted, as the board says
     link: Mapped[str | None] = mapped_column(Text)
-    found_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    found_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
     # The card's details (extract.py).
     work_format: Mapped[str | None] = mapped_column(String(32))
     countries: Mapped[str | None] = mapped_column(Text)
@@ -63,11 +63,11 @@ class JobRow(Base):
     cv_sent: Mapped[str | None] = mapped_column(String(32))
     # The current status (status.py writes these with each event).
     user_status: Mapped[str | None] = mapped_column(String(32))
-    status_updated_at: Mapped[datetime | None] = mapped_column(DateTime)
+    status_updated_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     status_reason: Mapped[str | None] = mapped_column(String(64))
     status_reason_text: Mapped[str | None] = mapped_column(Text)
     outcome: Mapped[str | None] = mapped_column(String(32))
-    outcome_at: Mapped[datetime | None] = mapped_column(DateTime)
+    outcome_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     # One vacancy on several boards (dedup.py).
     group_id: Mapped[str | None] = mapped_column(ID, ForeignKey("jobs.id"))
     copies: Mapped[list[dict[str, Any]] | None] = mapped_column(Json)
@@ -96,8 +96,8 @@ class JobEvent(Base):
     job_id: Mapped[str] = mapped_column(ID, ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True)
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False)
-    occurred_at: Mapped[datetime | None] = mapped_column(DateTime)
-    recorded_at: Mapped[datetime | None] = mapped_column(DateTime)
+    occurred_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    recorded_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     from_status: Mapped[str | None] = mapped_column(String(32))
     to_status: Mapped[str | None] = mapped_column(String(32))
     actor: Mapped[str | None] = mapped_column(String(16))
@@ -127,8 +127,8 @@ class JobSync(Base):
     event_id: Mapped[str | None] = mapped_column(String(32))
     notify: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    next_at: Mapped[datetime | None] = mapped_column(DateTime)
-    settled_at: Mapped[datetime | None] = mapped_column(DateTime)
+    next_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    settled_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
     __table_args__ = (Index("ix_job_sync_due", "state", "next_at"),)
 

@@ -12,13 +12,13 @@ import asyncio
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import JSON, String, event
+from sqlalchemy import JSON, DateTime, String, event
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Dialect
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -73,6 +73,20 @@ class Json(TypeDecorator):
 
     def process_result_value(self, value: Any, dialect: Dialect) -> Any:
         return None if value is None else _decode(value)
+
+
+class UtcDateTime(TypeDecorator):
+    """A naive UTC datetime, whatever comes in — what MongoDB did: an aware value is converted to UTC
+    and stored without its zone, and comes back naive. asyncpg refuses an aware value for a column
+    without a time zone outright, and SQLite would store it as given: one rule for both."""
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value: Any, dialect: Dialect) -> Any:
+        if isinstance(value, datetime) and value.tzinfo is not None:
+            return value.astimezone(UTC).replace(tzinfo=None)
+        return value
 
 
 _counter = int.from_bytes(os.urandom(3), "big")

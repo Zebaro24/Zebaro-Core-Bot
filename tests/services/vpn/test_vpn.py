@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy import select
 
 if "src.config" not in sys.modules:
     sys.modules["src.config"] = MagicMock(settings=MagicMock())
@@ -144,25 +145,32 @@ def test_a_counter_restart_counts_from_zero_not_negative():
 
 
 @pytest.mark.asyncio
-async def test_snapshot_keeps_totals_and_reports_first_connection_and_expiry(mocker):
-    clients_col = MagicMock(find_one=AsyncMock(return_value={"last_rx": 400, "last_tx": 1000, "total_rx": 4000}))
-    clients_col.update_one = AsyncMock()
-    daily_col = MagicMock(update_one=AsyncMock())
-    mocker.patch.object(traffic, "vpn_clients_collection", clients_col)
-    mocker.patch.object(traffic, "vpn_daily_collection", daily_col)
-    client = _client(expiresAt=(NOW + timedelta(hours=5)).isoformat())
+async def test_snapshot_keeps_totals_and_reports_first_connection_and_expiry(sql_db):
+    async with sql_db.session() as s:
+        s.add(traffic.ClientState(id=3, last_rx=400, last_tx=1000, total_rx=4000))
+        await s.commit()
+    expires = (NOW + timedelta(hours=5)).isoformat()
+    client = _client(expiresAt=expires)
 
     events = await traffic.snapshot([client], now=NOW)
 
-    stored = clients_col.update_one.await_args.args[1]["$set"]
-    assert stored["total_rx"] == 4600 and stored["total_tx"] == 4000
+    async with sql_db.session() as s:
+        stored = await s.get(traffic.ClientState, 3)
+        days = (await s.scalars(select(traffic.TrafficDay))).all()
+    assert stored is not None and (stored.total_rx, stored.total_tx) == (4600, 4000)
+    # Stored the way MongoDB did: UTC without the zone.
+    assert stored.seen_at == NOW.replace(tzinfo=None) and stored.first_connected_at is not None
     assert events.first_connected == [client] and events.expiring == [client]
-    assert daily_col.update_one.await_args.args[1]["$inc"] == {"rx": 600, "tx": 4000}
+    assert [(d.client_id, d.rx, d.tx) for d in days] == [(3, 600, 4000)]
 
-    # Next snapshot: the same expiry is not announced twice.
-    clients_col.find_one = AsyncMock(return_value={**stored, "first_connected_at": NOW})
-    again = await traffic.snapshot([client], now=NOW)
+    # Next snapshot: the same expiry is not announced twice, the day adds up.
+    again = await traffic.snapshot([_client(expiresAt=expires, transferRx=1500, transferTx=5100)], now=NOW)
     assert again.first_connected == [] and again.expiring == []
+    assert (await traffic.period([3], days=1, now=NOW))[3] == traffic.Totals(rx=1100, tx=4100)
+    assert (await traffic.totals([3]))[3] == traffic.Totals(rx=5100, tx=4100)
+
+    await traffic.forget(3)
+    assert (await traffic.totals([3]))[3].total == 0 and (await traffic.period([3], days=7, now=NOW))[3].total == 0
 
 
 # --- screens ---------------------------------------------------------------------------
@@ -236,10 +244,7 @@ def test_hooks_use_nftables_and_keep_exactly_one_copy_of_each_rule():
 
 
 @pytest.mark.asyncio
-async def test_no_first_connection_notice_for_someone_connected_before_the_bot_watched(mocker):
-    clients_col = MagicMock(find_one=AsyncMock(return_value=None), update_one=AsyncMock())
-    mocker.patch.object(traffic, "vpn_clients_collection", clients_col)
-    mocker.patch.object(traffic, "vpn_daily_collection", MagicMock(update_one=AsyncMock()))
+async def test_no_first_connection_notice_for_someone_connected_before_the_bot_watched(sql_db):
     old = _client(createdAt=(NOW - timedelta(days=30)).isoformat())
 
     events = await traffic.snapshot([old], now=NOW)
@@ -248,10 +253,8 @@ async def test_no_first_connection_notice_for_someone_connected_before_the_bot_w
 
 
 @pytest.mark.asyncio
-async def test_history_is_empty_not_fatal_when_mongo_is_down(mocker):
-    broken = MagicMock(find=MagicMock(side_effect=Exception("no db")))
-    mocker.patch.object(traffic, "vpn_clients_collection", broken)
-    mocker.patch.object(traffic, "vpn_daily_collection", broken)
+async def test_history_is_empty_not_fatal_when_the_db_is_down(mocker):
+    mocker.patch.object(traffic.sql, "session", MagicMock(side_effect=Exception("no db")))
 
     assert (await traffic.totals([3]))[3].total == 0
     assert (await traffic.period([3], days=7))[3].total == 0
