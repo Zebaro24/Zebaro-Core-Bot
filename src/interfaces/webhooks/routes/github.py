@@ -36,9 +36,15 @@ async def github_webhook(request: Request) -> Response:
     declared = request.headers.get("Content-Length", "")
     if declared.isdigit() and int(declared) > MAX_BODY:
         raise HTTPException(status_code=413, detail="Payload too large")
-    body = await request.body()
-    if len(body) > MAX_BODY:
-        raise HTTPException(status_code=413, detail="Payload too large")
+    # Read as a stream with a running total: a chunked body without Content-Length is cut off at the cap too.
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_BODY:
+            raise HTTPException(status_code=413, detail="Payload too large")
+        chunks.append(chunk)
+    body = b"".join(chunks)
     if not signature_ok(body, request.headers.get("X-Hub-Signature-256", "")):
         logger.warning("GitHub webhook with a missing or wrong signature")
         raise HTTPException(status_code=401, detail="Invalid signature")

@@ -298,6 +298,21 @@ async def test_an_oversized_body_is_refused_before_it_is_read(settings, service)
 
 
 @pytest.mark.asyncio
+async def test_an_oversized_chunked_body_without_a_length_is_cut_off(settings, service):
+    api = FastAPI()
+    api.include_router(route.router, prefix="/webhook/github")
+
+    async def chunks():
+        for _ in range(6):
+            yield b"x" * (1024 * 1024)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=api), base_url="https://bot.zebaro.dev") as c:
+        response = await c.post("/webhook/github", content=chunks())
+    assert response.status_code == 413
+    service.receive.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_a_non_ascii_signature_is_a_401_not_a_500(settings, service):
     assert route.signature_ok(BODY, "sha256=ш") is False
 
