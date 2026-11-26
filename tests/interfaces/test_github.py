@@ -403,7 +403,7 @@ async def test_github_pages_its_repos_followed_first(db, mocker):
     names = [f"Zebaro24/repo-{n:02d}" for n in range(23)]
     mocker.patch.object(admin, "_app", MagicMock(configured=True, repos=AsyncMock(
         return_value=[MagicMock(full_name=n, private=False, archived=False) for n in names])))  # fmt: skip
-    mocker.patch.object(admin, "_names", (0.0, []))
+    mocker.patch.object(admin, "_names", (float("-inf"), []))
     followed = await store.repo("Zebaro24/repo-22")
     await store.set_topic(followed.id, (await store.save_topic(FORUM, 7, "Core")).id)
 
@@ -416,3 +416,14 @@ async def test_github_pages_its_repos_followed_first(db, mocker):
     _, last = await admin._list_screen(page=9)
     assert [b.text for b in last.inline_keyboard[-1]] == ["‹", "3/3"]
     assert len(last.inline_keyboard) == 3 + 1
+
+
+@pytest.mark.asyncio
+async def test_the_repo_list_is_fetched_right_after_a_fresh_boot(mocker):
+    # monotonic() starts near zero after a boot: a never-fetched list must not read as fresh then.
+    # `_names` is the module's own start value here (every other test patches it and gets it back).
+    mocker.patch.object(admin.time, "monotonic", return_value=5.0)
+    mocker.patch.object(admin, "_app", MagicMock(configured=True, repos=AsyncMock(
+        return_value=[MagicMock(full_name="Zebaro24/a", private=False, archived=False)])))  # fmt: skip
+
+    assert await admin._repo_names() == ["Zebaro24/a"]

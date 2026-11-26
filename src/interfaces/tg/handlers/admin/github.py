@@ -36,7 +36,9 @@ REPOS_TTL = 60.0
 
 _app: GithubApp | None = None
 _private: dict[str, bool] = {}
-_names: tuple[float, list[str]] = (0.0, [])
+# Never fetched: -inf, not 0.0 — monotonic() starts near zero on a fresh boot, and 0.0 would read as
+# a list fetched just now.
+_names: tuple[float, list[str]] = (float("-inf"), [])
 _page = 0  # the list page the owner came from: one admin, so module state is enough
 
 
