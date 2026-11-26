@@ -117,8 +117,7 @@ docker compose up -d
 
 Starts five containers:
 - `zebaro-core-db` — MongoDB (the bot's store until the move to PostgreSQL is finished)
-- `zebaro-core-pg` — PostgreSQL 17 with pgvector: database `zebaro_core` (the bot), `zebaro_mcp`
-  (Zebaro-Core-MCP), one role each; needs the three passwords below
+- `zebaro-core-pg` — PostgreSQL 17 with pgvector: role and database `zebaro_core`; needs `POSTGRES_PASSWORD`
 - `zebaro-core-playwright` — Playwright browser server
 - `zebaro-core-bot` — bot + webhooks on `127.0.0.1:8000` (port configurable via `APP_PORT`; the
   Cloudflare Tunnel is the only way in)
@@ -167,9 +166,7 @@ See `scripts/README.md` for the release and production helpers.
 | `JOBS_API_TOKEN` | no | empty (endpoints refuse) | Bearer token for the Jobs API (`/jobs/*` except `/jobs/r/<id>`), the MCP's client |
 | `SITE_CONTACT_TOKEN` | no | empty (endpoint refuses) | Shared with zebaro.dev (`CONTACT_TOKEN` there) for `/site/contact` |
 | `NOTIFY_API_TOKEN` | no | empty (endpoint refuses) | Bearer token for `/notify` — Claude's notifications from the owner's PC (`docs/contracts/notify.md`) |
-| `POSTGRES_PASSWORD` | yes for compose | — | PostgreSQL superuser `postgres` (maintenance only, never an app's login) |
-| `ZEBARO_CORE_DB_PASSWORD` | yes for compose | — | Role `zebaro_core`, owner of database `zebaro_core` |
-| `ZEBARO_MCP_DB_PASSWORD` | yes for compose | — | Role `zebaro_mcp`, owner of database `zebaro_mcp` |
+| `POSTGRES_PASSWORD` | yes for compose | — | Role `zebaro_core` of `zebaro-core-pg`; set once — read on the first start only, URL-safe |
 | `WG_PASSWORD` | yes for compose | — | wg-easy admin password (12+ chars); the bot gets it as `WG_EASY_PASSWORD` |
 | `HOME_PROXY_URL` | no | empty (boards go direct) | `http://user:pass@10.0.0.2:8899` — HTTP proxy on the owner's PC in the VPN; Work.ua, Robota.ua and LinkedIn are opened through it (they block the server's IP) and skipped in 2 s when it is off |
 | `WG_HOST` | no | `server.zebaro.dev` | Endpoint clients connect to; must resolve straight to the server (no Cloudflare proxy) |

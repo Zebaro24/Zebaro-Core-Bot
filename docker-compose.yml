@@ -27,24 +27,24 @@ services:
       start_period: 20s
 
   zebaro-core-pg:
-    # The platform's one PostgreSQL: database zebaro_core for the bot, zebaro_mcp (with pgvector) for
-    # Zebaro-Core-MCP, each with its own role that cannot open the other's. Always on: unlike the old
-    # MongoDB the bot never starts or stops it. Roles and databases are made by
-    # scripts/postgres-init.sh on the first start only, while data/postgres is empty.
+    # The platform's one PostgreSQL (pgvector inside, for Zebaro-Core-MCP's RAG later). Always on:
+    # unlike the old MongoDB the bot never starts or stops it. On its first start (empty
+    # data/postgres) it creates the role and database zebaro_core; the password is read then only —
+    # changing POSTGRES_PASSWORD later does not change it in the database. A password, though the
+    # port is only on the Docker network: the site and Playwright share that network.
     image: pgvector/pgvector:pg17
     container_name: zebaro-core-pg
     restart: unless-stopped
     environment:
+      - POSTGRES_USER=zebaro_core
+      - POSTGRES_DB=zebaro_core
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      - ZEBARO_CORE_DB_PASSWORD=${ZEBARO_CORE_DB_PASSWORD:?ZEBARO_CORE_DB_PASSWORD is required}
-      - ZEBARO_MCP_DB_PASSWORD=${ZEBARO_MCP_DB_PASSWORD:?ZEBARO_MCP_DB_PASSWORD is required}
     volumes:
       - ${DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
-      - ./scripts/postgres-init.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
     expose:
       - "5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      test: ["CMD-SHELL", "pg_isready -U zebaro_core -d zebaro_core"]
       interval: 5s
       timeout: 5s
       retries: 10
