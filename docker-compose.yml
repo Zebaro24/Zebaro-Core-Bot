@@ -9,9 +9,10 @@ x-deploy:
 
 services:
   zebaro-core-db:
+    # The old MongoDB: the bot no longer uses it. Kept for one release — the move to zebaro-core-pg
+    # (scripts/migrate_to_pg.py) reads it, and an older tag rolled back to still runs on it.
     image: mongo:4.4
     container_name: zebaro-core-db
-    # The bot starts and stops it itself (src/infrastructure/mongodb.py).
     restart: "no"
     environment:
       - MONGO_INITDB_DATABASE=zebaro_core
@@ -90,12 +91,16 @@ services:
       - MONOBANK_JAR_ID=${MONOBANK_JAR_ID:-}
       - MONOBANK_CARD_ID=${MONOBANK_CARD_ID:-}
       - SPOTIFY_SINCE=${SPOTIFY_SINCE:-}
-      - MONGO_URI=mongodb://zebaro-core-db:27017/zebaro_core
       - PLAYWRIGHT_WS_ENDPOINT=ws://zebaro-core-playwright:9222
-      # SQLite in the mounted state/ — survives a rebuild of the container.
-      - DATABASE_URL=sqlite+aiosqlite:////app/state/zebaro.db
+      # The platform's PostgreSQL, role zebaro_core (see zebaro-core-pg). The password goes into a URL:
+      # URL-safe characters only.
+      - DATABASE_URL=postgresql+asyncpg://zebaro_core:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@zebaro-core-pg:5432/zebaro_core
       - TZ=Europe/Berlin
       - SERVICES_STATE_FILE=/app/state/services.json
+    # The schema is migrated at start: the database has to answer first.
+    depends_on:
+      zebaro-core-pg:
+        condition: service_healthy
     # wg-easy's API lives in the host network on the Docker bridge (172.17.0.1) — host.docker.internal from here.
     extra_hosts:
       - "host.docker.internal:host-gateway"

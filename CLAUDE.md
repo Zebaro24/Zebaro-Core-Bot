@@ -18,15 +18,15 @@ Worked on from the workspace (`../CLAUDE.md`). Name this repo in every call: `gi
 
 ## Layout
 
-Entry point: `python -m src.main` (`scripts\dev.bat`) — `asyncio.gather`: MongoDB + Telegram +
+Entry point: `python -m src.main` (`scripts\dev.bat`) — Alembic to head, then `asyncio.gather`: Telegram +
 FastAPI (webhooks, Jobs API, `/health`) + optional Discord.
 
 ```
 src/config.py      pydantic-settings singleton; the version is read from pyproject.toml
 src/core/          BaseService / BaseInfrastructure, ServiceManager (state in services.json)
-src/db/            MongoDB (AsyncMongoClient) + collections; sql.py — SQLAlchemy (SQLite→Postgres)
+src/db/            sql.py — SQLAlchemy: PostgreSQL in compose, SQLite in tests; Json/UtcDateTime types, kv
 src/scheduler/     APScheduler singleton, timezone from TZ
-src/infrastructure/ mongodb.py, playwright.py — start/stop Docker containers
+src/infrastructure/ playwright.py — start/stop the browser container
 src/services/      docker, github, job_searcher, site_contact, spotify, vpn, speedtest
 src/interfaces/    tg (formatters, handlers, notification), ds, webhooks
 scripts/           gate.py (= CI), release.py, dev.bat, prod.bat, home_proxy.py (owner's PC)
@@ -43,7 +43,7 @@ scripts/           gate.py (= CI), release.py, dev.bat, prod.bat, home_proxy.py 
 ## Commands
 
 ```bat
-scripts\dev.bat infra        :: MongoDB + Playwright in Docker
+scripts\dev.bat infra        :: PostgreSQL + Playwright in Docker
 scripts\dev.bat              :: the bot locally (DEBUG=True → polling)
 scripts\prod.bat health      :: is production alive, which version (no SSH)
 ```

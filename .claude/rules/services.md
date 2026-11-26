@@ -19,7 +19,7 @@ services/
                   repos, levels, forum topics, live messages), service (receive → deliver, given by tg/main.py)
   job_searcher/   container, extract, filter (tiers), cv (3 CVs: routing, fit), letters, keywords, dedup,
                   stats, digest, parser, urls, listeners/, home (PC proxy + noon alert), search_window
-                  (LinkedIn), repair (one-off at enable); Jobs API: jobs_api, status (writes), reasons,
+                  (LinkedIn); store (the vacancies in SQL as documents, models.py the tables); Jobs API: jobs_api, status (writes), reasons,
                   events (by=event), journal (SQL), silence (S3), backfill
   site_contact.py zebaro.dev contact form: model + rate limit (POST /site/contact)
   notify.py       Claude's notifications: model + SQL records of live messages (/notify, tg/notification/notify.py)
@@ -31,8 +31,9 @@ services/
 - **GitHub**: one App webhook for every repo of the account, no hook per repo; the service never imports an
   interface — Telegram delivery is `tg/notification/github.py`, HTML `tg/formatters/github.py`.
 - **Vacancy status**: every write (API, buttons, the bot) goes through
-  `services/job_searcher/status.py:write_status` — one CAS update + `history` event; Telegram follows
-  via `tg_sync` (`tg/notification/job_status.py`), never inside the write. Design: `docs/design/status-write.md`.
+  `services/job_searcher/status.py:write_status` — one conditional update + a `history` event in one
+  transaction (`store.update`); Telegram follows via `tg_sync` (table `job_sync`,
+  `tg/notification/job_status.py`), never inside the write. Design: `docs/design/status-write.md`.
 - **CVs**: `services/job_searcher/cv.py` (skills, titles, salaries) and `letters.py` mirror the owner's
   CVs in `D:\Work\Career\CV\Upload` and the letters in `Job-Search/cover-letters.md` — a CV or letter
   edit there is an edit here.
@@ -49,8 +50,10 @@ services/
   handshake/traffic: read clients from the list. `WG_VERSION` in `services/vpn/installer.py` and
   `ARG WG_VERSION` in `Dockerfile` move together — `tests/test_vpn_installer_version.py`. `install.bat`
   is shipped with CRLF (built in code).
-- **SQL**: new storage goes to SQLAlchemy models + an Alembic revision (`migrations/`,
-  `render_as_batch` for SQLite); the bot upgrades to head at start; `tests/services/spotify` checks
-  migrations match the models. Money in kopecks, time as Unix int.
+- **SQL** (PostgreSQL in compose, SQLite in the tests — `tests/conftest.py:sql_db`): storage is SQLAlchemy
+  models + an Alembic revision (`migrations/`, `render_as_batch` for SQLite); the bot upgrades to head at
+  start; `tests/services/spotify` checks migrations match the models. Money in kopecks, time as Unix int —
+  except the vacancies (`UtcDateTime`, naive UTC with milliseconds, as they came from MongoDB). Queries use
+  what both engines do the same; `TEST_DATABASE_URL=postgresql+asyncpg://…` runs the tests on PostgreSQL.
 - **The Jobs API and `/site/contact` are contracts** (consumers: MCP, the site): a change starts in
   `../docs/contracts.md` — this side first, then the consumer.

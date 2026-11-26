@@ -28,7 +28,7 @@ whether a newer parent releases it (aiogram 3.31 released `aiohttp`).
 
 ## Review focus (code-reviewer)
 
-1. **Correctness at the boundaries:** an empty result, MongoDB down, the Playwright container stopped,
+1. **Correctness at the boundaries:** an empty result, the database down, the Playwright container stopped,
    Telegram flood control, the same handler running twice at once, a scheduled run overlapping a
    manual one.
 2. **This repo's rules** (`CLAUDE.md`, `.claude/rules/`), most often broken in good faith: HTML outside
@@ -39,7 +39,7 @@ whether a newer parent releases it (aiogram 3.31 released `aiohttp`).
 
 ## Tests (test-writer)
 
-- **Many modules read `settings` or open MongoDB at import time.** Tests replace those modules first:
+- **Many modules read `settings` at import time.** Tests replace those modules first:
 
   ```python
   sys.modules["src.config"] = MagicMock(settings=mock_settings)
@@ -107,8 +107,8 @@ back with `docker start`, a removed one only through CD, the one place that has 
 
 One VPS: `zebaro@server.zebaro.dev`. Compose in `/srv/zebaro-core/zebaro-core-bot` (project
 `zebaro-core-bot`), state in `/srv/zebaro-core/data/{mongo,postgres,state,vpn}` — the folder to back up.
-Containers `zebaro-core-bot`, `zebaro-core-db` (MongoDB 4.4), `zebaro-core-pg` (PostgreSQL 17 + pgvector,
-role and database `zebaro_core`; the move off MongoDB is in progress), `zebaro-core-playwright` (browser
+Containers `zebaro-core-bot`, `zebaro-core-pg` (PostgreSQL 17 + pgvector, role and database `zebaro_core` —
+every bit of the bot's data), `zebaro-core-db` (the old MongoDB 4.4, unused, kept one release), `zebaro-core-playwright` (browser
 server, also used by Zebaro-Core-MCP), `zebaro-core-vpn` (wg-easy); network `zebaro-core_default`
 (named in compose; MCP and the site join it). Public `https://bot.zebaro.dev`. Use `scripts\prod.bat`,
 not long `ssh` lines.
@@ -122,7 +122,7 @@ scripts\prod.bat state                      :: which services are switched on
 ```
 
 - **Logs start at the last container recreation.** A deploy erases them; the job history lives in
-  MongoDB (`jobs`).
+  PostgreSQL (`jobs`, `job_events`).
 - `Update id=… is handled. Duration N ms` — one Telegram update; updates run in the background. If
   `query is too old` shows up again, something blocks the event loop with a synchronous call.
 - `Playwright version mismatch` → `docker-compose.yml` and `poetry.lock` disagree.

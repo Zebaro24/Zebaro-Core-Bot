@@ -6,7 +6,7 @@
 [![Aiogram](https://img.shields.io/badge/Aiogram-3.x-2CA5E0?logo=telegram&logoColor=white)](https://docs.aiogram.dev/)
 [![discord.py](https://img.shields.io/badge/discord.py-2.x-5865F2?logo=discord&logoColor=white)](https://discordpy.readthedocs.io/)
 [![Playwright](https://img.shields.io/badge/Playwright-1.63-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-4.4-47A248?logo=mongodb&logoColor=white)](https://www.mongodb.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
 
 Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker control, GitHub alerts, job scraping.
@@ -18,7 +18,7 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 ## Features
 
 **Telegram Bot (Aiogram 3)**
-- Admin utilities: chat ID, server health, MongoDB stats
+- Admin utilities: chat ID, server health
 - Docker control: `/server_status` — projects and containers as tables, two-column paged buttons, start/stop/restart, logs
 - VPN: `/vpn` — WireGuard (wg-easy) clients with online status and traffic; add with a chosen address (`10.0.0.<n>`), enable/disable, access expiry, rename, readdress, delete; sends two named profiles (full / LAN) or a one-file Windows installer
 - Spotify Family: `/spotify` — the family plan paid from a Monobank jar: who paid, who owes, "paid until", corrections by hand, stats; members join by an invite link and get their own `/spotify`
@@ -55,17 +55,17 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 - `zebaro-core-vpn` runs wg-easy in the host network: `10.0.0.1` is the server itself (Samba, the home PC at `10.0.0.2`)
 - Addresses: `.2–.9` the owner's devices, `.10–.99` chosen per person, `.100+` automatic; DNS is AdGuard (ads blocked)
 - The Windows installer is a 7-Zip SFX: installs WireGuard 1.1.1 only when missing or older, imports `Zebaro-<Name>` and `Zebaro-<Name>-LAN`, switches one on unless another VPN is active
-- Traffic history survives counter resets (Mongo); first-connection and access-expiry notices; weekly table on Fridays
+- Traffic history survives counter resets (SQL); first-connection and access-expiry notices; weekly table on Fridays
 
 **Spotify Family (Monobank)**
 - The jar's top-ups (`Від: <name>`) and the Spotify charges on the card come in by Monobank's webhook (`/webhook/monobank/<secret>`) and a daily statement poll (09:40, before the reminders; «Обновить» polls on demand); the whole history loads from a chosen date
 - Each charge is split equally among the members active that day (kopecks left over go to the owner); balances are recomputed from the full history, so a corrected join date fixes every number
 - Unknown senders are asked about once: a member's other name, a new member, or not counted
 - Three days and one day before the charge: members short of their share get a reminder with a top-up link, the owner gets the jar and the card balance ("withdraw X from the jar" / "short of X"); after the charge — debtors at once and three days later; a price change in dollars is flagged
-- Stored in SQL (SQLAlchemy + Alembic, SQLite in `state/`), not Mongo — the start of the move to Postgres
+- Stored in SQL (SQLAlchemy + Alembic), like everything the bot keeps
 
 **Infrastructure management**
-- MongoDB and Playwright containers started/stopped on demand
+- The Playwright container started/stopped on demand
 - Cascade logic: disabling infrastructure disables dependent services
 - State persisted across restarts in `services.json`
 
@@ -80,7 +80,7 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 | Scraping | Playwright + playwright-stealth + BeautifulSoup4 |
 | Scheduler | APScheduler |
 | Docker | docker SDK for Python |
-| Database | MongoDB (PyMongo) |
+| Database | PostgreSQL 17 (SQLAlchemy 2 + asyncpg, Alembic); SQLite in the tests |
 | Config | pydantic-settings |
 | Tooling | Poetry, ruff (format + lint + security rules), mypy, pip-audit — all through `scripts/gate.py` |
 | Testing | pytest, pytest-asyncio, pytest-cov |
@@ -116,7 +116,7 @@ docker compose up -d
 ```
 
 Starts five containers:
-- `zebaro-core-db` — MongoDB (the bot's store until the move to PostgreSQL is finished)
+- `zebaro-core-db` — the old MongoDB, no longer used; kept one release for the move and a rollback
 - `zebaro-core-pg` — PostgreSQL 17 with pgvector: role and database `zebaro_core`; needs `POSTGRES_PASSWORD`
 - `zebaro-core-playwright` — Playwright browser server
 - `zebaro-core-bot` — bot + webhooks on `127.0.0.1:8000` (port configurable via `APP_PORT`; the
@@ -128,7 +128,7 @@ Starts five containers:
 ## Running Locally
 
 ```bat
-scripts\dev.bat infra   :: MongoDB + Playwright in Docker (needs docker-compose.override.yml for ports)
+scripts\dev.bat infra   :: PostgreSQL + Playwright in Docker (needs docker-compose.override.yml for ports)
 scripts\dev.bat         :: the bot: poetry run python -m src.main
 ```
 
@@ -173,10 +173,9 @@ See `scripts/README.md` for the release and production helpers.
 | `MONOBANK_TOKEN` | no | empty (Spotify idle) | Monobank personal API token (api.monobank.ua) |
 | `MONOBANK_WEBHOOK_SECRET` | no | empty (no webhook, poll only) | Path secret of `/webhook/monobank/<secret>` — personal webhooks are not signed |
 | `MONOBANK_JAR_ID`, `MONOBANK_CARD_ID`, `SPOTIFY_SINCE` | no | empty (set up in `/spotify`) | With all three the first start sets itself up: the jar and the card, the whole history since that date (`YYYY-MM-DD`), the jar's senders as members |
-| `DATABASE_URL` | no | `sqlite+aiosqlite:///zebaro.db` | SQL database; compose: `state/zebaro.db`; later `postgresql+asyncpg://…` |
+| `DATABASE_URL` | no | `sqlite+aiosqlite:///zebaro.db` | SQL database; compose: `postgresql+asyncpg://zebaro_core:…@zebaro-core-pg:5432/zebaro_core` |
 | `TZ` | no | `Europe/Berlin` | Scheduler timezone (and log time in Docker) |
 | `SERVICES_STATE_FILE` | no | `services.json` | Where `/services` toggles are saved |
-| `MONGO_URI` | no | `mongodb://localhost:27017/zebaro_core` | MongoDB connection string |
 | `PLAYWRIGHT_WS_ENDPOINT` | no | `ws://localhost:9222` | Playwright browser WebSocket URL |
 | `DEBUG` | no | `false` | Polling mode when `true`, webhook mode when `false` |
 

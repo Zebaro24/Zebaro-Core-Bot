@@ -9,7 +9,7 @@
 | `gate.py`          | **Единственный чекер.** poetry-lock, ruff format, ruff check, mypy, pip-audit, pytest. Ровно то же самое гоняет CI и CD перед деплоем. Руками чекеры не зовём |
 | `release.py`       | Готовит релиз: версия → зеркала в `pyproject.toml` и `src/config.py` → `CHANGELOG` → коммит → тег → одноразовое одобрение. **Не пушит**                            |
 | `approve.py`       | Выписывает одноразовый маркер, который разрешает `git push` или пуш тега. Живёт 15 минут, тратится один раз                                                        |
-| `dev.bat`          | Локально: `dev` (бот), `dev infra` / `dev stop` (Mongo + Playwright в Docker), `dev gate`, `dev install`                                                           |
+| `dev.bat`          | Локально: `dev` (бот), `dev infra` / `dev stop` (PostgreSQL + Playwright в Docker), `dev gate`, `dev install`                                                           |
 | `prod.bat`         | Прод по SSH: `prod health`, `prod ps`, `prod logs [c] [since]`, `prod state`, `prod restart <c>`, `prod` (шелл)                                                    |
 | `migrate_to_pg.py` | Разовый перенос MongoDB + SQLite → PostgreSQL со сверкой каждого значения. Нужен `poetry install` (исключение из правила выше); уходит вместе с MongoDB |
 | `start-claude.bat` | Открыть Claude Code в корне проекта через Windows Terminal (там Shift+Enter даёт перенос строки). Двойной клик или ярлык на панели задач                            |
@@ -29,7 +29,7 @@ python scripts/release.py --bump minor --dry-run
 ```
 
 ```bat
-scripts\dev.bat infra                      :: Mongo + Playwright
+scripts\dev.bat infra                      :: PostgreSQL + Playwright
 scripts\dev.bat                            :: бот локально (polling, из .env)
 scripts\prod.bat health                    :: жив ли прод
 scripts\prod.bat logs                      :: логи бота за сутки
