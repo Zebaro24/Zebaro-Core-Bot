@@ -1,5 +1,10 @@
 """The 👀 tier as one message a day (16.11.2026), edited as the day's runs add to it.
 
+Since 26.11.2026 the message opens with the day's search figures (services/job_searcher/runs.py):
+cards seen, new, filtered out and why, sent, and whether a board failed or waited for the home PC —
+so a quiet day reads as the market or as a breakage, not as a mystery. Every run edits it, and from
+SUMMARY_HOUR on it is sent even with no partial match; the home PC note lives here, not apart.
+
 Partial matches are a side list: the owner looks through them and answers only when one catches
 the eye. A summary per run piled up a dozen messages a day; now a run edits the day's message
 (a new one past SUMMARY_CHUNK vacancies — two buttons a row keep the keyboard to ten rows).
@@ -21,10 +26,10 @@ from aiogram.types import InlineKeyboardMarkup, InputRichMessage
 
 from src.config import settings
 from src.db import sql
-from src.interfaces.tg.formatters.job import review_summary_html, review_summary_plain
+from src.interfaces.tg.formatters.job import day_stats_html, day_stats_plain, review_summary_html, review_summary_plain
 from src.interfaces.tg.formatters.job_status import status_words
 from src.interfaces.tg.keyboards.job import get_job_summary_kb
-from src.services.job_searcher import store
+from src.services.job_searcher import runs, store
 from src.services.job_searcher.container import Job
 from src.services.job_searcher.jobs_api import public_status
 from src.services.job_searcher.models import ReviewSummary
@@ -32,6 +37,8 @@ from src.services.job_searcher.models import ReviewSummary
 logger = logging.getLogger("tg.notification.review_summary")
 
 SUMMARY_CHUNK = 20
+# From this local hour the day's message is there even without a partial match: the figures alone.
+SUMMARY_HOUR = 10
 _SEND_ATTEMPTS = 5
 _STALE_BATCH = 200
 # The search run adds, the sync loop re-renders: one at a time, or a render from older state
@@ -49,6 +56,10 @@ def today() -> str:
     return datetime.now().date().isoformat()  # the process's clock is the owner's (TZ)
 
 
+def _part() -> dict[str, Any]:
+    return {"ids": [], "chat_id": None, "message_id": None, "kind": None}
+
+
 def place(parts: list[dict[str, Any]], ids: list[str]) -> list[dict[str, Any]]:
     """Append the ids to the day's parts: the last one until it holds SUMMARY_CHUNK, then a new one.
     A vacancy already in the day's summary is not added twice."""
@@ -58,7 +69,7 @@ def place(parts: list[dict[str, Any]], ids: list[str]) -> list[dict[str, Any]]:
         if job_id in known:
             continue
         if not parts or len(parts[-1]["ids"]) >= SUMMARY_CHUNK:
-            parts.append({"ids": [], "chat_id": None, "message_id": None, "kind": None})
+            parts.append(_part())
         parts[-1]["ids"].append(job_id)
         known.add(job_id)
     return parts
@@ -71,9 +82,8 @@ def mark(doc: dict[str, Any]) -> str | None:
 
 
 async def add_to_summary(bot: Bot, ids: list[str]) -> int:
-    """Put the run's 👀 vacancies into today's summary. Returns how many of them are shown."""
-    if not ids:
-        return 0
+    """Put the run's 👀 vacancies into today's summary and refresh its figures — every run, the
+    ids may be none. Returns how many of the ids are shown."""
     day = today()
     async with _lock:
         try:
@@ -84,9 +94,17 @@ async def add_to_summary(bot: Bot, ids: list[str]) -> int:
             logger.warning("Review summary: storage unavailable, sending the run's summary apart: %s", e)
             state, known = {}, False
         parts = place(state.get("parts") or [], ids)
+        if not parts:
+            # Nothing to list yet: the figures alone, from SUMMARY_HOUR on — and only as a stored
+            # message, or a DB that is down would get a new one every hour.
+            if not known or datetime.now().hour < SUMMARY_HOUR or await runs.day_stats(day) is None:
+                return 0
+            parts = [_part()]
         shown = await _render(bot, day, parts, send_new=True)
         if known:
             await _save(day, parts)
+    if not ids:
+        return 0
     try:
         await store.update_where(store.J.id.in_(ids), {"review_day": day})
     except sql.UNAVAILABLE as e:  # the summary is out; only its later status marks are lost
@@ -143,23 +161,28 @@ async def _docs(parts: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 async def _render(bot: Bot, day: str, parts: list[dict[str, Any]], *, send_new: bool) -> set[str]:
     """Edit (or send) every part of the day; the ids that are shown. `parts` is updated in place
     with the messages sent."""
-    docs = await _docs(parts)
+    docs = await _docs(parts) if any(part["ids"] for part in parts) else {}
+    stats = await runs.day_stats(day)
     total = sum(len(part["ids"]) for part in parts)
     decided = sum(1 for part in parts for job_id in part["ids"] if job_id in docs and mark(docs[job_id]))
     label = datetime.fromisoformat(day).strftime("%d.%m")
     shown: set[str] = set()
     first = 1
-    for part in parts:
+    for index, part in enumerate(parts):
         present = [job_id for job_id in part["ids"] if job_id in docs]
         jobs = [Job.from_doc(docs[job_id]) for job_id in present]
         start, first = first, first + len(part["ids"])
-        if not jobs:
+        # The first message carries the day's figures, so it is there with no vacancy in it too.
+        head = stats if index == 0 else None
+        if not jobs and head is None:
             continue
         marks = [mark(docs[job_id]) for job_id in present]
         numbered = enumerate(zip(jobs, present, strict=True), start)
         view = _View(
-            html=review_summary_html(jobs, start, total, day=label, decided=decided, marks=marks),
-            plain=review_summary_plain(jobs, start, total, day=label, decided=decided, marks=marks),
+            html=(day_stats_html(head) if head else "")
+            + review_summary_html(jobs, start, total, day=label, decided=decided, marks=marks),
+            plain=(day_stats_plain(head) + "\n\n" if head else "")
+            + review_summary_plain(jobs, start, total, day=label, decided=decided, marks=marks),
             markup=get_job_summary_kb([(n, job.title or "", job_id) for n, (job, job_id) in numbered]),
         )
         if (part.get("message_id") and await _edit(bot, part, view)) or (send_new and await _send(bot, part, view)):

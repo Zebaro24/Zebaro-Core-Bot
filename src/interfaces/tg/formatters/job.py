@@ -2,7 +2,9 @@ import html
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Any
 
+from src.interfaces.tg.formatters.job_stats import REASONS as FILTER_REASONS
 from src.services.job_searcher import cv, letters
 from src.services.job_searcher.container import Job
 from src.services.job_searcher.filter import (
@@ -431,6 +433,8 @@ def _summary_item(job: Job, rich: bool) -> str:
 
 
 def _summary_head(total: int, day: str | None, decided: int) -> str:
+    if not total:
+        return "👀 Частичных совпадений пока нет"
     when = f" за {day}" if day else ""
     done = f" (решено {decided})" if decided else ""
     return f"👀 Частичные совпадения{when} — {total}{done}"
@@ -515,11 +519,113 @@ def job_to_html(job: Job) -> str:
     return text
 
 
-def home_down_html(skipped: list[str]) -> str:
-    """The once-a-day note that the home PC is off and its boards went unsearched."""
-    boards = ", ".join(html.escape(name) for name in skipped) or "площадки через домашний ПК"
+# --- the day's search figures, at the head of the 👀 message (26.11.2026) --------------------
+
+_REASONS_SHOWN = 3
+
+
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    return few if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else many
+
+
+def _reasons(reasons: dict[str, int], limit: int | None = None) -> str:
+    items = list(reasons.items())
+    shown = items[:limit] if limit else items
+    text = " · ".join(f"{FILTER_REASONS.get(reason, reason)} {count}" for reason, count in shown)
+    rest = sum(count for _, count in items[len(shown) :])
+    return text + (f" · другие {rest}" if rest else "")
+
+
+def _verdict(stats: dict[str, Any]) -> list[str]:
+    """Whether a quiet day is the market or the bot: what failed, what was skipped, or that all answered."""
+    lines, broken = [], False
+    runs, down = stats["runs"], stats["browser_down"]
+    if down:
+        broken = True
+        lines.append(
+            "❗ Браузер недоступен — сегодня поиск не шёл"
+            if down >= runs
+            else f"❗ Браузер был недоступен в {down} из {runs} прогонов"
+        )
+    if crashed := stats.get("crashed", 0):
+        broken = True
+        lines.append(f"❗ Прогон упал с ошибкой: {crashed} из {runs} — смотри логи бота")
+    if runs and not down and not any(b["searches"] for b in stats["platforms"]) and not stats["skipped"]:
+        broken = True
+        lines.append("❗ Ни одна площадка сегодня не открылась")
+    if stats["broken"]:
+        broken = True
+        lines.append(
+            f"❗ <b>{html.escape(', '.join(stats['broken']))}</b>: страницы открылись, но без единой карточки — "
+            "похоже, сломался парсер или блокируют"
+        )
+    failed = [f"{html.escape(b['platform'])} {b['failed']}" for b in stats["platforms"] if b["failed"]]
+    if failed:
+        lines.append("⚠️ Не открылись страницы: " + ", ".join(failed))
+    if [b for b in stats["platforms"] if b["searches"] and b["failed"] >= b["searches"] and not b["cards"]]:
+        broken = True  # a board that never loaded is not a quiet market either
+    if stats["skipped"]:
+        names = html.escape(", ".join(stats["skipped"]))
+        home = stats["home_down"]
+        when = "весь день" if home >= runs else f"в {home} из {runs} прогонов"
+        lines.append(f"🏠 ПК не отвечал {when} — пропущены: {names}. LinkedIn догонит до 7 дней, когда ПК вернётся")
+    if not broken:
+        rest = "Остальные площадки" if stats["skipped"] else "Площадки"
+        quiet = " — под тебя пока ничего нового: это рынок, а не поломка" if not stats["surfaced_total"] else ""
+        lines.append(f"✅ {rest} отвечают{quiet}")
+    return lines
+
+
+def _board_line(board: dict[str, Any]) -> str:
+    name = html.escape(board["platform"])
+    if not board["searches"]:
+        return f"{name} — не искали (ПК)"
+    cards = board["cards"]
     return (
-        "🏠 <b>Домашний ПК не отвечает</b> — пропускаю: " + boards + ".\n"
-        "Включи WireGuard (профиль LAN) и <code>home_proxy.py</code>. LinkedIn догонит пропущенное "
-        "за последние 7 дней, когда ПК вернётся. До завтра больше не напомню."
+        f"{name} — {cards} {_plural(cards, 'карточка', 'карточки', 'карточек')} · новых {board['new']} · "
+        f"отсеяно {board['filtered_out']} · прислано {board['surfaced']}"
+    )
+
+
+def _day_parts(stats: dict[str, Any]) -> tuple[str, str, list[str], list[str]]:
+    """(head, figures, verdict lines, detail lines) of the day's figures."""
+    tiers = stats["by_tier"]
+    stats = {**stats, "surfaced_total": sum(tiers.values())}
+    when = f" · обновлено {stats['last_run']}" if stats.get("last_run") else ""
+    day = datetime.fromisoformat(stats["day"]).strftime("%d.%m")
+    cards = stats["cards"]
+    figures = (
+        f"Просмотрено <b>{cards}</b> {_plural(cards, 'карточка', 'карточки', 'карточек')} · "
+        f"новых <b>{stats['new']}</b> · "
+        f"отсеяно <b>{stats['filtered_out']}</b> · прислано <b>{stats['surfaced_total']}</b> "
+        f"(🔥 {tiers['top'] + tiers['sent']} · 👀 {tiers['review']})"
+    )
+    if stats["reasons"]:
+        figures += "\nОтсеяно: " + html.escape(_reasons(stats["reasons"], _REASONS_SHOWN))
+    details = [_board_line(board) for board in stats["platforms"]]
+    if stats["reasons"]:
+        details.append("Все фильтры: " + html.escape(_reasons(stats["reasons"])))
+    repeats = f" · повторов с других площадок {stats['repeats']}" if stats["repeats"] else ""
+    details.append(f"Прогонов {stats['runs']}{repeats}")
+    return f"📊 Поиск за {day}{when}", figures, _verdict(stats), details
+
+
+def day_stats_html(stats: dict[str, Any]) -> str:
+    head, figures, verdict, details = _day_parts(stats)
+    return (
+        f"<h3>{head}</h3><p>{figures.replace(chr(10), '<br>')}</p><p>{'<br>'.join(verdict)}</p>"
+        f"<details><summary>📋 По площадкам и всем фильтрам</summary><p>{'<br>'.join(details)}</p></details>"
+    )
+
+
+def day_stats_plain(stats: dict[str, Any]) -> str:
+    head, figures, verdict, details = _day_parts(stats)
+    return (
+        f"<b>{head}</b>\n{figures}\n"
+        + "\n".join(verdict)
+        + "\n<blockquote expandable>"
+        + "\n".join(details)
+        + "</blockquote>"
     )

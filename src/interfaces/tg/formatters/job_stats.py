@@ -138,6 +138,13 @@ def _market_insight(item: dict[str, Any]) -> str:
     if kind == "volume":
         word = "больше" if item["change"] > 0 else "меньше"
         return f"📦 Вакансий на <b>{abs(item['change']):.0%} {word}</b>, чем неделей раньше."
+    if kind == "filter_change":
+        names = ", ".join(f"{REASONS.get(r, r)} {n}" for r, n in item["filters"].items())
+        word = "меньше" if item["change"] < 0 else "больше"
+        return (
+            f"🧹 В твоей области на {abs(item['change']):.0%} {word} — это новый фильтр бота ({html.escape(names)}), "
+            f"а не рынок: всего найдено {item['total_change']:+.0%} к прошлой неделе."
+        )
     if kind == "competition":
         return (
             f"👥 На вакансию Djinni в среднем <b>{item['median']}</b> откликов — сильное резюме и быстрый ответ "
@@ -386,6 +393,10 @@ def format_me_rich(digest: dict[str, Any]) -> str:
     if silent:
         names = ", ".join(html.escape(name) for name in silent)
         parts.append(f"<p>⚠️ Ничего не дали за период: <b>{names}</b> — или блокируют, или сломалась вёрстка.</p>")
+    unsearched = (digest.get("sources") or {}).get("not_searched") or []
+    if unsearched:
+        names = ", ".join(html.escape(name) for name in unsearched)
+        parts.append(f"<p>🏠 Не искались — ПК был выключен: {names}. Это не поломка площадки.</p>")
     parts.append(f"<footer>{total} решений за неделю · считаются по моменту нажатия кнопки</footer>")
     return "".join(parts)
 

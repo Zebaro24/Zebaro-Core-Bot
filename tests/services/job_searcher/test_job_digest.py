@@ -235,3 +235,39 @@ async def test_partial_matches_do_not_wait_for_an_answer(sql_db):
     me = (await digest.get_digest(7))["me"]
 
     assert me["pending"]["count"] == 2  # top and sent; the 👀 and the answered one are not waiting
+
+
+def test_a_field_shrunk_by_a_new_filter_is_not_read_as_the_market():
+    # 26.11.2026: "off track" came in W47 and the review saw the field fall by half.
+    prev = [_doc(moderation="sent", matched_stack=["Python"]) for _ in range(10)]
+    now = [_doc(moderation="sent", matched_stack=["Python"]) for _ in range(5)]
+    now += [_doc(moderation="rejected_by_filter", filter_reason="off track") for _ in range(5)]
+
+    market = market_stats(now, prev)
+    insights = market_insights(market)
+
+    assert (market["found_total"], market["found_total_prev"]) == (10, 10)
+    assert market["new_filters"] == {"off track": 5}
+    change = next(item for item in insights if item["kind"] == "filter_change")
+    assert "volume" not in [item["kind"] for item in insights]
+    assert round(change["change"], 2) == -0.5 and change["total_change"] == 0
+
+    text = format_market_rich({**_digest(), "market": market, "market_insights": insights})
+    assert "это новый фильтр бота (data / ML / DevOps — не под резюме 5), а не рынок" in text
+
+
+def test_a_fall_of_everything_found_is_still_the_market():
+    prev = [_doc(moderation="sent", matched_stack=["Python"]) for _ in range(10)]
+    now = [_doc(moderation="sent", matched_stack=["Python"]) for _ in range(5)]
+
+    kinds = [item["kind"] for item in market_insights(market_stats(now, prev))]
+
+    assert "volume" in kinds and "filter_change" not in kinds
+
+
+def test_boards_left_for_the_home_pc_are_not_called_broken():
+    digest = {**_digest(), "silent_sources": [], "sources": {"not_searched": ["Work.ua"], "broken": []}}
+
+    me = format_me_rich(digest)
+
+    assert "Ничего не дали" not in me and "🏠 Не искались — ПК был выключен: Work.ua" in me

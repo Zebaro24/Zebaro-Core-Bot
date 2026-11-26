@@ -9,13 +9,12 @@ HOME_PROXY_URL is ``http://user:password@10.0.0.2:8899``. Unset — the boards g
 before. Set but the PC is off or asleep — they are skipped in two seconds instead of burning
 twenty on a bot check each.
 
-The owner is not always at home, so a PC that is off is no news before noon: from ALERT_HOUR on,
-the first run that finds it off says so once, and the rest of the day is quiet.
+A PC that is off is a line in the day's message (runs.py, review_summary.py), not a message of
+its own (26.11.2026: one a day was too many — the PC cannot always be on).
 """
 
 import asyncio
 import logging
-from datetime import datetime
 from urllib.parse import unquote, urlparse
 
 from src.config import settings
@@ -23,9 +22,6 @@ from src.config import settings
 logger = logging.getLogger("job_searcher.home")
 
 _PROBE_TIMEOUT_S = 2.0
-# Local hour from which a PC that is off is worth a message (05.11.2026): by noon it is on.
-ALERT_HOUR = 12
-ALERT_STATE_ID = "home_proxy_alert"
 
 
 def home_proxy() -> dict[str, str] | None:
@@ -53,20 +49,3 @@ async def home_proxy_up(proxy: dict[str, str]) -> bool:
         return False
     writer.close()
     return True
-
-
-async def home_alert_due(now: datetime) -> bool:
-    """Whether to tell the owner the PC is off: from ALERT_HOUR on, once a day.
-
-    `now` is local time. Claims the day before answering yes — two runs racing send one message;
-    a message lost after that is a day without one, not one per hour. A DB that cannot say → no.
-    """
-    if now.hour < ALERT_HOUR:
-        return False
-    from src.db import sql  # the parser imports this module; tests stub the DB
-
-    try:
-        return await sql.kv_claim(ALERT_STATE_ID, "alerted_on", now.date().isoformat())
-    except Exception as e:
-        logger.debug("Home PC alert not claimed: %s", e)
-        return False

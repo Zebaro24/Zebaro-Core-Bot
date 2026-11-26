@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, urlparse
 
 from sqlalchemy import ColumnElement, and_
 
-from src.services.job_searcher import cv, store
+from src.services.job_searcher import cv, runs, store
 from src.services.job_searcher.extract import english_rank
 from src.services.job_searcher.store import J
 
@@ -101,6 +101,8 @@ async def get_digest(days: int = 7, *, strict: bool = False) -> dict[str, Any]:
 
     me = my_stats(this_week, last_week, window, pending, now, found, current_searches=set(urls))
     me["by_cv"] = cv_stats(applied_all, window, found)
+    # The boards as the runs saw them (26.11.2026); before the first recorded day, the old guess.
+    sources = await runs.period_sources(since, now, found)
     return {
         "period_days": days,
         "since": since,
@@ -109,12 +111,14 @@ async def get_digest(days: int = 7, *, strict: bool = False) -> dict[str, Any]:
         "me": me,
         "market_insights": market_insights(market),
         "my_insights": my_insights(me, market),
-        "silent_sources": _silent(found),
+        "silent_sources": sources["broken"] if sources else _silent(found),
+        "sources": sources,
     }
 
 
 def _silent(found: list[dict[str, Any]]) -> list[str]:
-    """Platforms that are searched but brought nothing — a broken selector or a block.
+    """Platforms that are searched but brought nothing — a broken selector or a block. The guess
+    for a period with no recorded runs: a board skipped for the home PC looks the same here.
 
     With nothing found at all (an empty period, or the DB down) every source would be
     reported as silent, which says nothing.
@@ -188,7 +192,21 @@ def market_stats(found: list[dict[str, Any]], found_prev: list[dict[str, Any]] |
     blockers = Counter(doc.get("filter_reason") for doc in field if doc.get("moderation") == "rejected_by_filter")
     known_english = sum(count for bucket, count in english.items() if bucket != "?")
     known_years = sum(count for bucket, count in years.items() if bucket != "?")
+    filtered = Counter(doc.get("filter_reason") for doc in found if doc.get("moderation") == "rejected_by_filter")
+    filtered_prev = Counter(
+        doc.get("filter_reason") for doc in found_prev or [] if doc.get("moderation") == "rejected_by_filter"
+    )
     return {
+        # Everything found, the field and the filtered out alike: a fall here is the market, a fall
+        # of `in_field` alone may be a filter the bot got (26.11.2026: "off track" in W47).
+        "found_total": len(found),
+        "found_total_prev": len(found_prev) if found_prev is not None else None,
+        # Filter reasons that took nothing last period and at least MIN_FOR_SHARE now: a new rule.
+        "new_filters": (
+            {r: n for r, n in filtered.most_common() if r and n >= MIN_FOR_SHARE and not filtered_prev.get(r)}
+            if found_prev
+            else {}
+        ),
         "in_field": len(field),
         "in_field_prev": len(prev_field) if found_prev is not None else None,
         "surfaced": len(surfaced),
@@ -247,8 +265,18 @@ def market_insights(market: dict[str, Any]) -> list[dict[str, Any]]:
         insights.append({"kind": "tech_falling", "names": [tech["name"] for tech in falling[:3]]})
     if market["in_field_prev"]:
         change = market["in_field"] / market["in_field_prev"] - 1
-        if abs(change) >= 0.2:
-            insights.append({"kind": "volume", "change": change, "now": market["in_field"]})
+        prev_total = market.get("found_total_prev")
+        total_change = market["found_total"] / prev_total - 1 if prev_total else None
+        new_filters = market.get("new_filters") or {}
+        if abs(change) >= 0.2 and new_filters and total_change is not None and abs(total_change) < 0.2:
+            # The boards brought as much as before: the field shrank by the bot's new rule, not the market.
+            insights.append(
+                {"kind": "filter_change", "change": change, "total_change": total_change, "filters": new_filters}
+            )
+        elif abs(change) >= 0.2:
+            insights.append(
+                {"kind": "volume", "change": change, "now": market["in_field"], "total_change": total_change}
+            )
     if market["applicants"] and market["applicants"]["median"] >= 100:
         insights.append({"kind": "competition", "median": market["applicants"]["median"]})
     return insights[:MAX_INSIGHTS]

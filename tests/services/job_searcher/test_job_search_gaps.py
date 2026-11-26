@@ -1,7 +1,7 @@
 """05.11.2026: what the search lost while the home PC was off, and what it should not push.
 
-The home PC alert, LinkedIn's window since the last full pass, the early-startup demotion and
-the one-off repairs of the stored vacancies.
+The day's run figures (once the home PC alert), LinkedIn's window since the last full pass,
+the early-startup demotion and the one-off repairs of the stored vacancies.
 """
 
 import sys
@@ -133,39 +133,114 @@ async def test_a_short_page_is_the_last_one(mocker):
     assert (found, len(asked)) == (4, 1)
 
 
-# --- home PC alert -------------------------------------------------------------------------
+# --- the day's run figures (26.11.2026: the separate home PC alert went into them) ------------
+
+
+def _run(**boards: dict[str, int]) -> dict[str, dict[str, int]]:
+    from src.services.job_searcher.runs import new_counts
+
+    names = {"Work_ua": "Work.ua", "No_Fluff_Jobs": "No Fluff Jobs"}
+    return {names.get(name, name): {**new_counts(), **counts} for name, counts in boards.items()}
 
 
 @pytest.mark.asyncio
-async def test_no_alert_before_noon(sql_db):
-    from src.services.job_searcher.home import ALERT_STATE_ID, home_alert_due
+async def test_the_runs_of_a_day_add_up_per_board(sql_db):
+    from src.services.job_searcher.runs import record_run
 
-    assert not await home_alert_due(datetime(2026, 11, 5, 11, 59))
-    assert await sql_db.kv_get(ALERT_STATE_ID) is None  # nothing claimed
+    morning, noon = datetime(2026, 11, 26, 9, 5), datetime(2026, 11, 26, 13, 5)
+    await record_run(
+        _run(Dou={"searches": 3, "cards": 60}, Work_ua={"skipped": 3}), browser_down=False, home_down=True, now=morning
+    )
+    await record_run(
+        _run(Dou={"searches": 3, "cards": 58}, Work_ua={"searches": 3, "cards": 20}),
+        browser_down=False, home_down=False, now=noon,
+    )  # fmt: skip
+
+    day = await sql_db.kv_get("job_day:2026-11-26")
+    assert day is not None
+    assert (day["runs"], day["home_down"], day["last_run"]) == (2, 1, "13:05")
+    assert day["platforms"]["Dou"]["cards"] == 118
+    assert day["platforms"]["Work.ua"] == {"searches": 3, "cards": 20, "failed": 0, "skipped": 3}
 
 
 @pytest.mark.asyncio
-async def test_alert_once_a_day_from_noon(sql_db):
-    from src.services.job_searcher.home import home_alert_due
+async def test_a_lost_count_never_fails_the_run(mocker):
+    from src.services.job_searcher.runs import record_run
 
-    assert await home_alert_due(datetime(2026, 11, 5, 12, 0))
-    assert not await home_alert_due(datetime(2026, 11, 5, 15, 0))  # the day is claimed
-    assert await home_alert_due(datetime(2026, 11, 6, 12, 0))
+    mocker.patch("src.db.sql.kv_get", AsyncMock(side_effect=RuntimeError("the database is down")))
+
+    await record_run(_run(Dou={"searches": 1}), browser_down=False, home_down=False)
 
 
 @pytest.mark.asyncio
-async def test_an_alert_the_db_cannot_claim_is_not_sent(mocker):
-    from src.services.job_searcher import home
+async def test_the_day_tells_a_broken_board_from_a_skipped_one_and_a_quiet_one(sql_db, mocker):
+    from fake_jobs import SqlJobs
 
-    mocker.patch("src.db.sql.kv_claim", AsyncMock(side_effect=RuntimeError("the database is down")))
+    from src.services.job_searcher.runs import day_stats, record_run
 
-    assert not await home.home_alert_due(datetime(2026, 11, 5, 12, 0))
+    jobs = SqlJobs(sql_db, mocker)
+    base = {"platform_name": "Dou", "found_at": datetime(2026, 11, 26, 11), "user_status": "pending", "title": "x"}
+    rejected = [
+        {**base, "_id": f"{n:024x}", "moderation": "rejected_by_filter", "filter_reason": reason}
+        for n, reason in enumerate(["not a developer role", "not a developer role", "lead"])
+    ]
+    jobs.docs = [
+        *rejected,
+        {**base, "_id": f"{9:024x}", "moderation": "review"},
+        {**base, "_id": f"{10:024x}", "moderation": "sent", "user_status": "duplicate"},
+    ]
+    await record_run(
+        _run(
+            Dou={"searches": 3, "cards": 60}, No_Fluff_Jobs={"searches": 2}, LinkedIn={"skipped": 2},
+            Work_ua={"searches": 2, "failed": 2},
+        ),
+        browser_down=False, home_down=True, now=datetime(2026, 11, 26, 13, 5),
+    )  # fmt: skip
+
+    stats = await day_stats("2026-11-26")
+    assert stats is not None
+
+    assert (stats["cards"], stats["new"], stats["repeats"], stats["filtered_out"]) == (60, 4, 1, 3)
+    assert stats["reasons"] == {"not a developer role": 2, "lead": 1}
+    assert stats["by_tier"] == {"top": 0, "sent": 0, "review": 1}
+    assert stats["broken"] == ["No Fluff Jobs"]  # loaded, not one card; Work.ua never loaded: not the parser
+    assert stats["not_searched"] == ["LinkedIn"]  # waited for the PC every time: not broken
+    assert await day_stats("2026-11-25") is None  # nothing recorded is not a day of zeros
 
 
-def test_home_down_message_names_the_skipped_boards():
-    from src.interfaces.tg.formatters.job import home_down_html
+@pytest.mark.asyncio
+async def test_the_period_sums_the_recorded_days(sql_db):
+    from src.services.job_searcher.runs import period_sources, record_run
 
-    text = home_down_html(["Robota.ua", "Work.ua", "LinkedIn"])
+    for day in (24, 25):
+        await record_run(
+            _run(Dou={"searches": 3, "cards": 50}, Work_ua={"skipped": 2}),
+            browser_down=False, home_down=True, now=datetime(2026, 11, day, 12),
+        )  # fmt: skip
+    found = [{"platform_name": "Dou", "moderation": "rejected_by_filter", "filter_reason": "lead"}]
 
-    assert "Robota.ua, Work.ua, LinkedIn" in text
-    assert "До завтра" in text
+    sources = await period_sources(datetime(2026, 11, 19, 12), datetime(2026, 11, 26, 12), found)
+    assert sources is not None
+
+    assert sources["days_recorded"] == 2
+    assert sources["platforms"][0] == {
+        "platform": "Dou", "searches": 6, "cards": 100, "failed": 0, "skipped": 0,
+        "new": 1, "repeats": 0, "filtered_out": 1, "surfaced": 0,
+    }  # fmt: skip
+    assert sources["broken"] == [] and sources["not_searched"] == ["Work.ua"]
+    assert await period_sources(datetime(2026, 10, 1), datetime(2026, 10, 7), found) is None
+
+
+@pytest.mark.asyncio
+async def test_the_parser_counts_cards_and_failed_pages_per_board(mocker):
+    from src.services.job_searcher import parser as parser_module
+
+    job_parser = parser_module.JobParser([], MagicMock())
+    mocker.patch.object(job_parser.job_storage, "add_job", return_value=True)
+    mocker.patch.object(job_parser, "_get_page_content", AsyncMock(side_effect=["<html></html>", RuntimeError("x")]))
+    mocker.patch.object(job_parser, "_parse_list", return_value=_cards(0, 7))
+
+    await job_parser._parse_search_page(MagicMock(), LinkedInListeners(), "u", "u", "")
+    await job_parser._parse_search_page(MagicMock(), LinkedInListeners(), "u", "u", "")
+
+    assert job_parser.counts["LinkedIn"]["cards"] == 7 and job_parser.counts["LinkedIn"]["failed"] == 1

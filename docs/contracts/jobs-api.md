@@ -393,7 +393,15 @@ the moment of decision** (the button press), and the market by vacancies of the 
   "me": {"decisions": {"applied": 9, "mismatch": 20, "not_interested": 14, "blocked": 3}, "...": "..."},
   "market_insights": [{"kind": "seniority_wall", "count": 40, "share": 0.33}],
   "my_insights": [{"kind": "backlog", "old": 5}],
-  "silent_sources": ["Work.ua"]
+  "silent_sources": ["No Fluff Jobs"],
+  "sources": {
+    "days_recorded": 7,
+    "platforms": [{"platform": "Dou", "searches": 273, "cards": 5400, "failed": 0, "skipped": 0,
+                   "new": 83, "repeats": 0, "filtered_out": 66, "surfaced": 17}],
+    "cards": 9800, "new": 203, "filtered_out": 171, "reasons": {"senior": 26, "...": 0},
+    "by_tier": {"top": 1, "sent": 15, "review": 16},
+    "broken": ["No Fluff Jobs"], "not_searched": ["Work.ua", "Robota.ua"], "skipped": ["LinkedIn", "Work.ua", "Robota.ua"]
+  }
 }
 ```
 
@@ -401,18 +409,28 @@ the moment of decision** (the button press), and the market by vacancies of the 
   last week), `surfaced`, `reach_share`, `by_tier`, `years` / `english` / `work_format`
   (distributions), `top_tech` (`share` and `delta` against last week), `salary` (`median`, `low`,
   `high`, `n`), `applicants`, `blockers` (what keeps the owner out: `senior`, `experience`,
-  `english`, `office`, ...).
+  `english`, `office`, ...); `found_total` / `found_total_prev` (everything found, filtered out
+  included: a fall here is the market), `new_filters` (filter reasons that took nothing last
+  period and at least 5 now: a rule the bot got, `{reason: count}`).
 - `me` — decisions: `decisions` / `prev`, `apply_rate` / `apply_rate_prev`, `funnel` (`found`,
   `surfaced`, `opened`, `applied`), `pending`, `by_platform`, `outcomes` (what came of the
   applications, by platform), `by_tier_rate`, `searches` (best and worst searches over 4 weeks),
   `dead_searches`, `mismatch_reasons`, `not_interested_reasons`, `filter_misses`,
   `avg_hours_to_action` (median), `applied_tech`.
 - `market_insights` / `my_insights` — up to 5 insights: `{kind, ...numbers}`. `kind`: market —
-  `seniority_wall`, `english_gate`, `tech_rising`, `tech_falling`, `volume`, `competition`;
+  `seniority_wall`, `english_gate`, `tech_rising`, `tech_falling`, `volume` (with `total_change`),
+  `filter_change` (the field moved by 20%+ while everything found did not: `change`, `total_change`,
+  `filters` — the bot's new rule, not the market), `competition`;
   owner — `platform_gap`, `tiers`, `main_gap`, `filter_miss`, `speed`, `backlog`,
   `dead_search`, `trend`.
-- `silent_sources` — platforms the bot searches that gave not a single vacancy in the period
-  (broken parsing or a block).
+- `silent_sources` — platforms the bot opened that showed not a single card in the period (broken
+  parsing or a block): `sources.broken`. A period with no recorded runs (before 26.11.2026) falls
+  back to "searched, no vacancy stored", which cannot tell a board skipped for the home PC.
+- `sources` — the boards as the hourly runs saw them, summed over the recorded days
+  (`days_recorded`; `null` when none): per platform `searches` opened, `cards` on their list pages
+  (known ones included), `failed` pages, `skipped` searches (home PC off), and the period's stored
+  vacancies `new` / `filtered_out` / `surfaced`; `not_searched` — boards whose every search waited
+  for the home PC: not searched, **not** broken.
 - Shares are from 0 to 1. A number with too little data behind it is `null`.
 - The database is unavailable → `503 storage_unavailable` (not zeros).
 
@@ -558,7 +576,9 @@ here, events before it stay `other` with `suggested_code`.
   «↩️ Отменить» and a link to the vacancy (loud ones) or goes into the session message, where the
   vacancy is a link.
 - **The 👀 digest** — one message a day, extended by editing; a decided vacancy gets its status
-  icon in it within a minute.
+  icon in it within a minute. It opens with the day's search figures (cards, new, filtered out and
+  why, sent, broken or skipped boards), refreshed every run and sent from 10:00 even with no partial
+  match.
 
   The bot does not delete old messages: Telegram only allows deleting messages younger than 48
   hours.

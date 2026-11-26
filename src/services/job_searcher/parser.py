@@ -21,6 +21,7 @@ from src.services.job_searcher.listeners.no_fluff_jobs import NoFluffJobsListene
 from src.services.job_searcher.listeners.robota_ua import RobotaUAListeners
 from src.services.job_searcher.listeners.wellfound import WellfoundListeners
 from src.services.job_searcher.listeners.work_ua import WorkUAListeners
+from src.services.job_searcher.runs import new_counts
 from src.services.job_searcher.search_window import mark_full_pass, pages_for, window_seconds
 
 logger = logging.getLogger("job_searcher.parser")
@@ -115,6 +116,13 @@ class JobParser:
         # The home PC was needed and did not answer: its boards were skipped (the alert reads it).
         self.home_down = False
         self.home_skipped: list[str] = []  # the boards skipped for it, in the order of the searches
+        self.browser_down = False  # Playwright was not there: nothing was opened
+        # Per board: searches opened, cards on their pages, pages that failed, searches skipped (runs.py).
+        self.counts: dict[str, dict[str, int]] = {}
+
+    def _count(self, listeners: BaseListeners, field: str, n: int = 1) -> None:
+        if listeners.platform_name:
+            self.counts.setdefault(listeners.platform_name, new_counts())[field] += n
 
     @staticmethod
     async def _get_page_content(page: Page, url: str, wait_selector: str | None = None) -> str:
@@ -183,6 +191,7 @@ class JobParser:
 
     async def parse_urls(self) -> None:
         if not await self._playwright_available():
+            self.browser_down = True
             return
 
         logger.info("Starting parse for %d URLs", len(self.urls))
@@ -201,10 +210,12 @@ class JobParser:
                 page = self._page_for(listeners, direct, home)
                 if page is None:
                     logger.info("Skipping %s: the home PC is not reachable", url_text)
+                    self._count(listeners, "skipped")
                     if listeners.platform_name and listeners.platform_name not in self.home_skipped:
                         self.home_skipped.append(listeners.platform_name)
                     continue
                 via = " (via the home PC)" if page is home else ""
+                self._count(listeners, "searches")
                 name = listeners.platform_name
                 if not (listeners.windowed and name):
                     await self._parse_search_page(page, listeners, url_text, url_text, via)
@@ -236,9 +247,11 @@ class JobParser:
         except Exception:
             # A page that fails to load must not cost every other source its vacancies.
             logger.exception("Could not open %s, moving on to the next search", page_url)
+            self._count(listeners, "failed")
             return []
 
         jobs = self._parse_list(listeners, BeautifulSoup(html_content, "html.parser"), search_url)
+        self._count(listeners, "cards", len(jobs))
         repeated = sum(not self.job_storage.add_job(job) for job in jobs)
 
         if jobs:

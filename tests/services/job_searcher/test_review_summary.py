@@ -120,3 +120,95 @@ async def test_a_decided_vacancy_gets_its_status_mark_on_the_next_sync(stores):
     assert "<p>2. 👎 <b>Engineer 1</b>" in html
     assert jobs.docs[1].get("review_stale") is None
     bot.send_rich_message.assert_awaited_once()  # a refresh never sends a new message
+
+
+# --- the day's figures at the head (26.11.2026) ----------------------------------------------
+
+
+def _stats(**fields):
+    board = {"platform": "Dou", "searches": 3, "cards": 60, "failed": 0, "skipped": 0, "new": 6, "repeats": 0,
+             "filtered_out": 6, "surfaced": 0}  # fmt: skip
+    base = {
+        "day": "2026-11-16", "runs": 5, "last_run": "13:05", "browser_down": 0, "home_down": 0,
+        "platforms": [board], "cards": 60, "new": 6, "repeats": 0, "filtered_out": 6,
+        "reasons": {"not a developer role": 4, "other stack": 1, "lead": 1},
+        "by_tier": {"top": 0, "sent": 0, "review": 0},
+        "broken": [], "not_searched": [], "skipped": [],
+    }  # fmt: skip
+    return {**base, **fields}
+
+
+@pytest.mark.asyncio
+async def test_from_ten_the_figures_come_even_with_no_partial_match(stores, mocker):
+    _, meta = stores
+    mocker.patch.object(review_summary.runs, "day_stats", AsyncMock(return_value=_stats()))
+    bot = _bot()
+    clock = mocker.patch.object(review_summary, "datetime", wraps=datetime)
+
+    clock.now.return_value = datetime(2026, 11, 16, 9, 5)
+    assert await review_summary.add_to_summary(bot, []) == 0
+    bot.send_rich_message.assert_not_awaited()  # before ten: nothing to say yet
+
+    clock.now.return_value = datetime(2026, 11, 16, 10, 5)
+    await review_summary.add_to_summary(bot, [])
+
+    text = bot.send_rich_message.await_args.kwargs["rich_message"].html
+    assert "📊 Поиск за 16.11 · обновлено 13:05" in text
+    assert "Просмотрено <b>60</b> карточек · новых <b>6</b> · отсеяно <b>6</b> · прислано <b>0</b>" in text
+    assert "Отсеяно: не разработка 4 · другой основной стек 1 · lead / head / architect 1" in text
+    assert "✅ Площадки отвечают — под тебя пока ничего нового: это рынок, а не поломка" in text
+    assert text.index("📊") < text.index("👀 Частичных совпадений пока нет")
+    assert meta.by_id("review_summary:2026-11-16")["parts"][0]["ids"] == []
+
+
+@pytest.mark.asyncio
+async def test_the_figures_head_the_first_part_only_and_follow_each_run(stores, mocker):
+    jobs, _ = stores
+    jobs.docs.extend(_doc(n) for n in range(2))
+    ids = [str(doc["_id"]) for doc in jobs.docs]
+    stats = mocker.patch.object(review_summary.runs, "day_stats", AsyncMock(return_value=_stats()))
+    bot = _bot()
+
+    await review_summary.add_to_summary(bot, ids[:1])
+    stats.return_value = _stats(cards=80, skipped=["LinkedIn"], home_down=5)
+    await review_summary.add_to_summary(bot, [])  # a run with nothing new still refreshes the figures
+
+    text = bot.edit_message_text.await_args.kwargs["rich_message"].html
+    assert "Просмотрено <b>80</b> карточек" in text and "Частичные совпадения за 16.11 — 1" in text
+    assert "🏠 ПК не отвечал весь день — пропущены: LinkedIn" in text
+    assert "✅ Остальные площадки отвечают" in text
+
+
+def test_a_broken_board_and_a_dead_browser_say_so():
+    from src.interfaces.tg.formatters.job import day_stats_html, day_stats_plain
+
+    stats = _stats(broken=["No Fluff Jobs"], browser_down=2)
+    text = day_stats_html(stats)
+
+    assert "❗ Браузер был недоступен в 2 из 5 прогонов" in text
+    assert "❗ <b>No Fluff Jobs</b>: страницы открылись, но без единой карточки" in text
+    assert "✅" not in text
+    assert "<details><summary>📋 По площадкам и всем фильтрам</summary>" in text
+    assert "Dou — 60 карточек · новых 6 · отсеяно 6 · прислано 0" in text
+    assert "<blockquote expandable>" in day_stats_plain(stats)
+
+
+def test_pages_that_never_loaded_are_not_a_broken_parser_nor_a_quiet_market():
+    from src.interfaces.tg.formatters.job import day_stats_html
+
+    board = {"platform": "LinkedIn", "searches": 4, "cards": 0, "failed": 4, "skipped": 0, "new": 0, "repeats": 0,
+             "filtered_out": 0, "surfaced": 0}  # fmt: skip
+    text = day_stats_html(_stats(platforms=[board], broken=[]))
+
+    assert "⚠️ Не открылись страницы: LinkedIn 4" in text
+    assert "сломался парсер" not in text and "✅" not in text
+
+
+def test_a_run_that_crashed_or_opened_nothing_is_never_a_quiet_market():
+    from src.interfaces.tg.formatters.job import day_stats_html
+
+    crashed = day_stats_html(_stats(crashed=1))
+    nothing = day_stats_html(_stats(platforms=[], cards=0))
+
+    assert "❗ Прогон упал с ошибкой: 1 из 5" in crashed and "✅" not in crashed
+    assert "❗ Ни одна площадка сегодня не открылась" in nothing and "✅" not in nothing

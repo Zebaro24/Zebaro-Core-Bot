@@ -18,9 +18,10 @@ services/
   github/         the GitHub App: api (JWT, installation token), events (payload → event, pure), store (SQL:
                   repos, levels, forum topics, live messages), service (receive → deliver, given by tg/main.py)
   job_searcher/   container, extract, filter (tiers), cv (3 CVs: routing, fit), letters, keywords, dedup,
-                  stats, digest, parser, urls, listeners/, home (PC proxy + noon alert), search_window
+                  stats, digest, parser, urls, listeners/, home (PC proxy), search_window
                   (LinkedIn); store (the vacancies in SQL as documents, models.py the tables); Jobs API: jobs_api, status (writes), reasons,
-                  events (by=event), journal (SQL), silence (S3), backfill
+                  events (by=event), journal (SQL), silence (S3), backfill; runs (the day's run figures per
+                  board, kv `job_day:<date>`: the 👀 message's head, the digest's `sources`)
   site_contact.py zebaro.dev contact form: model + rate limit (POST /site/contact)
   notify.py       Claude's notifications: model + SQL records of live messages (/notify, tg/notification/notify.py)
   spotify/        family plan: monobank client, sync, ledger (pure), schedule, report

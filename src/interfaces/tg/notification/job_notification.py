@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 from functools import partial
 from typing import TypeVar
 
@@ -10,14 +9,14 @@ from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramRet
 from aiogram.types import InlineKeyboardMarkup, InputRichMessage, Message
 
 from src.config import settings
-from src.interfaces.tg.formatters.job import home_down_html, job_to_html, job_to_rich_html
+from src.interfaces.tg.formatters.job import job_to_html, job_to_rich_html
 from src.interfaces.tg.keyboards.job import get_job_action_kb, get_job_link_kb
 from src.interfaces.tg.notification.review_summary import add_to_summary
 from src.services.job_searcher.container import Job, JobStorage, remember_message
 from src.services.job_searcher.dedup import DUPLICATE, group_duplicates, muted_companies, reject_muted
 from src.services.job_searcher.filter import REJECTED, REVIEW, SENT, TOP, JobFilter
-from src.services.job_searcher.home import home_alert_due
 from src.services.job_searcher.parser import JobParser
+from src.services.job_searcher.runs import record_run
 from src.services.job_searcher.urls import urls
 
 logger = logging.getLogger("tg.notification.job")
@@ -103,16 +102,6 @@ async def _with_retries(deliver: Callable[[], Awaitable[_T]]) -> _T | None:
     return None
 
 
-async def _alert_home_down(bot: Bot, skipped: list[str]) -> None:
-    """Once a day from noon: the home PC is off, so its boards were not searched."""
-    if not await home_alert_due(datetime.now()):  # the process's clock is the owner's (TZ)
-        return
-    try:
-        await bot.send_message(chat_id=settings.telegram_admin_id, text=home_down_html(skipped))
-    except TelegramAPIError:
-        logger.exception("Could not send the home PC alert")
-
-
 async def job_notification(bot: Bot) -> int:
     """Search, store and send new vacancies. Returns how many were sent."""
     if _run_lock.locked():
@@ -127,10 +116,26 @@ async def _run_job_notification(bot: Bot) -> int:
 
     job_storage = JobStorage()
     parser = JobParser(urls, job_storage)
-    await parser.parse_urls()
-    if parser.home_down:
-        await _alert_home_down(bot, parser.home_skipped)
+    summary: list[str] = []
+    crashed = False
+    try:
+        sent = await _search(bot, parser, job_storage, summary)
+    except Exception:
+        crashed = True
+        raise
+    finally:
+        # Whatever the run came to — nothing new, the browser down, a crash midway — the day's
+        # message gets its figures (26.11.2026): a quiet day reads as quiet, a broken one as broken.
+        await record_run(parser.counts, browser_down=parser.browser_down, home_down=parser.home_down, crashed=crashed)
+        shown = await add_to_summary(bot, summary)
+    sent += shown
+    logger.info("Job notification complete. Sent %d/%d jobs", sent, len(job_storage.jobs))
+    return sent
 
+
+async def _search(bot: Bot, parser: JobParser, job_storage: JobStorage, summary: list[str]) -> int:
+    """Parse, filter, store and send the run's vacancies; the 👀 ones go into `summary`."""
+    await parser.parse_urls()
     await job_storage.remove_jobs_already_in_db()
     job_storage.log_jobs()
 
@@ -151,7 +156,6 @@ async def _run_job_notification(bot: Bot) -> int:
     await group_duplicates(job_storage.jobs, ids)
 
     sent = 0
-    summary: list[str] = []
     for job, job_id in zip(job_storage.jobs, ids, strict=True):
         if job.moderation == REJECTED or job.user_status == DUPLICATE:
             continue
@@ -160,7 +164,4 @@ async def _run_job_notification(bot: Bot) -> int:
             continue
         if await _send_job(bot, job, _get_reply_markup(job, job_id), job_id):
             sent += 1
-    sent += await add_to_summary(bot, summary)
-
-    logger.info("Job notification complete. Sent %d/%d jobs", sent, len(job_storage.jobs))
     return sent

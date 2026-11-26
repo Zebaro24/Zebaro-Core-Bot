@@ -309,6 +309,7 @@ class Digest(BaseModel):
     market_insights: list[dict[str, Any]]
     my_insights: list[dict[str, Any]]
     silent_sources: list[str]
+    sources: dict[str, Any] | None = None
 
 
 _ERRORS: dict[int | str, dict[str, Any]] = {
