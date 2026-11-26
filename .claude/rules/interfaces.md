@@ -18,6 +18,6 @@ interfaces/
 - **Telegram webhook answers at once**, the update is handled in a background task. Telegram does not
   send the next update until this one is answered — a long handler froze the whole bot. Locally
   (`DEBUG=True`) it is polling; behaviour that differs between the two is a bug.
-- **app.state**: `bot`/`dp` set via `webhooks/setup.py`; `github_manager` set by `GithubService.on_enable()`.
+- **app.state**: `bot`/`dp` set via `webhooks/setup.py`; the GitHub service is found through `ServiceManager` (`webhooks/routes/github.py` → `receive`).
 - **Discord toggle** requires a bot restart (`needs_restart = True`).
 - `webhooks/routes/jobs.py`, `site.py` and `notify.py` (the Claude harness) serve contracts others call — `../docs/contracts.md`.

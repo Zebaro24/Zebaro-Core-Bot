@@ -50,8 +50,9 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}
       - TELEGRAM_ADMIN_ID=${TELEGRAM_ADMIN_ID:?TELEGRAM_ADMIN_ID is required}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}
-      - PERSONAL_GITHUB_TOKEN=${PERSONAL_GITHUB_TOKEN:?PERSONAL_GITHUB_TOKEN is required}
-      - PERSONAL_GITHUB_SECRET=${PERSONAL_GITHUB_SECRET:?PERSONAL_GITHUB_SECRET is required}
+      - GH_APP_ID=${GH_APP_ID:?GH_APP_ID is required}
+      - GH_APP_KEY=${GH_APP_KEY:?GH_APP_KEY is required}
+      - GH_WEBHOOK_SECRET=${GH_WEBHOOK_SECRET:?GH_WEBHOOK_SECRET is required}
       - WEBHOOK_URL=${WEBHOOK_URL:?WEBHOOK_URL is required}
       # Defaults are empty strings in src/config.py, so `${X:-}` changes nothing when unset.
       - TELEGRAM_DOCKER_ACCESS_IDS=${TELEGRAM_DOCKER_ACCESS_IDS:-}

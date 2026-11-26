@@ -22,11 +22,10 @@ app = FastAPI(
     debug=settings.debug,
 )
 
-# Route handlers access shared objects (bot, dp, github_manager) via app.state.
+# Route handlers access shared objects (bot, dp) via app.state.
 # These are injected by setup_telegram_webhook() before the first request arrives.
 app.state.bot = None
 app.state.dp = None
-app.state.github_manager = None
 
 app.include_router(router, prefix="/webhook", tags=["webhook"])
 # Not under /webhook: the vacancy buttons already sent to Telegram link to {webhook_url}/jobs/r/<id>.

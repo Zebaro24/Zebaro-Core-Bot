@@ -14,6 +14,7 @@ from src.interfaces.tg.commands import set_commands
 from src.interfaces.tg.handlers import get_chat_id, spotify_member, start
 from src.interfaces.tg.handlers.admin import (
     get_job_openings,
+    github,
     job_stats,
     mongo,
     server_speed,
@@ -23,6 +24,7 @@ from src.interfaces.tg.handlers.admin import (
     vpn,
 )
 from src.interfaces.tg.handlers.callbacks import docker, job
+from src.interfaces.tg.notification import github as github_notification
 from src.interfaces.tg.notification import notify
 from src.interfaces.tg.notification.job_notification import job_notification
 from src.interfaces.tg.notification.job_stats_notification import job_stats_notification
@@ -34,8 +36,9 @@ from src.interfaces.tg.notification.spotify_notification import (
     spotify_tick,
 )
 from src.interfaces.tg.notification.vpn_notification import vpn_watch, vpn_weekly
-from src.interfaces.webhooks.setup import get_url_webhook_github, get_url_webhook_telegram, setup_telegram_webhook
+from src.interfaces.webhooks.setup import get_url_webhook_telegram, setup_telegram_webhook
 from src.scheduler import scheduler
+from src.services.github.api import GithubApp
 from src.services.github.service import GithubService
 from src.services.job_searcher.service import (
     SEARCH_HOURS,
@@ -84,6 +87,9 @@ async def start_bot() -> None:
     dp.include_router(spotify.router)
     dp.include_router(services.router)
     dp.include_router(notify.router)
+    dp.include_router(github.router)
+    dp.include_router(github.topics_router)
+    dp.include_router(github_notification.router)
 
     # Scheduler jobs (added with IDs so they can be paused/resumed)
     for hour in SEARCH_HOURS:
@@ -110,6 +116,11 @@ async def start_bot() -> None:
         notify.notify_sweep, "interval", minutes=SWEEP_MINUTES, args=[bot], id=SWEEP_JOB_ID,
         max_instances=1, coalesce=True,
     )  # fmt: skip
+    # GitHub: "снова зелёный" messages go an hour later; old live-message records are pruned.
+    scheduler.add_job(
+        github_notification.github_sweep, "interval", minutes=github_notification.SWEEP_MINUTES, args=[bot],
+        id=github_notification.SWEEP_JOB_ID, max_instances=1, coalesce=True,
+    )  # fmt: skip
     # Once, when the web server is surely up: Monobank checks the URL the moment it is set.
     scheduler.add_job(ensure_webhook, "date", run_date=datetime.now() + timedelta(seconds=30), args=[bot])
     # After the webhook check: both use client-info, which answers once a minute.
@@ -120,7 +131,11 @@ async def start_bot() -> None:
     sm.register_infrastructure(MongoDBInfra())
     sm.register_infrastructure(PlaywrightInfra())
     sm.register_service(JobSearcherService(bot, scheduler))
-    sm.register_service(GithubService(bot, get_url_webhook_github()))
+    # One App for the service, its buttons and /github: the installation token is shared.
+    github_app = GithubApp(settings.gh_app_id, settings.gh_app_key, settings.gh_owner)
+    github.use_app(github_app)
+    github_notification.use_app(github_app)
+    sm.register_service(GithubService(github_notification.make_deliver(bot, github_app), github_app))
     sm.register_service(DiscordService())
     sm.register_service(VpnService(scheduler))
     sm.register_service(SpotifyService(scheduler))
@@ -129,7 +144,6 @@ async def start_bot() -> None:
     await sm.apply_state()
 
     # Expose bot and dp to webhook routes via app.state
-    # github_manager is set by GithubService.on_enable() during apply_state
     setup_telegram_webhook(bot, dp)
 
     await bot.delete_webhook(drop_pending_updates=True)
@@ -148,8 +162,5 @@ async def start_bot() -> None:
         logger.info("Telegram bot cancelled, shutting down...")
         if not settings.debug:
             await bot.delete_webhook(drop_pending_updates=True)
-        # Clean up GitHub handlers if service was enabled
-        github_service = sm.all_services.get("github")
-        if github_service and hasattr(github_service, "_manager") and github_service._manager:
-            await github_service._manager.delete_all_handlers()
+        await github_app.close()
         await bot.session.close()

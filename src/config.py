@@ -23,9 +23,14 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str
     discord_bot_token: str
-    personal_github_token: str
-
-    personal_github_secret: str
+    # The GitHub App "Zebaro Core Bot" (services/github): its id, its private key as base64 of the PEM
+    # (one line, as the deploy's env file needs), the webhook secret. Empty — the service stays idle.
+    gh_app_id: int = 0
+    gh_app_key: str = ""
+    gh_webhook_secret: str = ""
+    # The only account whose events are taken (the App is private, this holds even if it is not), and whose
+    # own issues and PRs are not "someone else's".
+    gh_owner: str = "Zebaro24"
 
     webhook_url: str
 

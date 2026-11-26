@@ -32,7 +32,7 @@ whether a newer parent releases it (aiogram 3.31 released `aiohttp`).
    Telegram flood control, the same handler running twice at once, a scheduled run overlapping a
    manual one.
 2. **This repo's rules** (`CLAUDE.md`, `.claude/rules/`), most often broken in good faith: HTML outside
-   `interfaces/tg/formatters/`; class-level state in `GithubManager`; `settings` read at import time;
+   `interfaces/tg/formatters/`; a service importing an interface; `settings` read at import time;
    DB / Playwright calls that crash instead of degrading; a webhook handler doing long work inline;
    scheduler times in UTC; Playwright versions out of step.
 3. **Tests:** a fix without a test that would have caught the bug is incomplete.

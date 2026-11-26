@@ -15,7 +15,8 @@ paths:
 ```
 services/
   docker/         DockerManager, DockerProject, DockerContainer
-  github/         GithubManager (instance-level dicts!), service, webhook, event_handler
+  github/         the GitHub App: api (JWT, installation token), events (payload → event, pure), store (SQL:
+                  repos, levels, forum topics, live messages), service (receive → deliver, given by tg/main.py)
   job_searcher/   container, extract, filter (tiers), cv (3 CVs: routing, fit), letters, keywords, dedup,
                   stats, digest, parser, urls, listeners/, home (PC proxy + noon alert), search_window
                   (LinkedIn), repair (one-off at enable); Jobs API: jobs_api, status (writes), reasons,
@@ -27,7 +28,8 @@ services/
   speedtest/      SpeedTestManager (speed.cloudflare.com over httpx)
 ```
 
-- **GithubManager**: instance-level dicts (`github_repo_webhooks`, `github_repo_events`) — NOT class-level.
+- **GitHub**: one App webhook for every repo of the account, no hook per repo; the service never imports an
+  interface — Telegram delivery is `tg/notification/github.py`, HTML `tg/formatters/github.py`.
 - **Vacancy status**: every write (API, buttons, the bot) goes through
   `services/job_searcher/status.py:write_status` — one CAS update + `history` event; Telegram follows
   via `tg_sync` (`tg/notification/job_status.py`), never inside the write. Design: `docs/design/status-write.md`.

@@ -23,6 +23,7 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 - VPN: `/vpn` — WireGuard (wg-easy) clients with online status and traffic; add with a chosen address (`10.0.0.<n>`), enable/disable, access expiry, rename, readdress, delete; sends two named profiles (full / LAN) or a one-file Windows installer
 - Spotify Family: `/spotify` — the family plan paid from a Monobank jar: who paid, who owes, "paid until", corrections by hand, stats; members join by an invite link and get their own `/spotify`
 - Service manager: enable/disable services and infrastructure at runtime via `/services`
+- GitHub: `/github` — which repos, how loud (all / failures / off), which forum topic; `/bind` inside a topic
 - Job notifications: scheduled digests from multiple sources, stats on demand via `/job_stats`
 
 **Discord Bot (discord.py)**
@@ -30,7 +31,9 @@ Multi-platform automation bot: Telegram, Discord, FastAPI webhooks, Docker contr
 - Can be toggled on/off at runtime (requires bot restart)
 
 **Webhooks API (FastAPI + Uvicorn)**
-- GitHub webhook handling (push, PR, workflow, releases)
+- GitHub through one App for every repo of the account: a quiet log in forum topics (one message per commit
+  and per release, edited as CI/CD runs), failures and outside issues/PRs loud in the owner's chat with
+  buttons; repos, levels and topics chosen in `/github`
 - Telegram webhook mode for production
 - Routes under `/webhook/github` and `/webhook/telegram`; public `/jobs/r/<id>` (click-tracked vacancy links) and `/health`
 - Jobs API under `/jobs/*` for the MCP's `jobs_*` tools: vacancy list with whole-word filters and cursor paging, one vacancy in full, the funnel (by source, stack, search, week), the weekly digest's numbers. Contract: [`docs/contracts/jobs-api.md`](docs/contracts/jobs-api.md)
@@ -155,8 +158,9 @@ See `scripts/README.md` for the release and production helpers.
 | `TELEGRAM_ADMIN_ID` | yes | — | Telegram user ID for admin commands |
 | `TELEGRAM_DOCKER_ACCESS_IDS` | yes | — | Comma-separated IDs for Docker control |
 | `DISCORD_BOT_TOKEN` | yes | — | Discord bot token |
-| `PERSONAL_GITHUB_TOKEN` | yes | — | GitHub API token |
-| `PERSONAL_GITHUB_SECRET` | yes | — | Webhook HMAC secret |
+| `GH_APP_ID` | yes (prod) | `0` (GitHub idle) | The GitHub App "Zebaro Core Bot" — its id |
+| `GH_APP_KEY` | yes (prod) | empty | The App's private key: base64 of the PEM, one line |
+| `GH_WEBHOOK_SECRET` | yes (prod) | empty (webhook refuses) | The App's webhook HMAC secret |
 | `WEBHOOK_URL` | yes | — | Public base URL for webhooks and vacancy links |
 | `JOBS_API_TOKEN` | no | empty (endpoints refuse) | Bearer token for the Jobs API (`/jobs/*` except `/jobs/r/<id>`), the MCP's client |
 | `SITE_CONTACT_TOKEN` | no | empty (endpoint refuses) | Shared with zebaro.dev (`CONTACT_TOKEN` there) for `/site/contact` |
