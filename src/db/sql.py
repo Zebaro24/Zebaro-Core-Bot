@@ -1,19 +1,29 @@
-"""SQL storage through SQLAlchemy: SQLite now, Postgres later by changing DATABASE_URL.
+"""SQL storage through SQLAlchemy: PostgreSQL in production, SQLite in the tests.
 
 The engine is built on first use, not at import: tests swap ``src.config`` for a mock, and a
 URL read from a MagicMock at import time would break every module that imports this one.
 The schema is Alembic's (``migrations/``): the bot upgrades it to head at every start.
+
+Only what both engines do the same goes into queries — the tests run on SQLite. Regexes go through
+``column.regexp_match``: ``~`` on PostgreSQL, Python's ``re`` on SQLite.
 """
 
 import asyncio
 import logging
+import os
+import time
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import event
+from sqlalchemy import JSON, String, event
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine import Dialect
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.types import TypeDecorator
 
 from src.config import settings
 
@@ -21,9 +31,73 @@ logger = logging.getLogger("db.sql")
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
+_DATE = "$date"
+
+
+def _encode(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return {_DATE: value.isoformat()}
+    if isinstance(value, dict):
+        return {key: _encode(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_encode(item) for item in value]
+    return value
+
+
+def _decode(value: Any) -> Any:
+    if isinstance(value, dict):
+        if len(value) == 1 and _DATE in value:
+            return datetime.fromisoformat(value[_DATE])
+        return {key: _decode(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_decode(item) for item in value]
+    return value
+
+
+class Json(TypeDecorator):
+    """JSON (JSONB on PostgreSQL) whose datetimes come back as datetimes: a vacancy's nested dates
+    (company_history[].at, seen_before.seen_at) are compared and formatted like the top-level ones.
+
+    Python's None is SQL NULL, never a JSON `null`: `IS NULL` and NOT NULL mean what they say."""
+
+    impl = JSON(none_as_null=True)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect: Dialect) -> Any:
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(JSONB(none_as_null=True))
+        return dialect.type_descriptor(JSON(none_as_null=True))
+
+    def process_bind_param(self, value: Any, dialect: Dialect) -> Any:
+        return None if value is None else _encode(value)
+
+    def process_result_value(self, value: Any, dialect: Dialect) -> Any:
+        return None if value is None else _decode(value)
+
+
+_counter = int.from_bytes(os.urandom(3), "big")
+_process = os.urandom(5)
+
+
+def new_id() -> str:
+    """A 24-hex id in MongoDB's ObjectId layout (time, random, counter): the stored vacancies keep
+    the ids Telegram's buttons and /jobs/r links carry, and new ones look and sort the same."""
+    global _counter
+    _counter = (_counter + 1) % 0x1000000
+    return (int(time.time()).to_bytes(4, "big") + _process + _counter.to_bytes(3, "big")).hex()
+
 
 class Base(DeclarativeBase):
     pass
+
+
+class Kv(Base):
+    """Small singletons of the bot's own state: {"search_window": {...}, "home_proxy_alert": {...}}."""
+
+    __tablename__ = "kv"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[Any] = mapped_column(Json, nullable=False)
 
 
 _engine: AsyncEngine | None = None

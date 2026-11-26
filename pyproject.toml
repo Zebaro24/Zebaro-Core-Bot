@@ -23,8 +23,9 @@ pydantic-settings = "^2.14"
 
 # --- Database ---
 pymongo = "^4.18.2"
-# SQL through the ORM: SQLite now, Postgres later by changing DATABASE_URL; Alembic migrations.
+# SQL through the ORM: PostgreSQL in production (asyncpg), SQLite in the tests (aiosqlite); Alembic.
 sqlalchemy = {version = "^2.0", extras = ["asyncio"]}
+asyncpg = "^0.31"
 aiosqlite = "^0.21"
 alembic = "^1.16"
 

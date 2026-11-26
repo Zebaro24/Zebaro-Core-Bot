@@ -9,6 +9,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import src.services.job_searcher.journal  # noqa: F401 — registers the tables on Base.metadata
+import src.services.job_searcher.models  # noqa: F401
+import src.services.vpn.traffic  # noqa: F401
 import src.services.github.store  # noqa: F401
 import src.services.notify  # noqa: F401
 import src.services.spotify.models  # noqa: F401

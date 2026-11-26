@@ -106,8 +106,9 @@ back with `docker start`, a removed one only through CD, the one place that has 
 ## Production
 
 One VPS: `zebaro@server.zebaro.dev`. Compose in `/srv/zebaro-core/zebaro-core-bot` (project
-`zebaro-core-bot`), state in `/srv/zebaro-core/data/{mongo,state,vpn}` — the folder to back up.
-Containers `zebaro-core-bot`, `zebaro-core-db` (MongoDB 4.4), `zebaro-core-playwright` (browser
+`zebaro-core-bot`), state in `/srv/zebaro-core/data/{mongo,postgres,state,vpn}` — the folder to back up.
+Containers `zebaro-core-bot`, `zebaro-core-db` (MongoDB 4.4), `zebaro-core-pg` (PostgreSQL 17 + pgvector:
+databases `zebaro_core`, `zebaro_mcp`; the move off MongoDB is in progress), `zebaro-core-playwright` (browser
 server, also used by Zebaro-Core-MCP), `zebaro-core-vpn` (wg-easy); network `zebaro-core_default`
 (named in compose; MCP and the site join it). Public `https://bot.zebaro.dev`. Use `scripts\prod.bat`,
 not long `ssh` lines.

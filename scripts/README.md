@@ -11,6 +11,8 @@
 | `approve.py`       | Выписывает одноразовый маркер, который разрешает `git push` или пуш тега. Живёт 15 минут, тратится один раз                                                        |
 | `dev.bat`          | Локально: `dev` (бот), `dev infra` / `dev stop` (Mongo + Playwright в Docker), `dev gate`, `dev install`                                                           |
 | `prod.bat`         | Прод по SSH: `prod health`, `prod ps`, `prod logs [c] [since]`, `prod state`, `prod restart <c>`, `prod` (шелл)                                                    |
+| `postgres-init.sh` | Первый старт `zebaro-core-pg` (пустой `data/postgres`): базы `zebaro_core` и `zebaro_mcp`, по роли на каждую, `vector` в `zebaro_mcp` |
+| `migrate_to_pg.py` | Разовый перенос MongoDB + SQLite → PostgreSQL со сверкой каждого значения. Нужен `poetry install` (исключение из правила выше); уходит вместе с MongoDB |
 | `start-claude.bat` | Открыть Claude Code в корне проекта через Windows Terminal (там Shift+Enter даёт перенос строки). Двойной клик или ярлык на панели задач                            |
 
 ## Шпаргалка

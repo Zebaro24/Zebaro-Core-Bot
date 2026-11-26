@@ -10,10 +10,43 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from sqlalchemy import BigInteger, DateTime, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
+
 from src.db.client import vpn_clients_collection, vpn_daily_collection
+from src.db.sql import Base
 from src.services.vpn.client import VpnClient
 
 logger = logging.getLogger("vpn.traffic")
+
+
+class ClientState(Base):
+    """One wg-easy client as the bot watches it: running totals across counter restarts."""
+
+    __tablename__ = "vpn_clients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)  # wg-easy's id
+    name: Mapped[str | None] = mapped_column(Text)
+    ipv4: Mapped[str | None] = mapped_column(String(15))
+    last_rx: Mapped[int | None] = mapped_column(BigInteger)
+    last_tx: Mapped[int | None] = mapped_column(BigInteger)
+    total_rx: Mapped[int | None] = mapped_column(BigInteger)
+    total_tx: Mapped[int | None] = mapped_column(BigInteger)
+    seen_at: Mapped[datetime | None] = mapped_column(DateTime)
+    first_connected_at: Mapped[datetime | None] = mapped_column(DateTime)
+    expiry_noticed_for: Mapped[str | None] = mapped_column(String(40))
+
+
+class TrafficDay(Base):
+    """A client's traffic on one local day ("2026-11-26")."""
+
+    __tablename__ = "vpn_traffic_daily"
+
+    client_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    rx: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    tx: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
 
 EXPIRY_NOTICE = timedelta(days=1)
 # A client older than this that the bot has never seen was connected before the bot started
