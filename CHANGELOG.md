@@ -11,6 +11,8 @@ The `vX.Y.Z` tag is the only thing that deploys to the server.
 
 ## Unreleased
 
+## v0.26.0 — 2026-11-26
+
 - **The forum's release message carries the whole changelog section**, as a collapsible quote with
   bold, code, links and bullets — no more lines broken in the middle of a sentence. Commit messages
   are tidier too.
