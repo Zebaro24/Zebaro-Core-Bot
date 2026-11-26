@@ -18,14 +18,15 @@ from typing import Any
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-from bson import ObjectId
-from pymongo.errors import PyMongoError
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.config import settings
-from src.db.client import jobs_collection, meta_collection
+from src.db import sql
 from src.interfaces.tg.formatters.job_status import ai_notes_html
 from src.interfaces.tg.keyboards.job import get_notes_kb, get_notes_pick_kb
+from src.services.job_searcher import store
 from src.services.job_searcher.jobs_api import public_status
+from src.services.job_searcher.models import AiNoteMessage
 
 logger = logging.getLogger("tg.notification.ai_notes")
 
@@ -37,8 +38,11 @@ CURRENT = "ai_notes:current"
 _lock = asyncio.Lock()
 
 
-def _key(message_id: int) -> str:
-    return f"ai_notes:{message_id}"
+async def _state(message_id: int) -> dict[str, Any] | None:
+    """The message's chat and entries, None when the bot does not know the message."""
+    async with sql.session() as s:
+        row = await s.get(AiNoteMessage, message_id)
+        return {"chat_id": row.chat_id, "entries": list(row.entries)} if row is not None else None
 
 
 async def add_note(bot: Bot, doc: dict[str, Any], event: dict[str, Any]) -> None:
@@ -47,10 +51,10 @@ async def add_note(bot: Bot, doc: dict[str, Any], event: dict[str, Any]) -> None
     async with _lock:
         now = datetime.utcnow()
         entry = {"job_id": str(doc["_id"]), "event_id": event["id"]}
-        current = await meta_collection.find_one({"_id": CURRENT})
+        current = await sql.kv_get(CURRENT)
         if current and now - current["last_at"] < SESSION:
             message_id = current["message_id"]
-            state = await meta_collection.find_one({"_id": _key(message_id)})
+            state = await _state(message_id)
             entries = state["entries"] if state else []
             known = any(item["event_id"] == entry["event_id"] for item in entries)
             if state and (known or len(entries) < NOTES_PER_MESSAGE):
@@ -71,7 +75,7 @@ async def add_note(bot: Bot, doc: dict[str, Any], event: dict[str, Any]) -> None
         )
         try:
             await _save(message.message_id, message.chat.id, [entry], now)
-        except PyMongoError as e:  # sent already: a retry would send it twice; the next note starts anew
+        except SQLAlchemyError as e:  # sent already: a retry would send it twice; the next note starts anew
             logger.warning("AI notes: could not store the new message %s: %s", message.message_id, e)
 
 
@@ -79,7 +83,7 @@ async def refresh(bot: Bot, chat_id: int, message_id: int, *, picking: bool = Fa
     """Render the message again (after an undo, or to show / hide the choice). False when it
     is not an AI notes message the bot knows."""
     async with _lock:
-        state = await meta_collection.find_one({"_id": _key(message_id)})
+        state = await _state(message_id)
         if state is None:
             return False
         text, open_entries = await _render(state["entries"])
@@ -88,19 +92,20 @@ async def refresh(bot: Bot, chat_id: int, message_id: int, *, picking: bool = Fa
 
 
 async def _save(message_id: int, chat_id: int, entries: list[dict[str, str]], now: datetime) -> None:
-    await meta_collection.update_one(
-        {"_id": _key(message_id)}, {"$set": {"chat_id": chat_id, "entries": entries}}, upsert=True
-    )
-    await meta_collection.update_one(
-        {"_id": CURRENT}, {"$set": {"message_id": message_id, "last_at": now}}, upsert=True
-    )
+    async with sql.session() as s:
+        row = await s.get(AiNoteMessage, message_id, with_for_update=True)
+        if row is None:
+            s.add(AiNoteMessage(message_id=message_id, chat_id=chat_id, entries=list(entries)))
+        else:
+            row.chat_id, row.entries = chat_id, list(entries)
+        await s.commit()
+    await sql.kv_merge(CURRENT, {"message_id": message_id, "last_at": now})
 
 
 async def _render(entries: list[dict[str, str]]) -> tuple[str, list[tuple[int, str, str, str]]]:
     """The text, and the entries that can still be undone: (number, name, vacancy id, event id)."""
-    ids = [ObjectId(item["job_id"]) for item in entries]
-    fields = {"title": 1, "company": 1, "history": 1, "user_status": 1, "outcome": 1}
-    docs = {str(doc["_id"]): doc async for doc in jobs_collection.find({"_id": {"$in": ids}}, fields)}
+    ids = [item["job_id"] for item in entries]
+    docs = {doc["_id"]: doc for doc in await store.find(store.J.id.in_(ids), description=False)}
     items, open_entries = [], []
     for item in entries:
         doc = docs.get(item["job_id"])

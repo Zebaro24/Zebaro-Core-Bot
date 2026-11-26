@@ -35,10 +35,10 @@ def pages_for(window_s: int) -> int:
 
 async def window_seconds(platform: str, now: datetime) -> int:
     """The window for this run; the minimum when the DB cannot say."""
-    from src.db.client import meta_collection  # the parser imports this module; tests stub the DB
+    from src.db import sql  # the parser imports this module; tests stub the DB
 
     try:
-        state = await meta_collection.find_one({"_id": STATE_ID})
+        state = await sql.kv_get(STATE_ID)
     except Exception as e:
         logger.warning("Could not read the search window of %s: %s", platform, e)
         return MIN_WINDOW_S
@@ -47,9 +47,9 @@ async def window_seconds(platform: str, now: datetime) -> int:
 
 
 async def mark_full_pass(platform: str, now: datetime) -> None:
-    from src.db.client import meta_collection
+    from src.db import sql
 
     try:
-        await meta_collection.update_one({"_id": STATE_ID}, {"$set": {platform: now}}, upsert=True)
+        await sql.kv_merge(STATE_ID, {platform: now})
     except Exception as e:  # the next run looks a little further back, nothing worse
         logger.warning("Could not store the search window of %s: %s", platform, e)

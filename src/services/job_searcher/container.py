@@ -1,14 +1,11 @@
 import logging
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta
 
-from bson import ObjectId
+from sqlalchemy import ColumnElement, and_, or_
 
-from src.db.client import jobs_collection
-
-# TODO: JobStorage is coupled to the DB layer (jobs_collection imported directly).
-#       Ideal refactoring: pass a repository interface so JobStorage stays pure
-#       and the DB coupling lives in infrastructure/repositories/.
+from src.services.job_searcher import store
+from src.services.job_searcher.store import J
 
 logger = logging.getLogger("job_searcher.container")
 
@@ -19,18 +16,18 @@ logger = logging.getLogger("job_searcher.container")
 REVISIT_DAYS = 60
 
 
-def already_seen_query(platform_name: str | None, job_id: str | None, now: datetime) -> dict:
+def already_seen_query(platform_name: str | None, job_id: str | None, now: datetime) -> ColumnElement[bool]:
     """A stored copy that still hides the vacancy: answered, or found within REVISIT_DAYS.
 
     A "duplicate" is not an answer: same-run copies are marked so whether or not anyone answered.
     A repeat of an answered vacancy is caught again by the grouping (dedup.py), within its
-    LOOKBACK_DAYS. `_id` holds the insert time."""
-    since = ObjectId.from_datetime(now - timedelta(days=REVISIT_DAYS))
-    return {
-        "platform_name": platform_name,
-        "job_id": job_id,
-        "$or": [{"user_status": {"$nin": [None, "pending", "duplicate"]}}, {"_id": {"$gte": since}}],
-    }
+    LOOKBACK_DAYS. `found_at` is the insert time (it was the ObjectId's in MongoDB — equal for all)."""
+    since = now - timedelta(days=REVISIT_DAYS)
+    return and_(
+        store.eq(J.platform_name, platform_name),
+        store.eq(J.job_id, job_id),
+        or_(store.not_in(J.user_status, [None, "pending", "duplicate"]), J.found_at >= since),
+    )
 
 
 async def known_count(platform_name: str | None, job_ids: list[str]) -> int:
@@ -40,7 +37,7 @@ async def known_count(platform_name: str | None, job_ids: list[str]) -> int:
         return 0
     try:
         return len(
-            await jobs_collection.distinct("job_id", {"platform_name": platform_name, "job_id": {"$in": job_ids}})
+            await store.distinct(J.job_id, and_(store.eq(J.platform_name, platform_name), J.job_id.in_(job_ids)))
         )
     except Exception as e:
         logger.warning("DB unavailable for the known-ids check: %s", e)
@@ -66,7 +63,7 @@ class Job:
     # repeat of a group already sent: never counted)
     user_status: str = "pending"
     status_updated_at: datetime | None = None
-    similar_to: str | None = None  # mongo _id похожей вакансии на другой площадке
+    similar_to: str | None = None  # id похожей вакансии на другой площадке
     similar_to_platform: str | None = None  # платформа этой похожей вакансии (для бейджа в Telegram)
     similar_seen_at: datetime | None = None  # when that earlier copy was found
     similar_status: str | None = None  # the group's state then: "pending" | "blocked"
@@ -74,7 +71,7 @@ class Job:
     # The company's other vacancies the owner answered or opened, newest first:
     # {title, status, at, platform, similar} — "similar" when the title is close to this one.
     company_history: list[dict] = field(default_factory=list)
-    group_id: str | None = None  # mongo _id of the first vacancy of this group
+    group_id: str | None = None  # id of the first vacancy of this group
     copies: list[dict] = field(default_factory=list)  # the same vacancy on other sites: {platform, id}
     click_count: int = 0
     matched_stack: list[str] = field(default_factory=list)  # core stack found: "Python", "React", ...
@@ -119,9 +116,10 @@ class Job:
 
     @classmethod
     def from_doc(cls, doc: dict) -> "Job":
-        """A Job back from its MongoDB document; unknown keys (like `_id`) are ignored."""
+        """A Job back from its stored document; unknown keys (like `_id`) are ignored, and so is None —
+        a field the vacancy does not have keeps the default, as a missing key always did."""
         names = {f.name for f in fields(cls)}
-        return cls(**{key: value for key, value in doc.items() if key in names})
+        return cls(**{key: value for key, value in doc.items() if key in names and value is not None})
 
 
 class JobStorage:
@@ -153,10 +151,16 @@ class JobStorage:
             logger.info("No new jobs to save")
             return []
         try:
-            docs = [asdict(job) for job in self.jobs]
-            result = await jobs_collection.insert_many(docs)
-            logger.info("Saved %d jobs to DB", len(docs))
-            return [str(_id) for _id in result.inserted_ids]
+            for job in self.jobs:
+                if isinstance(job.date, str):  # a board's text date ("2 дні тому"): the column takes dates only
+                    from src.services.job_searcher.extract import relative_date
+
+                    text, job.date = job.date, relative_date(job.date, job.found_at)
+                    if job.date is None:
+                        logger.warning("Unreadable date %r of %s, stored without one", text, job)
+            ids = await store.put([store.from_job(job) for job in self.jobs])
+            logger.info("Saved %d jobs to DB", len(ids))
+            return list(ids)
         except Exception as e:
             logger.warning("Failed to save jobs to DB (running without DB): %s", e)
             return [None] * len(self.jobs)
@@ -166,10 +170,7 @@ class JobStorage:
         now = datetime.utcnow()
         try:
             for job in list(self.jobs):
-                exists = await jobs_collection.count_documents(
-                    already_seen_query(job.platform_name, job.job_id, now), limit=1
-                )
-                if exists:
+                if await store.count(already_seen_query(job.platform_name, job.job_id, now)):
                     self.jobs.remove(job)
             removed = before - len(self.jobs)
             if removed:
@@ -186,67 +187,6 @@ class JobStorage:
 async def remember_message(job_id: str, chat_id: int, message_id: int, kind: str) -> None:
     """Store which Telegram message shows the vacancy; the latest one wins."""
     try:
-        await jobs_collection.update_one(
-            {"_id": ObjectId(job_id)},
-            {"$set": {"tg_chat_id": chat_id, "tg_message_id": message_id, "tg_message_kind": kind}},
-        )
+        await store.update(job_id, {"tg_chat_id": chat_id, "tg_message_id": message_id, "tg_message_kind": kind})
     except Exception as e:  # the message is out already; only a later edit is lost
         logger.warning("Could not store the Telegram message of vacancy %s: %s", job_id, e)
-
-
-async def ensure_indexes() -> None:
-    """The Jobs API list pages by (found_at, _id), newest first, and looks up each page's groups by
-    group_id; the status sync looks up the 👀 whose day's summary needs a new render every minute."""
-    try:
-        await jobs_collection.create_index([("found_at", -1), ("_id", -1)])
-        await jobs_collection.create_index("group_id", sparse=True)
-        await jobs_collection.create_index("review_stale", sparse=True)
-    except Exception as e:
-        logger.warning("Could not create the jobs index: %s", e)
-
-
-# Once per process: the scan is cheap (~1000 documents), but a /services toggle runs on_enable again.
-_dates_normalized = False
-
-
-async def normalize_stored_dates() -> int:
-    """Turn the dates stored as the site's text ("2 дні тому") into datetimes, once.
-
-    Robota.ua and HappyMonday dates were kept as text until 06.10.2026; read against the moment
-    the vacancy was found, they become the same kind of date as the rest. Text that is not a
-    relative date is left alone. Returns how many were fixed.
-    """
-    from src.services.job_searcher.extract import relative_date
-
-    global _dates_normalized
-    if _dates_normalized:
-        return 0
-    _dates_normalized = True
-    fixed = 0
-    try:
-        async for doc in jobs_collection.find({"date": {"$type": "string"}}, {"date": 1, "found_at": 1}):
-            found_at = doc.get("found_at")
-            date = relative_date(doc["date"], found_at) if isinstance(found_at, datetime) else None
-            if date is not None:
-                await jobs_collection.update_one({"_id": doc["_id"]}, {"$set": {"date": date}})
-                fixed += 1
-        # Robota.ua links were stored with "www.", which now answers 404: the vacancy buttons
-        # already in the chat go through /jobs/r/<id>, so fixing the stored link fixes them.
-        async for doc in jobs_collection.find({"link": {"$regex": r"^https://www\.robota\.ua/"}}, {"link": 1}):
-            link = doc["link"].replace("https://www.robota.ua/", "https://robota.ua/", 1)
-            await jobs_collection.update_one({"_id": doc["_id"]}, {"$set": {"link": link}})
-        # v0.13.0 stored Work.ua's salary note as the company of every card with a salary. The
-        # real name is gone; no company is better than one that groups unrelated vacancies.
-        result = await jobs_collection.update_many(
-            {"platform_name": "Work.ua", "company": _WORK_UA_SALARY_NOTE}, {"$set": {"company": None}}
-        )
-        if result.modified_count:
-            logger.info("Work.ua companies that were the salary note, cleared: %d", result.modified_count)
-    except Exception as e:
-        logger.warning("Could not normalize stored dates: %s", e)
-    if fixed:
-        logger.info("Stored dates turned from text into dates: %d", fixed)
-    return fixed
-
-
-_WORK_UA_SALARY_NOTE = "Після всіх відрахувань"

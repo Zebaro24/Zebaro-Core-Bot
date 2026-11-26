@@ -63,14 +63,10 @@ async def home_alert_due(now: datetime) -> bool:
     """
     if now.hour < ALERT_HOUR:
         return False
-    from src.db.client import meta_collection  # the parser imports this module; tests stub the DB
+    from src.db import sql  # the parser imports this module; tests stub the DB
 
-    today = now.date().isoformat()
     try:
-        result = await meta_collection.update_one(
-            {"_id": ALERT_STATE_ID, "alerted_on": {"$ne": today}}, {"$set": {"alerted_on": today}}, upsert=True
-        )
-    except Exception as e:  # a duplicate key: the day is claimed already
+        return await sql.kv_claim(ALERT_STATE_ID, "alerted_on", now.date().isoformat())
+    except Exception as e:
         logger.debug("Home PC alert not claimed: %s", e)
         return False
-    return bool(result.modified_count or result.upserted_id)

@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramNetworkError, TelegramRetryAfter
-from bson import ObjectId
 
 mock_settings = MagicMock()
 mock_settings.app_name = "test"
@@ -25,12 +24,11 @@ mock_settings.webhook_url = "https://bot.example"
 
 if "src.config" not in sys.modules:
     sys.modules["src.config"] = MagicMock(settings=mock_settings)
-if "src.db.client" not in sys.modules:
-    sys.modules["src.db.client"] = MagicMock(jobs_collection=MagicMock(), start_db=AsyncMock())
 
-from fake_jobs import FakeJobs  # noqa: E402  (pytest puts this directory on sys.path)
+from fake_jobs import SqlJobs  # noqa: E402  (pytest puts this directory on sys.path)
 
-from src.interfaces.tg.notification import ai_notes, review_summary  # noqa: E402
+from src.db.sql import new_id  # noqa: E402
+from src.interfaces.tg.notification import ai_notes  # noqa: E402
 from src.interfaces.tg.notification import job_status as sync  # noqa: E402
 from src.interfaces.webhooks.main import app  # noqa: E402
 from src.services.job_searcher import jobs_api, status  # noqa: E402
@@ -40,12 +38,8 @@ EVIDENCE = "gmail:18c2f0a1b2"
 
 
 @pytest.fixture
-def jobs(mocker):
-    fake, meta = FakeJobs(), FakeJobs()
-    for module in (jobs_api, status, sync, ai_notes, review_summary):
-        mocker.patch.object(module, "jobs_collection", fake)
-    for module in (ai_notes, review_summary):
-        mocker.patch.object(module, "meta_collection", meta)
+def jobs(sql_db, mocker):
+    fake = SqlJobs(sql_db, mocker)
     mocker.patch.object(ai_notes, "settings", mock_settings)
     mocker.patch.object(jobs_api, "settings", mock_settings)
     mocker.patch("src.interfaces.webhooks.routes.jobs.settings", mock_settings)
@@ -69,9 +63,9 @@ def _call(method: str, path: str, json: dict[str, Any] | None = None) -> httpx.R
     return asyncio.run(call())
 
 
-def _doc(jobs: FakeJobs, **fields: Any) -> dict[str, Any]:
+def _doc(jobs: SqlJobs, **fields: Any) -> dict[str, Any]:
     doc = {
-        "_id": ObjectId(),
+        "_id": new_id(),
         "platform_name": "Dou",
         "title": "Python Developer",
         "company": "Acme",
@@ -85,12 +79,12 @@ def _doc(jobs: FakeJobs, **fields: Any) -> dict[str, Any]:
     return doc
 
 
-def _read(jobs: FakeJobs, doc: dict[str, Any]) -> dict[str, Any]:
+def _read(jobs: SqlJobs, doc: dict[str, Any]) -> dict[str, Any]:
     """The document as a read returns it: a copy, as MongoDB's is (the fake changes its own in place)."""
     return copy.deepcopy(jobs.by_id(doc["_id"]))
 
 
-def _applied(jobs: FakeJobs, **fields: Any) -> dict[str, Any]:
+def _applied(jobs: SqlJobs, **fields: Any) -> dict[str, Any]:
     return _doc(jobs, user_status="applied", status_updated_at=datetime.utcnow() - timedelta(days=9), **fields)
 
 
@@ -168,7 +162,7 @@ def test_a_status_changed_meanwhile_is_a_conflict(jobs, kick):
     assert response.status_code == 409
     error = response.json()["error"]
     assert error["code"] == "status_conflict" and error["current_status"] == "interview"
-    assert "history" not in jobs.by_id(doc["_id"])
+    assert jobs.by_id(doc["_id"]).get("history") is None
 
 
 @pytest.mark.parametrize(
@@ -198,7 +192,7 @@ def test_a_bad_change_is_refused_and_names_the_field(jobs, kick, body, field):
     assert response.status_code == 400, response.json()
     error = response.json()["error"]
     assert error["code"] == "invalid_parameter" and error["message"].startswith(field)
-    assert "history" not in jobs.by_id(doc["_id"])
+    assert jobs.by_id(doc["_id"]).get("history") is None
 
 
 def test_other_with_a_suggested_code_is_taken(jobs, kick):
@@ -249,13 +243,13 @@ def test_a_user_change_without_a_message_has_nothing_for_telegram(jobs, kick):
 
     body = _patch(doc, status="mismatch", expected_status="new", actor="user", reason_code="english").json()
 
-    assert body["telegram"] == "skipped" and "tg_sync" not in jobs.by_id(doc["_id"])
+    assert body["telegram"] == "skipped" and jobs.by_id(doc["_id"]).get("tg_sync") is None
     kick.assert_not_called()
 
 
 def test_an_unknown_vacancy_is_404(jobs, kick):
     response = _call(
-        "PATCH", f"/jobs/{ObjectId()}/status", {"status": "applied", "expected_status": "new", "actor": "user"}
+        "PATCH", f"/jobs/{new_id()}/status", {"status": "applied", "expected_status": "new", "actor": "user"}
     )
 
     assert response.status_code == 404 and response.json()["error"]["code"] == "not_found"
@@ -365,7 +359,7 @@ def _bot() -> MagicMock:
     return bot
 
 
-async def _ai_change(jobs: FakeJobs, to: str = "rejected_by_employer", **fields: Any) -> dict[str, Any]:
+async def _ai_change(jobs: SqlJobs, to: str = "rejected_by_employer", **fields: Any) -> dict[str, Any]:
     doc = _applied(jobs, **fields)
     await status.write_status(_read(jobs, doc), to, expected="applied", actor="ai", evidence=EVIDENCE, notify=True)
     return jobs.by_id(doc["_id"])

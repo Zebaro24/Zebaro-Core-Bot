@@ -6,8 +6,6 @@ import pytest
 
 if "src.config" not in sys.modules:
     sys.modules["src.config"] = MagicMock(settings=MagicMock())
-if "src.db.client" not in sys.modules:  # MongoDB, until it is gone
-    sys.modules["src.db.client"] = MagicMock()
 
 from src.services.job_searcher import store
 from src.services.job_searcher.store import J

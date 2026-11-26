@@ -55,8 +55,7 @@ class Settings(BaseSettings):
     # 7zSD.sfx and the WireGuard MSIs the Windows installer is built from (baked into the image).
     vpn_installer_dir: str = "/opt/vpn-installer"
 
-    mongo_uri: str = "mongodb://localhost:27017/zebaro_core"
-    # SQL through SQLAlchemy (src/db/sql.py): SQLite now, Postgres later by changing this URL.
+    # SQL through SQLAlchemy (src/db/sql.py): PostgreSQL in compose (zebaro-core-pg), SQLite by default.
     database_url: str = "sqlite+aiosqlite:///zebaro.db"
 
     # Monobank personal API (the Spotify family jar). Empty token — the service stays idle.
@@ -71,7 +70,6 @@ class Settings(BaseSettings):
 
     playwright_ws_endpoint: str = "ws://localhost:9222"
 
-    mongodb_container_name: str = "zebaro-core-db"
     playwright_container_name: str = "zebaro-core-playwright"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

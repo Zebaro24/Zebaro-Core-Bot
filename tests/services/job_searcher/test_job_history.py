@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-from bson import ObjectId
 
 mock_settings = MagicMock()
 mock_settings.app_name = "test"
@@ -22,13 +21,12 @@ mock_settings.no_response_days = 21
 
 if "src.config" not in sys.modules:
     sys.modules["src.config"] = MagicMock(settings=mock_settings)
-if "src.db.client" not in sys.modules:
-    sys.modules["src.db.client"] = MagicMock(jobs_collection=MagicMock(), start_db=AsyncMock())
 
-from fake_jobs import FakeJobs  # noqa: E402  (pytest puts this directory on sys.path)
+from fake_jobs import SqlJobs, SqlMeta  # noqa: E402  (pytest puts this directory on sys.path)
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 
 from src.db import sql  # noqa: E402
+from src.db.sql import new_id  # noqa: E402
 from src.interfaces.webhooks.main import app  # noqa: E402
 from src.services.job_searcher import backfill, events, jobs_api, journal, silence, status  # noqa: E402
 
@@ -38,10 +36,8 @@ DAY = timedelta(days=1)
 
 
 @pytest.fixture
-def jobs(mocker):
-    fake = FakeJobs()
-    for module in (jobs_api, status, events, silence, backfill):
-        mocker.patch.object(module, "jobs_collection", fake)
+def jobs(sql_db, mocker):
+    fake = SqlJobs(sql_db, mocker)
     for module in (jobs_api, events, silence, backfill):
         mocker.patch.object(module, "settings", mock_settings)
     mocker.patch("src.interfaces.webhooks.routes.jobs.settings", mock_settings)
@@ -50,11 +46,8 @@ def jobs(mocker):
 
 
 @pytest.fixture
-def meta(mocker):
-    fake = FakeJobs()
-    mocker.patch.object(silence, "meta_collection", fake)
-    mocker.patch.object(backfill, "meta_collection", fake)
-    return fake
+def meta(sql_db):
+    return SqlMeta(sql_db)
 
 
 @pytest.fixture
@@ -80,9 +73,9 @@ def _call(method: str, path: str, json: Any = None, params: dict[str, Any] | Non
     return asyncio.run(call())
 
 
-def _doc(jobs: FakeJobs, **fields: Any) -> dict[str, Any]:
+def _doc(jobs: SqlJobs, **fields: Any) -> dict[str, Any]:
     doc = {
-        "_id": ObjectId(),
+        "_id": new_id(),
         "platform_name": "Dou",
         "title": "Python Developer",
         "company": "Acme",
@@ -95,11 +88,11 @@ def _doc(jobs: FakeJobs, **fields: Any) -> dict[str, Any]:
     return doc
 
 
-def _read(jobs: FakeJobs, doc: dict[str, Any]) -> dict[str, Any]:
+def _read(jobs: SqlJobs, doc: dict[str, Any]) -> dict[str, Any]:
     return copy.deepcopy(jobs.by_id(doc["_id"]))
 
 
-async def _move(jobs: FakeJobs, doc: dict[str, Any], to: str, at: datetime | None, **extra: Any) -> dict[str, Any]:
+async def _move(jobs: SqlJobs, doc: dict[str, Any], to: str, at: datetime | None, **extra: Any) -> dict[str, Any]:
     """One change through the real write path; at=None — "no date", an approximate one."""
     current = jobs_api.public_status(_read(jobs, doc))
     extra.setdefault("actor", "ai")
@@ -294,7 +287,7 @@ def test_percentile_interpolates_between_ranks():
 # --- the silence (S3) -----------------------------------------------------------------------------------
 
 
-async def _applied_days_ago(jobs: FakeJobs, days: int) -> dict[str, Any]:
+async def _applied_days_ago(jobs: SqlJobs, days: int) -> dict[str, Any]:
     doc = _doc(jobs)
     await _move(jobs, doc, "applied", NOW - days * DAY, actor="user")
     return doc
@@ -390,7 +383,7 @@ async def test_the_dry_run_writes_nothing_and_counts_the_silence(jobs, meta, cap
 
     await backfill.run(apply=False)
 
-    assert "history" not in jobs.docs[0] and meta.docs == []
+    assert jobs.docs[0].get("history") is None and meta.docs == []
     assert "silence: 1 applications" in capsys.readouterr().out
 
 
@@ -405,7 +398,7 @@ async def test_the_backfill_turns_old_silence_down_without_telegram_and_opens_th
     assert stored["status_reason"] == "no_response" and stored["history"][-1]["approximate"] is True
     # Dated when the silence reached 21 days, not on the day of the backfill.
     assert stored["history"][-1]["occurred_at"] == NOW - 30 * DAY + 21 * DAY
-    assert "tg_sync" not in stored  # no edit, no note
+    assert stored.get("tg_sync") is None  # no edit, no note
     assert jobs_api.public_status(jobs.by_id(recent["_id"])) == "applied"
     assert await silence.backfill_done()
 

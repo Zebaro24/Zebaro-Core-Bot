@@ -8,10 +8,7 @@ from datetime import datetime
 from aiogram import Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InputRichMessage, Message
-from bson import ObjectId
-from bson.errors import InvalidId
 
-from src.db.client import jobs_collection
 from src.interfaces.tg.formatters.job import cover_letter_html, job_status_html, job_to_html, job_to_rich_html
 from src.interfaces.tg.formatters.job_status import job_status_line, status_words
 from src.interfaces.tg.keyboards.job import (
@@ -28,7 +25,7 @@ from src.interfaces.tg.keyboards.job import (
 from src.interfaces.tg.middlewares.admin import AdminMiddleware
 from src.interfaces.tg.notification import ai_notes
 from src.interfaces.tg.notification.job_status import kick_status_sync
-from src.services.job_searcher import cv
+from src.services.job_searcher import cv, store
 from src.services.job_searcher.container import Job, remember_message
 from src.services.job_searcher.dedup import BLOCKED, DECIDED, DUPLICATE
 from src.services.job_searcher.jobs_api import public_status
@@ -95,7 +92,7 @@ def _applied_status(doc: dict) -> str:
 async def _show_current(query: CallbackQuery, job_id: str) -> None:
     """Somebody else changed the status first: the message catches up with the stored one."""
     try:
-        doc = await jobs_collection.find_one({"_id": ObjectId(job_id)})
+        doc = await store.get(job_id)
         if doc is not None:
             markup = get_job_status_kb(job_id, public_status(doc), doc.get("copies"), doc.get("cv_sent"))
             await _edit(query, doc, job_status_line(doc), markup)
@@ -110,7 +107,7 @@ async def _record_outcome(query: CallbackQuery, callback_data: JobActionCallback
         return
     to = _OUTCOME_STATUS[callback_data.reason]
     try:
-        doc = await jobs_collection.find_one({"_id": ObjectId(callback_data.job_id)})
+        doc = await store.get(callback_data.job_id)
         if doc is None or public_status(doc) not in _APPLIED_FAMILY:
             await query.answer("Отклик не найден", show_alert=True)
             return
@@ -192,7 +189,7 @@ async def _notes(query: CallbackQuery, callback_data: JobActionCallback) -> None
 async def _open_from_summary(query: CallbackQuery, callback_data: JobActionCallback) -> None:
     """A vacancy of the 👀 summary as its own message, with the usual buttons."""
     try:
-        doc = await jobs_collection.find_one({"_id": ObjectId(callback_data.job_id)})
+        doc = await store.get(callback_data.job_id)
     except Exception as e:
         logger.warning("Could not read the vacancy to open it: %s", e)
         doc = None
@@ -221,7 +218,7 @@ async def _open_from_summary(query: CallbackQuery, callback_data: JobActionCallb
 async def _send_letter(query: CallbackQuery, callback_data: JobActionCallback) -> None:
     """The cover letter of the vacancy's CV, under the vacancy: one tap on the block copies it."""
     try:
-        doc = await jobs_collection.find_one({"_id": ObjectId(callback_data.job_id)})
+        doc = await store.get(callback_data.job_id)
     except Exception as e:
         logger.warning("Could not read the vacancy for its letter: %s", e)
         doc = None
@@ -297,7 +294,7 @@ async def _switch_buttons(query: CallbackQuery, callback_data: JobActionCallback
     if not isinstance(message, Message):
         return
     try:
-        doc = await jobs_collection.find_one({"_id": ObjectId(callback_data.job_id)})
+        doc = await store.get(callback_data.job_id)
     except Exception as e:  # a bad id and a DB outage end the same way: buttons without copies
         logger.warning("Could not read the vacancy for its buttons: %s", e)
         doc = None
@@ -358,14 +355,12 @@ async def job_action_callback(query: CallbackQuery, callback_data: JobActionCall
         label = REASON_TEXTS[menu].get(reason, f" {reason}")  # a renamed reason must not crash an old button
         status_text = f"{status_text}: {label.split(' ', 1)[-1].lower()}"
 
-    try:
-        job_object_id = ObjectId(callback_data.job_id)
-    except InvalidId:
+    if not store.valid_id(callback_data.job_id):
         await query.answer("Некорректный ID вакансии", show_alert=True)
         return
 
     try:
-        doc = await jobs_collection.find_one({"_id": job_object_id})
+        doc = await store.get(callback_data.job_id)
         if doc is None:
             await query.answer("Вакансия не найдена", show_alert=True)
             return

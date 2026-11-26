@@ -7,12 +7,10 @@ import pytest
 
 if "src.config" not in sys.modules:
     sys.modules["src.config"] = MagicMock(settings=MagicMock())
-if "src.db.client" not in sys.modules:
-    sys.modules["src.db.client"] = MagicMock(jobs_collection=MagicMock(), start_db=AsyncMock())
 
 from src.interfaces.tg.formatters.job import cover_letter_html, cv_line, gaps_line, job_to_rich_html
 from src.interfaces.tg.formatters.job_stats import format_me_rich
-from src.services.job_searcher import cv, letters, repair, status
+from src.services.job_searcher import cv, letters, status
 from src.services.job_searcher.container import Job
 from src.services.job_searcher.digest import cv_stats, cv_used, my_insights
 from src.services.job_searcher.filter import evaluate, title_reject_reason
@@ -177,27 +175,6 @@ class _Cursor:
             yield doc
 
 
-@pytest.mark.asyncio
-async def test_the_repair_fills_the_cvs_of_stored_vacancies(mocker):
-    old = {"_id": 1, "title": "AI Engineer", "description": "LLM", "moderation": "top", "user_status": "applied",
-           "status_updated_at": datetime(2026, 10, 1)}  # fmt: skip
-    new = {"_id": 2, "title": "Python Developer", "description": "Django", "moderation": "sent",
-           "user_status": "pending"}  # fmt: skip
-    collection = mocker.patch.object(repair, "jobs_collection")
-    collection.find = MagicMock(return_value=_Cursor([old, new]))
-    collection.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
-
-    assert await repair.fill_cvs() == 3  # two tracks and one CV
-
-    track_old, sent_old, track_new = collection.update_one.await_args_list
-    assert track_old.args[0] == {"_id": 1, "cv_track": None}
-    assert track_old.args[1]["$set"]["cv_track"] == cv.AI
-    # A CV picked by a button meanwhile wins: the write is guarded by the empty field.
-    assert sent_old.args[0] == {"_id": 1, "user_status": "applied", "cv_sent": None}
-    assert sent_old.args[1] == {"$set": {"cv_sent": cv.UNIVERSAL}}
-    assert track_new.args[1]["$set"]["cv_track"] == cv.BACKEND
-
-
 @pytest.mark.parametrize(
     "doc,key",
     [
@@ -229,8 +206,11 @@ def test_the_cv_funnel_tells_which_cv_the_applications_went_with():
 
 
 def _status_collection(mocker, doc):
-    collection = mocker.patch.object(status, "jobs_collection")
-    collection.find_one_and_update = AsyncMock(side_effect=lambda query, update, **_: {**doc, **update["$set"]})
+    """The store under write_status: every write lands; the fields it set are in update's args."""
+    collection = MagicMock(update=AsyncMock(return_value=True), get=AsyncMock(return_value=doc))
+    mocker.patch.object(status.store, "update", collection.update)
+    mocker.patch.object(status.store, "get", collection.get)
+    mocker.patch.object(status.store, "find", AsyncMock(return_value=[]))  # no other copies of it
     return collection
 
 
@@ -239,13 +219,13 @@ async def test_an_application_stores_its_cv_and_an_old_one_keeps_the_single_cv(m
     fresh = {"_id": 1, "user_status": "pending", "cv_track": cv.AI}
     collection = _status_collection(mocker, fresh)
     await status.write_status(fresh, "applied", expected="new", actor="user", sync=False)
-    assert collection.find_one_and_update.await_args.args[1]["$set"]["cv_sent"] == cv.AI
+    assert collection.update.await_args.args[1]["cv_sent"] == cv.AI
 
     # An October application without a CV gets its reply today: the CV of October.
     old = {"_id": 2, "user_status": "applied", "cv_track": cv.AI, "status_updated_at": datetime(2026, 10, 1)}
     collection = _status_collection(mocker, old)
     await status.write_status(old, "replied", expected="applied", actor="user", sync=False)
-    assert collection.find_one_and_update.await_args.args[1]["$set"]["cv_sent"] == cv.UNIVERSAL
+    assert collection.update.await_args.args[1]["cv_sent"] == cv.UNIVERSAL
 
 
 @pytest.mark.asyncio
@@ -253,4 +233,4 @@ async def test_an_undone_application_drops_its_cv(mocker):
     doc = {"_id": 3, "user_status": "applied", "cv_sent": cv.AI}
     collection = _status_collection(mocker, doc)
     await status.write_status(doc, "new", expected="applied", actor="user", sync=False)
-    assert collection.find_one_and_update.await_args.args[1]["$set"]["cv_sent"] is None
+    assert collection.update.await_args.args[1]["cv_sent"] is None

@@ -79,6 +79,23 @@ def has_event(*conditions: ColumnElement[bool]) -> ColumnElement[bool]:
     return exists().where(E.job_id == J.id, *conditions)
 
 
+def sync_is(*conditions: ColumnElement[bool]) -> ColumnElement[bool]:
+    """A vacancy whose Telegram outbox entry matches all of `conditions`."""
+    return exists().where(JobSync.job_id == J.id, *conditions)
+
+
+async def due_syncs(now: Any, limit: int) -> list[str]:
+    """The vacancies whose status change Telegram has to show by `now`, the longest waiting first."""
+    query = (
+        select(JobSync.job_id)
+        .where(JobSync.state == "pending", JobSync.next_at <= now)
+        .order_by(JobSync.next_at)
+        .limit(limit)
+    )
+    async with sql.session() as s:
+        return list((await s.scalars(query)).all())
+
+
 def group_condition(root: str) -> ColumnElement[bool]:
     """Every copy of a group: its root and whatever points at it."""
     return or_(J.id == root, J.group_id == root)
@@ -93,7 +110,8 @@ def event_doc(event: JobEvent) -> dict[str, Any]:
 
 
 def event_row(job_id: str, position: int, event: dict[str, Any]) -> dict[str, Any]:
-    row: dict[str, Any] = {"job_id": job_id, "position": position}
+    # Every column, None where the event has no such key: rows inserted together need one shape.
+    row: dict[str, Any] = {"job_id": job_id, "position": position, **dict.fromkeys(EVENT_COLUMNS)}
     for key, value in event.items():
         name = EVENT_KEYS.get(key, key)
         if name not in EVENT_COLUMNS:
@@ -217,11 +235,10 @@ async def count(where: ColumnElement[bool]) -> int:
 # --- writing -------------------------------------------------------------------------------------
 
 
-async def put(docs: Iterable[dict[str, Any]], session: AsyncSession | None = None) -> list[str]:
-    """Store whole documents (a new run's vacancies, a test's fixtures). `_id` given or made.
-
-    Parents first is not required: `group_id` is set after every row is in.
-    """
+def statements(docs: Iterable[dict[str, Any]]) -> tuple[list[str], list[Any]]:
+    """The ids and the INSERT / UPDATE statements that store whole documents (`put`; the tests' helper
+    runs the same ones on a plain connection). `_id` given or made; `group_id` is set after every row is
+    in, so parents need not come first."""
     rows, events, syncs, groups = [], [], [], {}
     for doc in docs:
         doc = dict(doc)
@@ -235,25 +252,26 @@ async def put(docs: Iterable[dict[str, Any]], session: AsyncSession | None = Non
         if sync and "__delete__" not in sync:
             syncs.append({"job_id": job_id, **{name: sync.get(name) for name in SYNC_COLUMNS}})
     if not rows:
+        return [], []
+    steps: list[Any] = [insert(J).values(rows)]
+    steps += [sql_update(J).where(J.id == i).values(group_id=g) for i, g in groups.items() if g is not None]
+    if events:
+        steps.append(insert(E).values(events))
+    if syncs:
+        steps.append(insert(JobSync).values(syncs))
+    return [r["id"] for r in rows], steps
+
+
+async def put(docs: Iterable[dict[str, Any]]) -> list[str]:
+    """Store whole documents (a new run's vacancies). Returns their ids, in order."""
+    ids, steps = statements(docs)
+    if not steps:
         return []
-
-    async def _write(s: AsyncSession) -> None:
-        await s.execute(insert(J), rows)
-        for job_id, group in groups.items():
-            if group is not None:
-                await s.execute(sql_update(J).where(J.id == job_id).values(group_id=group))
-        if events:
-            await s.execute(insert(E), events)
-        if syncs:
-            await s.execute(insert(JobSync), syncs)
-
-    if session is not None:
-        await _write(session)
-    else:
-        async with sql.session() as s:
-            await _write(s)
-            await s.commit()
-    return [r["id"] for r in rows]
+    async with sql.session() as s:
+        for step in steps:
+            await s.execute(step)
+        await s.commit()
+    return ids
 
 
 async def _apply(

@@ -1,50 +1,44 @@
 import sys
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiogram.types import Message
-from bson import ObjectId
 
 if "src.config" not in sys.modules:
     sys.modules["src.config"] = MagicMock(settings=MagicMock())
-if "src.db.client" not in sys.modules:
-    sys.modules["src.db.client"] = MagicMock(jobs_collection=MagicMock(), start_db=AsyncMock())
 
+from src.db.sql import new_id
 from src.interfaces.tg.handlers.callbacks import job as callback
 from src.interfaces.tg.keyboards.job import JobActionCallback
 from src.services.job_searcher import status as status_module
 
-
-def _async_cursor(docs):
-    async def _gen():
-        for doc in docs:
-            yield doc
-
-    return _gen()
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "services" / "job_searcher"))
+from fake_jobs import SqlJobs
 
 
 def _doc(platform="Dou", status="pending", group_id=None):
-    return {"_id": ObjectId(), "title": "Python Developer", "platform_name": platform, "user_status": status,
-            "group_id": group_id}  # fmt: skip
+    return {"_id": new_id(), "title": "Python Developer", "platform_name": platform, "user_status": status,
+            "group_id": group_id, "link": "https://jobs.dou.ua/1", "found_at": datetime(2026, 11, 20)}  # fmt: skip
 
 
 @pytest.fixture
-def collection(mocker):
-    collection = MagicMock()
-    collection.update_many = AsyncMock()
-    mocker.patch.object(callback, "jobs_collection", collection)
-    mocker.patch.object(status_module, "jobs_collection", collection)
-    return collection
+def collection(sql_db, mocker):
+    """The stored vacancies (real SQL); a test reads what the buttons wrote with `stored()`."""
+    return SqlJobs(sql_db, mocker)
 
 
-def _setup(collection, doc, group):
-    collection.find_one = AsyncMock(return_value=doc)
-    collection.find = MagicMock(return_value=_async_cursor(group))
+def _setup(jobs, doc, group):
+    jobs.docs = list({d["_id"]: d for d in [doc, *group]}.values())
 
-    async def update(query, change, **_kwargs):
-        return {**doc, **change["$set"]}
 
-    collection.find_one_and_update = AsyncMock(side_effect=update)
+def stored(jobs, doc):
+    return jobs.by_id(doc["_id"])
+
+
+def untouched(jobs, *docs):
+    """Nothing written to these: the status they were stored with, and no event."""
+    return all(stored(jobs, d)["user_status"] == d["user_status"] and not stored(jobs, d)["history"] for d in docs)
 
 
 def _query():
@@ -74,9 +68,8 @@ async def test_an_answer_closes_the_copies_still_waiting_in_the_chat(collection)
 
     query = await _press("apply", doc)
 
-    assert collection.find_one_and_update.await_args.args[1]["$set"]["user_status"] == "applied"
-    closed = collection.update_many.await_args.args[0]
-    assert closed["_id"]["$in"] == [waiting["_id"]] and closed["user_status"] == "pending"
+    assert stored(collection, doc)["user_status"] == "applied"
+    assert stored(collection, waiting)["user_status"] == "duplicate"  # closed as a repeat
     assert "Откликнулся" in query.message.edit_text.await_args.args[0]
 
 
@@ -89,8 +82,8 @@ async def test_a_second_answer_on_another_copy_is_not_counted_again(collection):
     query = await _press("reject", doc, "role")
 
     # Stored as a repeat, and the message says what was decided and where.
-    assert collection.find_one_and_update.await_args.args[1]["$set"]["user_status"] == "duplicate"
-    collection.update_many.assert_not_awaited()
+    assert stored(collection, doc)["user_status"] == "duplicate"
+    assert untouched(collection, root)
     assert "Откликнулся (на Dou)" in query.message.edit_text.await_args.args[0]
 
 
@@ -101,8 +94,7 @@ async def test_djinni_blocking_keeps_the_group_open(collection):
 
     query = await _press("block", doc)
 
-    assert collection.find_one_and_update.await_args.args[1]["$set"]["user_status"] == "blocked"
-    collection.update_many.assert_not_awaited()
+    assert stored(collection, doc)["user_status"] == "blocked"
     assert "Сайт не пускает" in query.message.edit_text.await_args.args[0]
 
 
@@ -115,7 +107,7 @@ async def test_a_no_without_a_reason_opens_the_reasons_in_the_same_message(colle
 
     await callback.job_action_callback(query, JobActionCallback(action="mismatch", job_id=str(doc["_id"])))
 
-    collection.find_one_and_update.assert_not_awaited()
+    assert untouched(collection, doc)
     markup = query.message.edit_reply_markup.await_args.kwargs["reply_markup"]
     texts = [button.text for row in markup.inline_keyboard for button in row]
     assert "🎓 Опыт / уровень" in texts and "↩️ Назад" in texts
@@ -128,8 +120,8 @@ async def test_the_reason_is_stored_with_the_answer(collection):
 
     query = await _press("mismatch", doc, "experience")
 
-    stored = collection.find_one_and_update.await_args.args[1]["$set"]
-    assert stored["user_status"] == "mismatch" and stored["status_reason"] == "experience"
+    row = stored(collection, doc)
+    assert row["user_status"] == "mismatch" and row["status_reason"] == "experience"
     assert "Не прохожу: опыт / уровень" in query.message.edit_text.await_args.args[0]
 
 
@@ -140,9 +132,8 @@ async def test_the_site_refusing_keeps_its_own_status(collection):
 
     await _press("mismatch", doc, "site")
 
-    stored = collection.find_one_and_update.await_args.args[1]["$set"]
-    assert stored["user_status"] == "blocked" and stored["status_reason"] == "site"
-    collection.update_many.assert_not_awaited()  # the group stays open for a copy elsewhere
+    row = stored(collection, doc)
+    assert row["user_status"] == "blocked" and row["status_reason"] == "site"  # the group stays open
 
 
 def _real_query(data: str):
@@ -166,8 +157,7 @@ async def test_buttons_of_messages_sent_before_the_reasons_still_answer(collecti
 
     await callback.legacy_job_action_callback(_query(), matched["callback_data"])
 
-    stored = collection.find_one_and_update.await_args.args[1]["$set"]
-    assert stored["user_status"] == "blocked"
+    assert stored(collection, doc)["user_status"] == "blocked"
 
 
 @pytest.mark.asyncio
@@ -210,11 +200,9 @@ async def test_an_outcome_is_stored_on_the_application_and_shown(collection):
 
     query = await _press("outcome", doc, "interview")
 
-    query_filter, change = collection.find_one_and_update.await_args.args
-    # Written only if it still is the plain application the message showed.
-    assert {"user_status": "applied", "outcome": None} in query_filter["$and"]
-    assert change["$set"]["outcome"] == "interview"
-    event = change["$push"]["history"]
+    row = stored(collection, doc)
+    assert row["outcome"] == "interview"
+    event = row["history"][-1]
     assert (event["from"], event["to"], event["actor"], event["approximate"]) == (
         "applied",
         "interview",
@@ -233,8 +221,8 @@ async def test_a_muted_company_is_a_not_interested_answer_with_its_reason(collec
 
     query = await _press("reject", doc, "muted")
 
-    change = collection.find_one_and_update.await_args.args[1]["$set"]
-    assert change["user_status"] == "not_interested" and change["status_reason"] == "muted"
+    row = stored(collection, doc)
+    assert row["user_status"] == "not_interested" and row["status_reason"] == "muted"
     assert "компанию не присылать" in query.message.edit_text.await_args.args[0]
 
 
@@ -298,16 +286,17 @@ async def test_open_falls_back_to_plain_html_when_rich_is_refused(collection):
 
 
 @pytest.mark.asyncio
-async def test_a_button_on_a_status_changed_meanwhile_says_so_and_writes_nothing(collection):
+async def test_a_button_on_a_status_changed_meanwhile_says_so_and_writes_nothing(collection, mocker):
     doc = _doc("Dou")
     _setup(collection, doc, [doc])
-    collection.find_one_and_update = AsyncMock(return_value=None)  # the AI changed it in between
+    # The AI changed it in between: the conditional write finds the status it expected gone.
+    mocker.patch.object(status_module.store, "update", AsyncMock(return_value=False))
 
     query = await _press("reject", doc, "role")
 
     assert query.answer.await_args.args[0] == callback._CHANGED
     assert query.answer.await_args.kwargs["show_alert"] is True
-    collection.update_many.assert_not_awaited()
+    assert untouched(collection, doc)
 
 
 @pytest.mark.asyncio
@@ -317,7 +306,7 @@ async def test_applied_pressed_again_keeps_how_far_it_went(collection):
 
     query = await _press("apply", doc)
 
-    collection.find_one_and_update.assert_not_awaited()
+    assert untouched(collection, doc) and stored(collection, doc)["outcome"] == "interview"
     assert query.answer.await_args.args[0] == callback._CHANGED
 
 
@@ -329,8 +318,7 @@ async def test_old_buttons_do_not_overwrite_what_the_ai_decided(collection):
 
     query = await _press("mismatch", doc, "english")
 
-    collection.find_one_and_update.assert_not_awaited()
-    collection.update_many.assert_not_awaited()
+    assert untouched(collection, doc) and stored(collection, doc)["status_reason"] == "salary"
     assert query.answer.await_args.args[0] == callback._CHANGED
 
 

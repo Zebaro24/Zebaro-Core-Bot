@@ -3,16 +3,14 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from bson import ObjectId
 
 mock_settings = MagicMock()
 mock_settings.telegram_docker_access_ids = [123]
 
-mock_jobs_collection = MagicMock()
-
 sys.modules["src.config"] = MagicMock(settings=mock_settings)
-sys.modules["src.db.client"] = MagicMock(jobs_collection=mock_jobs_collection, start_db=AsyncMock())
 
+from src.db.sql import new_id  # noqa: E402
+from src.services.job_searcher import dedup  # noqa: E402
 from src.services.job_searcher.container import Job  # noqa: E402
 from src.services.job_searcher.dedup import (  # noqa: E402
     DUPLICATE,
@@ -26,24 +24,21 @@ from src.services.job_searcher.dedup import (  # noqa: E402
 SEEN = datetime(2026, 9, 21, 12, 0)
 
 
-def _async_cursor(docs):
-    async def _gen():
-        for doc in docs:
-            yield doc
-
-    return _gen()
-
-
 @pytest.fixture
 def collection(mocker):
-    collection = MagicMock()
-    collection.update_one = AsyncMock()
-    mocker.patch("src.services.job_searcher.dedup.jobs_collection", collection)
+    """The store under dedup: `find` hands out the stored vacancies a test sets, `update` records writes."""
+    collection = MagicMock(find=AsyncMock(return_value=[]), update=AsyncMock(return_value=True))
+
+    async def find(*args, **kwargs):
+        return await collection.find(*args, **kwargs)
+
+    mocker.patch.object(dedup.store, "find", find)
+    mocker.patch.object(dedup.store, "update", collection.update)
     return collection
 
 
 def _history(collection, docs):
-    collection.find = MagicMock(return_value=_async_cursor(docs))
+    collection.find = AsyncMock(return_value=docs)
 
 
 def _job(platform="Dou", title="Python Developer", company="TechCorp", score=10):
@@ -52,7 +47,7 @@ def _job(platform="Dou", title="Python Developer", company="TechCorp", score=10)
 
 def _doc(platform="Djinni", status="pending", group_id=None, title="Python Developer"):
     return {
-        "_id": ObjectId(),
+        "_id": new_id(),
         "title": title,
         "company": "TechCorp",
         "platform_name": platform,
@@ -63,7 +58,7 @@ def _doc(platform="Djinni", status="pending", group_id=None, title="Python Devel
 
 
 def _ids(n):
-    return [str(ObjectId()) for _ in range(n)]
+    return [new_id() for _ in range(n)]
 
 
 @pytest.mark.parametrize(
@@ -121,7 +116,7 @@ async def test_a_repost_on_the_same_site_of_an_answered_vacancy_is_not_sent(coll
 
     assert repost.user_status == DUPLICATE
     assert repost.group_id == str(earlier["_id"])
-    collection.update_one.assert_awaited_once()
+    collection.update.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -177,13 +172,13 @@ async def test_rejected_by_filter_is_left_alone(collection):
 
 @pytest.mark.asyncio
 async def test_db_down_still_collapses_the_run(collection):
-    collection.find = MagicMock(side_effect=Exception("no db"))
+    collection.find = AsyncMock(side_effect=Exception("no db"))
     first, second = _job("Dou"), _job("Djinni")
 
     await group_duplicates([first, second], _ids(2))
 
     assert second.user_status == DUPLICATE
-    collection.update_one.assert_not_awaited()
+    collection.update.assert_not_awaited()
 
 
 def test_group_state_and_root():
@@ -211,7 +206,7 @@ async def test_the_company_history_lists_other_answered_or_opened_vacancies(coll
         ("Data Engineer", "pending", False),
     ]
     assert job.user_status == "pending"  # a note, never a reason to hide it
-    stored = collection.update_one.await_args.args[1]["$set"]
+    stored = collection.update.await_args.args[1]
     assert stored["company_history"] == job.company_history
 
 

@@ -11,8 +11,11 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
+from sqlalchemy import and_
+
 from src.config import settings
-from src.db.client import jobs_collection, meta_collection
+from src.db import sql
+from src.services.job_searcher import store
 from src.services.job_searcher.jobs_api import public_status
 from src.services.job_searcher.status import StatusConflict, write_status
 
@@ -38,16 +41,18 @@ def is_silent(doc: dict[str, Any], cutoff: datetime) -> bool:
 
 
 async def backfill_done() -> bool:
-    return await meta_collection.find_one({"_id": BACKFILL_ID}) is not None
+    return await sql.kv_get(BACKFILL_ID) is not None
 
 
 async def turn_down_silent(days: int, *, sync: bool, approximate: bool, now: datetime | None = None) -> int:
     """Every silent application → no_response. How many were turned down."""
     now = now or datetime.utcnow()
     cutoff = now - timedelta(days=days)
-    query = {"user_status": "applied", "outcome": None, "history.occurred_at": {"$lt": cutoff}}
+    query = and_(
+        store.J.user_status == "applied", store.J.outcome.is_(None), store.has_event(store.E.occurred_at < cutoff)
+    )
     turned = 0
-    async for doc in jobs_collection.find(query, {"description": 0}):
+    for doc in await store.find(query, description=False):
         last = last_event_at(doc.get("history") or [])
         if last is None or not is_silent(doc, cutoff):
             continue
@@ -72,7 +77,7 @@ async def silence_job() -> int:
             logger.info("No-response check skipped: the history backfill has not run yet")
             return 0
         turned = await turn_down_silent(settings.no_response_days, sync=True, approximate=False)
-    except Exception as e:  # MongoDB down: tomorrow's run sees the same applications
+    except Exception as e:  # the DB down: tomorrow's run sees the same applications
         logger.warning("No-response check failed: %s", e)
         return 0
     if turned:

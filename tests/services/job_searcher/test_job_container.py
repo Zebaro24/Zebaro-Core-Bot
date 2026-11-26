@@ -3,18 +3,13 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from bson import ObjectId
 
 mock_settings = MagicMock()
 mock_settings.telegram_docker_access_ids = [123]
 
-mock_jobs_collection = MagicMock()
-mock_jobs_collection.insert_many = AsyncMock()
-mock_jobs_collection.count_documents = AsyncMock()
-
 sys.modules["src.config"] = MagicMock(settings=mock_settings)
-sys.modules["src.db.client"] = MagicMock(jobs_collection=mock_jobs_collection, start_db=AsyncMock())
 
+from src.services.job_searcher import store  # noqa: E402
 from src.services.job_searcher.container import REVISIT_DAYS, Job, JobStorage, already_seen_query  # noqa: E402
 
 
@@ -67,24 +62,19 @@ def test_log_jobs(caplog):
 
 
 @pytest.mark.asyncio
-async def test_save_jobs_to_db_returns_ids_in_order(mocker):
+async def test_save_jobs_to_db_returns_ids_in_order(sql_db):
     storage = JobStorage()
-    job1 = Job(title="Python Dev")
-    job2 = Job(title="AI Engineer")
-    storage.add_job(job1)
-    storage.add_job(job2)
-
-    patched = mocker.patch("src.services.job_searcher.container.jobs_collection", mock_jobs_collection)
-    mock_jobs_collection.insert_many.reset_mock()
-    mock_jobs_collection.insert_many.return_value = MagicMock(inserted_ids=["id1", "id2"])
+    storage.add_job(Job(title="Python Dev", link="https://a"))
+    storage.add_job(Job(title="AI Engineer", link="https://b", date="2 дні тому"))
 
     ids = await storage.save_jobs_to_db()
 
-    mock_jobs_collection.insert_many.assert_awaited_once()
-    inserted_docs = mock_jobs_collection.insert_many.call_args[0][0]
-    assert inserted_docs[0]["title"] == "Python Dev"
-    assert ids == ["id1", "id2"]
-    _ = patched  # used for patching side-effect
+    assert len(ids) == 2 and all(store.valid_id(i) for i in ids)
+    first, second = [await store.get(i or "") for i in ids]
+    assert first is not None and second is not None
+    assert (first["title"], second["title"]) == ("Python Dev", "AI Engineer")
+    # A board's text date is read against when the vacancy was found: the column takes dates only.
+    assert isinstance(second["date"], datetime) and second["date"] < second["found_at"]
 
 
 @pytest.mark.asyncio
@@ -96,61 +86,48 @@ async def test_save_jobs_to_db_no_jobs_returns_empty_list():
 @pytest.mark.asyncio
 async def test_save_jobs_to_db_db_failure_returns_none_placeholders(mocker):
     storage = JobStorage()
-    job = Job(title="Python Dev")
-    storage.add_job(job)
+    storage.add_job(Job(title="Python Dev"))
+    mocker.patch.object(store, "put", AsyncMock(side_effect=Exception("no db")))
 
-    failing_collection = MagicMock()
-    failing_collection.insert_many = AsyncMock(side_effect=Exception("no db"))
-    patched = mocker.patch("src.services.job_searcher.container.jobs_collection", failing_collection)
-
-    ids = await storage.save_jobs_to_db()
-
-    assert ids == [None]
-    _ = patched
+    assert await storage.save_jobs_to_db() == [None]
 
 
 @pytest.mark.asyncio
-async def test_remove_jobs_already_in_db(mocker):
+async def test_remove_jobs_already_in_db(sql_db):
+    await store.put([{"platform_name": "TestPlatform", "job_id": "123", "found_at": datetime.utcnow()}])
     storage = JobStorage()
-    job = Job(platform_name="TestPlatform", job_id="123")
-    storage.add_job(job)
-
-    patched = mocker.patch("src.services.job_searcher.container.jobs_collection", mock_jobs_collection)
-    mock_jobs_collection.count_documents.reset_mock()
-    mock_jobs_collection.count_documents.return_value = 1
+    seen, fresh = Job(platform_name="TestPlatform", job_id="123"), Job(platform_name="TestPlatform", job_id="124")
+    storage.add_job(seen)
+    storage.add_job(fresh)
 
     await storage.remove_jobs_already_in_db()
 
-    assert job not in storage.jobs
-    query = mock_jobs_collection.count_documents.await_args.args[0]
-    assert (query["platform_name"], query["job_id"]) == ("TestPlatform", "123")
-    assert mock_jobs_collection.count_documents.await_args.kwargs == {"limit": 1}
-    _ = patched
+    assert storage.jobs == [fresh]
 
 
-def _matches(query: dict, doc: dict) -> bool:
-    """The part of MongoDB's matching already_seen_query needs."""
-    if (doc["platform_name"], doc["job_id"]) != (query["platform_name"], query["job_id"]):
-        return False
-    answered, recent = query["$or"]
-    return doc.get("user_status") not in answered["user_status"]["$nin"] or doc["_id"] >= recent["_id"]["$gte"]
-
-
-def test_an_old_unanswered_copy_no_longer_hides_a_live_vacancy():
+@pytest.mark.asyncio
+async def test_an_old_unanswered_copy_no_longer_hides_a_live_vacancy(sql_db):
     # PwC 780338: stored in 11.2025 with no decision, bumped on Djinni a year later.
     now = datetime(2026, 11, 5, 12)
     query = already_seen_query("Djinni", "780338", now)
 
-    def doc(days_ago: int, status: str | None) -> dict:
-        return {"_id": ObjectId.from_datetime(now - timedelta(days=days_ago)), "platform_name": "Djinni",
-                "job_id": "780338", "user_status": status}  # fmt: skip
+    async def hides(days_ago: int, status: str | None) -> bool:
+        job_id = (await store.put([{"platform_name": "Djinni", "job_id": "780338", "user_status": status,
+                                    "found_at": now - timedelta(days=days_ago)}]))[0]  # fmt: skip
+        found = await store.count(query & (store.J.id == job_id))
+        return found == 1
 
-    assert not _matches(query, doc(368, None))
-    assert not _matches(query, doc(REVISIT_DAYS + 1, "pending"))
-    assert _matches(query, doc(REVISIT_DAYS - 1, None))  # recent: still the same vacancy
-    assert _matches(query, doc(368, "not_interested"))  # answered: hidden for good
+    assert not await hides(368, None)
+    assert not await hides(REVISIT_DAYS + 1, "pending")
+    assert await hides(REVISIT_DAYS - 1, None)  # recent: still the same vacancy
+    assert await hides(368, "not_interested")  # answered: hidden for good
     # A same-run copy is marked a repeat whether or not anyone answered: not an answer itself.
-    assert not _matches(query, doc(368, "duplicate"))
+    assert not await hides(368, "duplicate")
+    # Another board's id is another vacancy.
+    other = (
+        await store.put([{"platform_name": "Dou", "job_id": "780338", "user_status": "applied", "found_at": now}])
+    )[0]
+    assert await store.count(query & (store.J.id == other)) == 0
 
 
 def test_add_job_skips_a_vacancy_this_run_already_has():
@@ -170,37 +147,3 @@ def test_add_job_keeps_jobs_without_an_id():
     storage.add_job(Job(title="Dev2"))
 
     assert len(storage.jobs) == 2
-
-
-@pytest.mark.asyncio
-async def test_text_dates_become_dates_counted_from_when_the_vacancy_was_found(mocker):
-    from datetime import datetime, timedelta
-
-    from src.services.job_searcher import container
-
-    found = datetime(2026, 10, 1, 10)
-    docs = [
-        {"_id": 1, "date": "2 дні тому", "found_at": found},
-        {"_id": 2, "date": "Гаряча вакансія", "found_at": found},  # not a date: left alone
-    ]
-    links = [{"_id": 3, "link": "https://www.robota.ua/company1/vacancy2"}]
-
-    async def cursor(items):
-        for item in items:
-            yield item
-
-    collection = MagicMock()
-    collection.find = MagicMock(side_effect=[cursor(docs), cursor(links)])
-    collection.update_one = AsyncMock()
-    collection.update_many = AsyncMock(return_value=MagicMock(modified_count=3))
-    mocker.patch.object(container, "jobs_collection", collection)
-
-    assert await container.normalize_stored_dates() == 1
-    collection.update_one.assert_any_await({"_id": 1}, {"$set": {"date": found - timedelta(days=2)}})
-    # Robota.ua links lose the "www." that now answers 404.
-    collection.update_one.assert_any_await({"_id": 3}, {"$set": {"link": "https://robota.ua/company1/vacancy2"}})
-    assert collection.update_one.await_count == 2
-    # Work.ua's salary note stored as a company is cleared too.
-    collection.update_many.assert_awaited_once_with(
-        {"platform_name": "Work.ua", "company": "Після всіх відрахувань"}, {"$set": {"company": None}}
-    )

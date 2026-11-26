@@ -2,7 +2,8 @@
 
 The contract is docs/contracts/jobs-api.md. Its shape does not follow the storage: the
 public `status` folds `user_status` and `outcome` into one stage, `tier` renames `moderation`,
-dates go out as UTC with "Z", and no MongoDB name or operator leaks into a response.
+dates go out as UTC with "Z", and no storage name leaks into a response. The filters are SQL
+conditions on the vacancies (store.py), with MongoDB's meaning of a missing field kept.
 """
 
 import base64
@@ -17,15 +18,15 @@ from typing import Any
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
-from bson import ObjectId
-from bson.errors import InvalidId
+from sqlalchemy import ColumnElement, and_, func, or_, true
 
 from src.config import settings
-from src.db.client import jobs_collection
+from src.services.job_searcher import store
 from src.services.job_searcher.dedup import BLOCKED, DECIDED, DUPLICATE, PENDING, group_root
 from src.services.job_searcher.digest import search_label
 from src.services.job_searcher.extract import requirements, work_hours
-from src.services.job_searcher.words import MAX_WORD_LENGTH, MAX_WORDS, WHERE_FIELDS, case_free, words_query
+from src.services.job_searcher.store import J
+from src.services.job_searcher.words import MAX_WORD_LENGTH, MAX_WORDS, WHERE_FIELDS, case_free, matches, words_query
 
 SCOPE = "own_searches"
 DEFAULT_PERIOD = timedelta(days=30)
@@ -186,13 +187,9 @@ async def duplicate_targets(docs: list[dict[str, Any]]) -> dict[str, str]:
     roots = {group_root(doc) for doc in docs if doc.get("user_status") == DUPLICATE}
     if not roots:
         return {}
-    object_ids = [ObjectId(root) for root in roots if ObjectId.is_valid(root)]
-    query = {
-        "$or": [{"_id": {"$in": object_ids}}, {"group_id": {"$in": list(roots)}}],
-        "user_status": {"$ne": DUPLICATE},
-    }
-    best: dict[str, tuple[int, ObjectId]] = {}
-    async for copy in jobs_collection.find(query, {"_id": 1, "group_id": 1, "user_status": 1}):
+    query = and_(or_(J.id.in_(roots), J.group_id.in_(roots)), store.ne(J.user_status, DUPLICATE))
+    best: dict[str, tuple[int, str]] = {}
+    for copy in await store.find(query, history=False, description=False):
         status = copy.get("user_status")
         rank = 0 if status in DECIDED else 2 if status == BLOCKED else 1
         root = group_root(copy)
@@ -205,9 +202,6 @@ async def duplicate_targets(docs: list[dict[str, Any]]) -> dict[str, str]:
     }
 
 
-_COPY_FIELDS = {"_id": 1, "group_id": 1, "platform_name": 1, "user_status": 1, "outcome": 1}
-
-
 async def group_copies(docs: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     """For each of `docs`: the other vacancies of its group, oldest first, with their status. One query per page.
 
@@ -215,10 +209,11 @@ async def group_copies(docs: list[dict[str, Any]]) -> dict[str, list[dict[str, A
     (it joins by `group_id` only). A stored copy the group query did not return is kept, without a status.
     """
     roots = {group_root(doc) for doc in docs}
-    object_ids = [ObjectId(root) for root in roots if ObjectId.is_valid(root)]
-    query = {"$or": [{"_id": {"$in": object_ids}}, {"group_id": {"$in": list(roots)}}]}
     members: dict[str, list[dict[str, Any]]] = {}
-    async for member in jobs_collection.find(query, _COPY_FIELDS):
+    if not roots:
+        return {}
+    query = or_(J.id.in_(roots), J.group_id.in_(roots))
+    for member in await store.find(query, history=False, description=False):
         members.setdefault(group_root(member), []).append(member)
     result: dict[str, list[dict[str, Any]]] = {}
     for doc in docs:
@@ -234,7 +229,7 @@ async def group_copies(docs: list[dict[str, Any]]) -> dict[str, list[dict[str, A
     return result
 
 
-async def waiting_repeats(scope: dict[str, Any]) -> list[ObjectId]:
+async def waiting_repeats(scope: ColumnElement[bool]) -> list[str]:
     """Among the waiting vacancies the list's filters (`scope`) select: all but the latest of each group.
 
     A repost or another board's copy found in a later run while the group was unanswered waits next to the
@@ -243,9 +238,9 @@ async def waiting_repeats(scope: dict[str, Any]) -> list[ObjectId]:
     its `copies`. Only copies the same filters select count: a copy outside the period, the board or the
     words never hides one inside them. "pending" only, as _close_copies closes only those.
     """
-    found = jobs_collection.find({"$and": [scope, {"user_status": PENDING}]}, {**_COPY_FIELDS, "found_at": 1})
-    by_group: dict[str, list[tuple[datetime, ObjectId]]] = {}
-    async for doc in found:
+    found = await store.find(and_(scope, J.user_status == PENDING), history=False, description=False)
+    by_group: dict[str, list[tuple[datetime, str]]] = {}
+    for doc in found:
         by_group.setdefault(group_root(doc), []).append((doc["found_at"], doc["_id"]))  # the list's own order
     return [earlier for keys in by_group.values() for _, earlier in sorted(keys)[:-1]]
 
@@ -282,22 +277,23 @@ def parse_choice(name: str, raw: str | None, allowed: tuple[str, ...]) -> list[s
     return list(dict.fromkeys(values))
 
 
-def status_condition(status: str) -> dict[str, Any]:
+def status_condition(status: str) -> ColumnElement[bool]:
+    """A public status as a condition on the stored fields (the reverse of public_status)."""
     if status == "new":
-        return {"user_status": {"$in": ["pending", None]}}
+        return store.in_(J.user_status, ["pending", None])
     if status == "applied":
-        return {"user_status": "applied", "outcome": None}
+        return and_(J.user_status == "applied", J.outcome.is_(None))
     outcome = next((key for key, value in _OUTCOME_STATUS.items() if value == status), None)
     if outcome:
-        return {"user_status": "applied", "outcome": outcome}
-    return {"user_status": status}
+        return and_(J.user_status == "applied", J.outcome == outcome)
+    return store.eq(J.user_status, status)
 
 
-def _tier_condition(tiers: list[str]) -> dict[str, Any]:
+def _tier_condition(tiers: list[str]) -> ColumnElement[bool]:
     moderation: list[str | None] = [t for t in tiers if t in SURFACED_TIERS]
     if "filtered_out" in tiers:
         moderation += ["rejected_by_filter", None]
-    return {"moderation": {"$in": moderation}}
+    return store.in_(J.moderation, moderation)
 
 
 def url_pattern(raw: str) -> str:
@@ -326,7 +322,7 @@ class Filters:
     statuses: list[str] = field(default_factory=list)
     tiers: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
-    words: list[dict[str, Any]] = field(default_factory=list)
+    words: list[ColumnElement[bool]] = field(default_factory=list)
     company: str | None = None
     url: str | None = None
     search: str | None = None
@@ -334,37 +330,38 @@ class Filters:
     filter_reasons: list[str] = field(default_factory=list)
     reason_codes: list[str] = field(default_factory=list)
 
-    def query(self, *, default_tiers: bool = True, repeats: bool = False, by_found: bool = True) -> dict[str, Any]:
+    def query(self, *, default_tiers: bool = True, repeats: bool = False, by_found: bool = True) -> ColumnElement[bool]:
         # by_found=False: the period is about events (funnel?by=event), not when it was found.
-        conditions: list[dict[str, Any]] = [{"found_at": {"$gte": self.start, "$lt": self.end}}] if by_found else []
+        conditions: list[ColumnElement[bool]] = [J.found_at >= self.start, J.found_at < self.end] if by_found else []
         if self.statuses:
-            conditions.append({"$or": [status_condition(status) for status in self.statuses]})
+            conditions.append(or_(*(status_condition(status) for status in self.statuses)))
         elif not repeats:
-            conditions.append({"user_status": {"$ne": DUPLICATE}})
+            conditions.append(store.ne(J.user_status, DUPLICATE))
         if self.tiers:
             conditions.append(_tier_condition(self.tiers))
         elif default_tiers and not self.filter_reasons:  # a filter reason is only on the filtered-out
             conditions.append(_tier_condition(list(SURFACED_TIERS)))
         if self.sources:
-            names = [re.compile(f"^{re.escape(source)}$", re.IGNORECASE) for source in self.sources]
-            conditions.append({"platform_name": {"$in": names}})
+            conditions.append(func.lower(J.platform_name).in_([source.lower() for source in self.sources]))
         if self.company:
-            conditions.append({"company": {"$regex": case_free(self.company)}})
+            conditions.append(matches(J.company, case_free(self.company)))
         if self.url:
-            conditions.append({"link": {"$regex": url_pattern(self.url)}})
+            conditions.append(matches(J.link, url_pattern(self.url)))
         if self.search:
-            conditions.append({"search_url": {"$regex": case_free(self.search)}})
+            conditions.append(matches(J.search_url, case_free(self.search)))
         if self.source_id:
-            conditions.append({"job_id": self.source_id})
+            conditions.append(J.job_id == self.source_id)
         if self.filter_reasons:
-            conditions.append({"filter_reason": {"$in": self.filter_reasons}})
+            conditions.append(J.filter_reason.in_(self.filter_reasons))
         if self.reason_codes:
-            conditions.append({"status_reason": {"$in": self.reason_codes}})
+            conditions.append(J.status_reason.in_(self.reason_codes))
         conditions += self.words
-        return {"$and": conditions}
+        return and_(true(), *conditions)
 
 
-def build_words(any_words: list[str], all_words: list[str], no_words: list[str], where: str) -> list[dict[str, Any]]:
+def build_words(
+    any_words: list[str], all_words: list[str], no_words: list[str], where: str
+) -> list[ColumnElement[bool]]:
     if where not in WHERE_FIELDS:
         raise InvalidParameter(f"where: unknown value {where!r}; one of: {', '.join(WHERE_FIELDS)}")
     for name, words in (("any", any_words), ("all", all_words), ("none", no_words)):
@@ -383,38 +380,38 @@ def encode_cursor(doc: dict[str, Any]) -> str:
     return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
 
 
-def decode_cursor(raw: str) -> tuple[datetime, ObjectId]:
+def decode_cursor(raw: str) -> tuple[datetime, str]:
     try:
         payload = json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
-        return datetime.fromisoformat(payload["f"]), ObjectId(payload["i"])
-    except (binascii.Error, ValueError, KeyError, TypeError, UnicodeDecodeError, InvalidId):
+        found_at, job_id = datetime.fromisoformat(payload["f"]), payload["i"]
+    except (binascii.Error, ValueError, KeyError, TypeError, UnicodeDecodeError):
         raise InvalidParameter("cursor: not a next_cursor this API returned; start without it") from None
+    if not store.valid_id(job_id):
+        raise InvalidParameter("cursor: not a next_cursor this API returned; start without it")
+    return found_at, job_id
 
 
-def after_cursor(query: dict[str, Any], cursor: str | None) -> dict[str, Any]:
+def after_cursor(query: ColumnElement[bool], cursor: str | None) -> ColumnElement[bool]:
     """Keyset paging, newest first: only what sorts after the last vacancy of the previous page.
 
     Vacancies found while the client pages sort before the cursor, so they never shift a page.
     """
     if not cursor:
         return query
-    found_at, object_id = decode_cursor(cursor)
-    older = {"$or": [{"found_at": {"$lt": found_at}}, {"found_at": found_at, "_id": {"$lt": object_id}}]}
-    return {"$and": [query, older]}
+    found_at, job_id = decode_cursor(cursor)
+    return and_(query, or_(J.found_at < found_at, and_(J.found_at == found_at, J.id < job_id)))
 
 
-LIST_SORT = [("found_at", -1), ("_id", -1)]
+LIST_SORT = (J.found_at.desc(), J.id.desc())
 
 
 async def list_jobs(filters: Filters, limit: int, cursor: str | None, with_description: bool = False) -> dict[str, Any]:
     query = filters.query()
     # A lookup by link or board id finds the copy it names; a browsing list shows one vacancy per group.
     if not (filters.url or filters.source_id) and (repeats := await waiting_repeats(query)):
-        query = {"$and": [query, {"$nor": [{"_id": {"$in": repeats}}]}]}
+        query = and_(query, J.id.not_in(repeats))
     query = after_cursor(query, cursor)
-    projection = None if with_description else {"description": 0}
-    found = jobs_collection.find(query, projection).sort(LIST_SORT).limit(limit + 1)
-    docs = [doc async for doc in found]
+    docs = await store.find(query, order=LIST_SORT, limit=limit + 1, description=with_description)
     page, more = docs[:limit], len(docs) > limit
     targets = await duplicate_targets(page)
     copies = await group_copies(page)
@@ -431,9 +428,7 @@ async def list_jobs(filters: Filters, limit: int, cursor: str | None, with_descr
 
 
 async def get_job(job_id: str) -> dict[str, Any] | None:
-    if not ObjectId.is_valid(job_id):
-        return None
-    doc = await jobs_collection.find_one({"_id": ObjectId(job_id)})
+    doc = await store.get(job_id)
     if doc is None:
         return None
     targets = await duplicate_targets([doc])
@@ -446,9 +441,7 @@ async def open_link(job_id: str) -> str | None:
 
     A storage failure is raised: the caller answers 503, not 404.
     """
-    if not ObjectId.is_valid(job_id):
-        return None
-    doc = await jobs_collection.find_one_and_update({"_id": ObjectId(job_id)}, {"$inc": {"click_count": 1}})
+    doc = await store.increment(job_id, "click_count")
     return str(doc["link"]) if doc and doc.get("link") else None
 
 
@@ -559,7 +552,7 @@ def funnel_groups(docs: list[dict[str, Any]], group_by: str) -> list[dict[str, A
 async def funnel(filters: Filters, group_by: str) -> dict[str, Any]:
     # Every tier: the funnel reports what the filter dropped too. Repeats are only counted.
     query = filters.query(default_tiers=False, repeats=True)
-    docs = [doc async for doc in jobs_collection.find(query, {"description": 0})]
+    docs = await store.find(query, description=False)
     # An empty period is a real answer: zeros, not an empty list, when nothing is grouped.
     groups = funnel_groups(docs, group_by) or ([_finish(_empty_group("all"))] if group_by == "none" else [])
     return {

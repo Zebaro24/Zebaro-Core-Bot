@@ -16,7 +16,6 @@ from typing import Any
 
 from src.config import settings
 from src.core.base_service import BaseService
-from src.services.github import store
 from src.services.github.api import GithubApp
 from src.services.github.events import Event, parse
 
@@ -51,8 +50,6 @@ class GithubService(BaseService):
         if not self.ready:
             logger.warning("GitHub App is not configured (GH_APP_ID, GH_APP_KEY): the webhook refuses events")
             return
-        # Before the first event: an event adds its repo, and the import only runs while nothing is set up.
-        await self._import_legacy()
         self._spawn(self._redeliver())
         logger.info("GitHub service enabled")
 
@@ -89,18 +86,6 @@ class GithubService(BaseService):
         task = asyncio.ensure_future(coro)
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
-
-    async def _import_legacy(self) -> None:
-        """The old service's repo → topic list (Mongo), once, so the forum keeps its topics."""
-        try:
-            from src.db.client import github_notification_collection
-
-            records = await github_notification_collection.find().to_list(length=None)
-            imported = await store.import_legacy(records)
-            if imported:
-                logger.info("Imported %d GitHub repos from the old setup", imported)
-        except Exception as e:
-            logger.info("Old GitHub setup not imported: %s", e)
 
     async def _redeliver(self) -> None:
         await asyncio.sleep(REDELIVER_DELAY)

@@ -1,5 +1,5 @@
 import sys
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 mock_settings = MagicMock()
 mock_settings.app_name = "test"
@@ -8,7 +8,6 @@ mock_settings.version = "0.0.0"
 mock_settings.debug = False
 
 sys.modules["src.config"] = MagicMock(settings=mock_settings)
-sys.modules["src.db.client"] = MagicMock(jobs_collection=MagicMock(), start_db=AsyncMock())
 
 from src.interfaces.webhooks.main import app  # noqa: E402
 

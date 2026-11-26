@@ -29,7 +29,6 @@ ADMIN = [
     BotCommand(command="spotify", description="Spotify Family: банка, долги, напоминания"),
     BotCommand(command="github", description="GitHub: репо, уровни, темы форума"),
     BotCommand(command="services", description="Сервисы и инфраструктура"),
-    BotCommand(command="mongo", description="База MongoDB"),
 ]
 
 

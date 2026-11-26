@@ -1,15 +1,17 @@
 """Whole-word search in vacancy texts: `any=ai` finds "AI/ML" and "AI-powered", not "email".
 
 A word matches where the characters around it are not letters or digits. The pattern is built
-here once and works the same in Python's `re` and in MongoDB's PCRE, so the tests check exactly
-what the database runs.
+here once and works the same in Python's `re` (SQLite in the tests) and in PostgreSQL's regexes
+(lookbehind, character classes, whitespace), so the tests check what the database runs.
 
-The production MongoDB (4.4) folds case only for ASCII unless its PCRE has Unicode properties,
-so no "i" option is used: every letter is spelled in both cases ("[дД][жЖ][уУ][нН]").
+No case-insensitive flag: every letter is spelled in both cases ("[дД][жЖ][уУ][нН]") — the same
+on every engine whatever its locale (a habit from MongoDB 4.4, whose PCRE folded only ASCII).
 """
 
 import re
 from typing import Any
+
+from sqlalchemy import ColumnElement, func, not_, or_
 
 MAX_WORDS = 20
 MAX_WORD_LENGTH = 50
@@ -54,19 +56,27 @@ def has_word(text: str | None, word: str) -> bool:
 WHERE_FIELDS = {"title": ("title",), "description": ("description",), "both": ("title", "description")}
 
 
+def matches(column: Any, pattern: str) -> ColumnElement[bool]:
+    """`column` has a match of `pattern`; a missing text is an empty one (so "none of" holds for it)."""
+    result: ColumnElement[bool] = func.coalesce(column, "").regexp_match(pattern)
+    return result
+
+
 def words_query(
     any_words: list[str], all_words: list[str], no_words: list[str], where: str = "both"
-) -> list[dict[str, Any]]:
-    """MongoDB conditions to AND together: at least one of, each of, none of the words."""
-    fields = WHERE_FIELDS[where]
+) -> list[ColumnElement[bool]]:
+    """SQL conditions to AND together: at least one of, each of, none of the words."""
+    from src.services.job_searcher.store import J  # words.py is imported where no DB is
 
-    def anywhere(words: list[str]) -> list[dict[str, Any]]:
-        return [{field: {"$regex": word_pattern(word)}} for word in words for field in fields]
+    columns = [getattr(J, name) for name in WHERE_FIELDS[where]]
 
-    conditions: list[dict[str, Any]] = []
+    def anywhere(words: list[str]) -> ColumnElement[bool]:
+        return or_(*(matches(column, word_pattern(word)) for word in words for column in columns))
+
+    conditions: list[ColumnElement[bool]] = []
     if any_words:
-        conditions.append({"$or": anywhere(any_words)})
-    conditions += [{"$or": anywhere([word])} for word in all_words]
+        conditions.append(anywhere(any_words))
+    conditions += [anywhere([word]) for word in all_words]
     if no_words:
-        conditions.append({"$nor": anywhere(no_words)})
+        conditions.append(not_(anywhere(no_words)))
     return conditions

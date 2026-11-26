@@ -209,24 +209,6 @@ async def replace_topic(old_id: int, chat_id: int, thread_id: int, name: str) ->
     return new
 
 
-async def import_legacy(records: list[dict[str, Any]]) -> int:
-    """The Mongo `github_notification` rows of the old service, once, while nothing is configured here."""
-    async with _open() as s:
-        if await s.scalar(select(GithubRepo.id).limit(1)) is not None:
-            return 0
-    count = 0
-    for rec in records:
-        name, chat_id, thread_id = rec.get("full_repo_name"), rec.get("tg_chat_id"), rec.get("thread_id")
-        if not name or not chat_id:
-            continue
-        cfg = await repo(name)
-        if thread_id:
-            t = await save_topic(int(chat_id), int(thread_id), name.split("/")[-1])
-            await set_topic(cfg.id, t.id)
-        count += 1
-    return count
-
-
 # ── live messages ──────────────────────────────────────────────────────────────
 
 

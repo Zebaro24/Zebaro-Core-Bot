@@ -4,14 +4,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiogram.exceptions import TelegramBadRequest
-from bson import ObjectId
 
 if "src.config" not in sys.modules:
     sys.modules["src.config"] = MagicMock(settings=MagicMock())
-if "src.db.client" not in sys.modules:
-    sys.modules["src.db.client"] = MagicMock(jobs_collection=MagicMock(), start_db=AsyncMock())
 
-from fake_jobs import FakeJobs  # (pytest puts this directory on sys.path)
+from fake_jobs import SqlJobs, SqlMeta
 
 from src.interfaces.tg.notification import ai_notes
 from src.interfaces.tg.notification.ai_notes import CURRENT, NOTES_PER_MESSAGE, SESSION
@@ -20,7 +17,8 @@ from src.interfaces.tg.notification.ai_notes import CURRENT, NOTES_PER_MESSAGE, 
 def _vacancy(n: int, to: str = "not_interested", code: str | None = "role", reason: str | None = None):
     event = {"id": f"ev{n}", "from": "new", "to": to, "actor": "ai", "reason_code": code, "reason": reason}
     doc = {
-        "_id": ObjectId(f"{n:024x}"),
+        "_id": f"{n:024x}",
+        "found_at": datetime(2026, 11, 16),
         "title": f"Engineer {n}",
         "company": f"Co{n}",
         "user_status": to,
@@ -31,10 +29,8 @@ def _vacancy(n: int, to: str = "not_interested", code: str | None = "role", reas
 
 
 @pytest.fixture
-def stores(mocker):
-    jobs, meta = FakeJobs(), FakeJobs()
-    mocker.patch.object(ai_notes, "jobs_collection", jobs)
-    mocker.patch.object(ai_notes, "meta_collection", meta)
+def stores(sql_db, mocker):
+    jobs, meta = SqlJobs(sql_db, mocker), SqlMeta(sql_db)
     return jobs, meta
 
 

@@ -15,7 +15,6 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
-from pymongo.errors import PyMongoError
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.config import settings
@@ -377,7 +376,7 @@ async def _guarded(build: Any) -> Any:
         return await build()
     except InvalidParameter as e:
         raise ApiError(400, "invalid_parameter", str(e)) from None
-    except (PyMongoError, SQLAlchemyError) as e:
+    except (SQLAlchemyError, OSError) as e:  # OSError: asyncpg cannot reach the server at all
         logger.warning("Jobs API: storage unavailable: %s", e)
         raise ApiError(503, "storage_unavailable", "Job storage is unavailable; try again later") from None
 
@@ -450,11 +449,11 @@ async def funnel(
             body = await events.event_funnel(filters, group_by)
         else:
             body = {**await jobs_api.funnel(filters, group_by), "by": "found"}
-        # The numbers live in MongoDB and do not wait for SQL. Without it the journal is null with
+        # The numbers do not wait for the journal. Without it the journal is null with
         # a reason, never []: an empty list would read as "the owner changed nothing".
         try:
             return {**body, "journal": await journal.entries(filters.start, filters.end), "journal_error": None}
-        except SQLAlchemyError as e:
+        except (SQLAlchemyError, OSError) as e:
             logger.warning("Funnel without the journal: SQL storage unavailable: %s", e)
             return {**body, "journal": None, "journal_error": "unavailable"}
 

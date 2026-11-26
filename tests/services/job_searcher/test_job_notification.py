@@ -9,7 +9,6 @@ mock_settings.telegram_docker_access_ids = [123]
 mock_settings.webhook_url = "https://test.zebaro.dev"
 
 sys.modules["src.config"] = MagicMock(settings=mock_settings)
-sys.modules["src.db.client"] = MagicMock(jobs_collection=MagicMock(), start_db=AsyncMock())
 
 from src.interfaces.tg.notification import job_notification as notification  # noqa: E402
 from src.interfaces.tg.notification.job_notification import _get_reply_markup  # noqa: E402

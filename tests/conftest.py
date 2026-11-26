@@ -14,6 +14,7 @@ import os
 import pytest_asyncio
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 
 @pytest_asyncio.fixture
@@ -23,7 +24,9 @@ async def sql_db(tmp_path, monkeypatch):
     from src.db import sql
 
     url = os.environ.get("TEST_DATABASE_URL") or f"sqlite+aiosqlite:///{tmp_path / 'test.db'}"
-    engine = create_async_engine(url)
+    # No pool: the API tests drive the app on an event loop of their own, and a pooled connection
+    # belongs to the loop that opened it.
+    engine = create_async_engine(url, poolclass=NullPool)
     if engine.dialect.name == "sqlite":
 
         @event.listens_for(engine.sync_engine, "connect")

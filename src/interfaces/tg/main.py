@@ -7,7 +7,6 @@ from aiogram.client.bot import DefaultBotProperties
 
 from src.config import settings
 from src.core.service_manager import ServiceManager
-from src.infrastructure.mongodb import MongoDBInfra
 from src.infrastructure.playwright import PlaywrightInfra
 from src.interfaces.ds.service import DiscordService
 from src.interfaces.tg.commands import set_commands
@@ -16,7 +15,6 @@ from src.interfaces.tg.handlers.admin import (
     get_job_openings,
     github,
     job_stats,
-    mongo,
     server_speed,
     server_status,
     services,
@@ -80,7 +78,6 @@ async def start_bot() -> None:
     dp.include_router(server_speed.router)
     dp.include_router(docker.router)
     dp.include_router(job.router)
-    dp.include_router(mongo.router)
     dp.include_router(get_job_openings.router)
     dp.include_router(job_stats.router)
     dp.include_router(vpn.router)
@@ -98,7 +95,7 @@ async def start_bot() -> None:
     # S3: applications nobody answered → "no_response"; does nothing until the history backfill ran.
     scheduler.add_job(silence_job, "cron", hour=SILENCE_HOUR, id=SILENCE_JOB_ID)
     # Status changes made through the Jobs API → Telegram. Not paused with the job searcher: the API
-    # and this loop need MongoDB only. Picks up what a restart left pending.
+    # and this loop need the database only. Picks up what a restart left pending.
     scheduler.add_job(
         sync_job_messages, "interval", minutes=SYNC_MINUTES, args=[bot], id=SYNC_JOB_ID,
         max_instances=1, coalesce=True, next_run_time=datetime.now() + timedelta(seconds=20),
@@ -128,7 +125,6 @@ async def start_bot() -> None:
 
     # Register infrastructure and services with ServiceManager
     sm = ServiceManager.get_instance()
-    sm.register_infrastructure(MongoDBInfra())
     sm.register_infrastructure(PlaywrightInfra())
     sm.register_service(JobSearcherService(bot, scheduler))
     # One App for the service, its buttons and /github: the installation token is shared.

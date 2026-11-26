@@ -4,14 +4,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiogram.exceptions import TelegramBadRequest
-from bson import ObjectId
 
 if "src.config" not in sys.modules:
     sys.modules["src.config"] = MagicMock(settings=MagicMock())
-if "src.db.client" not in sys.modules:
-    sys.modules["src.db.client"] = MagicMock(jobs_collection=MagicMock(), start_db=AsyncMock())
 
-from fake_jobs import FakeJobs
+from fake_jobs import SqlJobs, SqlMeta
 
 from src.interfaces.tg.notification import review_summary
 from src.interfaces.tg.notification.review_summary import SUMMARY_CHUNK, place
@@ -19,7 +16,7 @@ from src.interfaces.tg.notification.review_summary import SUMMARY_CHUNK, place
 
 def _doc(n: int, **fields):
     return {
-        "_id": ObjectId(f"{n:024x}"),
+        "_id": f"{n:024x}",
         "title": f"Engineer {n}",
         "company": "Acme",
         "platform_name": "Dou",
@@ -31,10 +28,8 @@ def _doc(n: int, **fields):
 
 
 @pytest.fixture
-def stores(mocker):
-    jobs, meta = FakeJobs(), FakeJobs()
-    mocker.patch.object(review_summary, "jobs_collection", jobs)
-    mocker.patch.object(review_summary, "meta_collection", meta)
+def stores(sql_db, mocker):
+    jobs, meta = SqlJobs(sql_db, mocker), SqlMeta(sql_db)
     mocker.patch.object(review_summary, "today", return_value="2026-11-16")
     return jobs, meta
 
@@ -123,5 +118,5 @@ async def test_a_decided_vacancy_gets_its_status_mark_on_the_next_sync(stores):
     html = bot.edit_message_text.await_args.kwargs["rich_message"].html
     assert "(решено 1)" in html
     assert "<p>2. 👎 <b>Engineer 1</b>" in html
-    assert "review_stale" not in jobs.docs[1]
+    assert jobs.docs[1].get("review_stale") is None
     bot.send_rich_message.assert_awaited_once()  # a refresh never sends a new message

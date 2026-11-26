@@ -21,6 +21,7 @@ from alembic.config import Config
 from sqlalchemy import JSON, DateTime, String, event
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Dialect
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
@@ -139,6 +140,42 @@ def session() -> AsyncSession:
     get_engine()
     assert _sessions is not None
     return _sessions()
+
+
+async def kv_get(key: str) -> dict[str, Any] | None:
+    async with session() as s:
+        row = await s.get(Kv, key)
+        return dict(row.value) if row is not None else None
+
+
+async def kv_merge(key: str, fields: dict[str, Any]) -> None:
+    """Set `fields` in the value of `key`, the other fields kept; the row made if missing."""
+    async with session() as s:
+        row = await s.get(Kv, key, with_for_update=True)
+        if row is None:
+            s.add(Kv(key=key, value=dict(fields)))
+        else:
+            row.value = {**row.value, **fields}
+        await s.commit()
+
+
+async def kv_claim(key: str, field: str, value: Any) -> bool:
+    """Set value[field] = value unless it is that already: True only for the one writer that set it.
+
+    Two racing writers: the row lock (or, for a missing row, the primary key) lets one through."""
+    try:
+        async with session() as s:
+            row = await s.get(Kv, key, with_for_update=True)
+            if row is not None and row.value.get(field) == value:
+                return False
+            if row is None:
+                s.add(Kv(key=key, value={field: value}))
+            else:
+                row.value = {**row.value, field: value}
+            await s.commit()
+    except IntegrityError:  # the other writer made the row first
+        return False
+    return True
 
 
 def alembic_config() -> Config:

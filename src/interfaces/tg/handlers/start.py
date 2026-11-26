@@ -53,7 +53,6 @@ async def start_command(message: Message) -> None:
             "/job_stats - Статистика поиска, можно с периодом: /job_stats 30 📊\n"
             "/vpn - Люди в VPN: кто онлайн, трафик, файлы 🔐\n"
             "/spotify - Spotify Family: банка, долги, напоминания 🎧\n"
-            "/mongo - Обращение к базе MongoDB 🗄️\n"
             "/services - Управление сервисами и инфрой ⚙️",
             message_effect_id="5046509860389126442",
         )

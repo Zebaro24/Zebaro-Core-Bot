@@ -8,8 +8,6 @@ import pytest_asyncio
 
 if "src.config" not in sys.modules:
     sys.modules["src.config"] = MagicMock(settings=MagicMock())
-if "src.db.client" not in sys.modules:
-    sys.modules["src.db.client"] = MagicMock()
 
 from alembic import command
 from alembic.autogenerate import compare_metadata

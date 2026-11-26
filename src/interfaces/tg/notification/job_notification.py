@@ -147,7 +147,7 @@ async def _run_job_notification(bot: Bot) -> int:
         logger.info("Vacancies of muted companies: %d", muted)
 
     ids = await job_storage.save_jobs_to_db()
-    # Grouping runs after saving: the copies need real Mongo ids for their link buttons.
+    # Grouping runs after saving: the copies need their stored ids for their link buttons.
     await group_duplicates(job_storage.jobs, ids)
 
     sent = 0

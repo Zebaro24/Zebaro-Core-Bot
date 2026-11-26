@@ -2,7 +2,6 @@ import asyncio
 import logging
 
 from src.core.service_manager import ServiceManager
-from src.db import start_db
 from src.db.sql import migrate
 from src.interfaces.ds.main import start_bot as start_ds
 from src.interfaces.tg.main import start_bot as start_tg
@@ -31,7 +30,6 @@ async def main() -> None:
         logging.exception("SQL migration failed, the services on SQL will not work")
 
     tasks: list = [
-        start_db(),
         start_tg(),
         start_webhooks(),
     ]

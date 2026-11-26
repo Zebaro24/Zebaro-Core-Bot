@@ -7,8 +7,6 @@ from sqlalchemy import select
 
 if "src.config" not in sys.modules:
     sys.modules["src.config"] = MagicMock(settings=MagicMock())
-if "src.db.client" not in sys.modules:
-    sys.modules["src.db.client"] = MagicMock()
 
 from src.interfaces.tg.formatters.vpn import format_vpn_card, format_vpn_list, status_emoji
 from src.interfaces.tg.handlers.admin.vpn import parse_new

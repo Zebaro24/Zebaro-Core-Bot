@@ -23,7 +23,7 @@ class VpnService(BaseService):
 
     name = "vpn"
     display_name = "VPN в боте (/vpn, уведомления)"
-    infra_deps = ["mongodb"]
+    infra_deps: list[str] = []
 
     def __init__(self, scheduler: AsyncIOScheduler) -> None:
         self._scheduler = scheduler

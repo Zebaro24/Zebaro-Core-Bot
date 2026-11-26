@@ -9,8 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-from bson import ObjectId
-from pymongo.errors import ServerSelectionTimeoutError
+from sqlalchemy.exc import OperationalError
 
 mock_settings = MagicMock()
 mock_settings.app_name = "test"
@@ -22,11 +21,11 @@ mock_settings.jobs_api_token = "api-token"
 mock_settings.tz = "Europe/Berlin"
 
 sys.modules["src.config"] = MagicMock(settings=mock_settings)
-sys.modules["src.db.client"] = MagicMock(jobs_collection=MagicMock(), start_db=AsyncMock())
 
 # pytest puts this directory on sys.path (no __init__.py): the helper is a top-level module.
-from fake_jobs import FakeJobs  # noqa: E402
+from fake_jobs import SqlJobs  # noqa: E402
 
+from src.db.sql import new_id  # noqa: E402
 from src.interfaces.webhooks.main import app  # noqa: E402
 from src.services.job_searcher import jobs_api  # noqa: E402
 from src.services.job_searcher.jobs_api import InvalidParameter, public_status, url_pattern  # noqa: E402
@@ -42,7 +41,7 @@ NOW = datetime(2026, 10, 29, 12, 0, 0)
 
 def _doc(title: str = "Python Developer", minutes_ago: int = 60, **fields: Any) -> dict[str, Any]:
     return {
-        "_id": ObjectId(),
+        "_id": new_id(),
         "platform_name": "Dou",
         "title": title,
         "company": "Acme",
@@ -55,10 +54,12 @@ def _doc(title: str = "Python Developer", minutes_ago: int = 60, **fields: Any) 
     }
 
 
+DOWN = OperationalError("SELECT", {}, Exception("the database is down"))
+
+
 @pytest.fixture
-def jobs(mocker):
-    fake = FakeJobs()
-    mocker.patch.object(jobs_api, "jobs_collection", fake)
+def jobs(sql_db, mocker):
+    fake = SqlJobs(sql_db, mocker)
     mocker.patch.object(jobs_api, "settings", mock_settings)
     mocker.patch("src.interfaces.webhooks.routes.jobs.settings", mock_settings)
     # The owner's journal lives in SQL; these tests are about the vacancies.
@@ -277,8 +278,7 @@ def test_vacancies_found_at_the_same_moment_page_by_id(client, jobs):
 
 
 def test_storage_down_is_a_503(client, jobs, mocker):
-    down = ServerSelectionTimeoutError("no servers")
-    mocker.patch.object(jobs_api, "jobs_collection", MagicMock(find=MagicMock(side_effect=down)))
+    mocker.patch.object(jobs_api.store, "find", AsyncMock(side_effect=DOWN))
 
     response = _get(client, "/jobs")
 
@@ -289,7 +289,7 @@ def test_storage_down_is_a_503(client, jobs, mocker):
 
 
 def test_one_vacancy_comes_with_its_text_and_copies(client, jobs):
-    copy_id = str(ObjectId())
+    copy_id = new_id()
     doc = _doc(
         copies=[{"platform": "Djinni", "id": copy_id}], date=datetime(2026, 10, 28), applicants=37, warnings=["english"]
     )
@@ -316,7 +316,7 @@ def test_one_vacancy_names_its_cv_and_what_it_lacks(client, jobs):
     assert listed["cv"] == "backend" and "cv_match" not in listed
 
 
-def _group(jobs: FakeJobs, *statuses: str, platforms: tuple[str, ...] = ("Djinni", "Dou", "Work.ua")) -> list[dict]:
+def _group(jobs: SqlJobs, *statuses: str, platforms: tuple[str, ...] = ("Djinni", "Dou", "Work.ua")) -> list[dict]:
     """A group as dedup stores it: the root with group_id = its own id, later copies pointing at it."""
     root = _doc("Python Developer", 300, platform_name=platforms[0], user_status=statuses[0])
     root["group_id"] = str(root["_id"])
@@ -410,7 +410,7 @@ def test_one_vacancy_lists_the_copies_found_in_later_runs(client, jobs):
     assert [(c["source"], c["status"]) for c in body["copies"]] == [("Dou", "duplicate"), ("Work.ua", "duplicate")]
 
 
-@pytest.mark.parametrize("job_id", [str(ObjectId()), "not-an-id"])
+@pytest.mark.parametrize("job_id", [new_id(), "not-an-id"])
 def test_an_unknown_vacancy_is_a_404(client, job_id):
     response = client.get(f"/jobs/{job_id}", headers=AUTH)
     assert response.status_code == 404 and response.json()["error"]["code"] == "not_found"
@@ -508,7 +508,7 @@ def test_the_list_example_in_the_contract_is_a_real_answer(client, jobs):
     example = _contract_json("## GET /jobs — list")["items"][0]
     jobs.docs.append(
         {
-            "_id": ObjectId(example["id"]),
+            "_id": example["id"],
             "platform_name": "Djinni",
             "title": example["title"],
             "company": example["company"],
@@ -533,7 +533,7 @@ def test_the_list_example_in_the_contract_is_a_real_answer(client, jobs):
     copy = example["copies"][0]
     jobs.docs.append(
         _doc(
-            _id=ObjectId(copy["id"]),
+            _id=copy["id"],
             platform_name=copy["source"],
             group_id=copy["id"],
             found_at=datetime(2026, 10, 27, 9, 0),
@@ -569,22 +569,22 @@ def test_the_schema_lists_the_api_routes():
 
 
 def test_the_vacancy_link_stays_public_and_answers_in_fastapis_format(client, mocker):
-    mocker.patch.object(jobs_api, "jobs_collection", MagicMock(find_one_and_update=AsyncMock(return_value=None)))
+    mocker.patch.object(jobs_api.store, "increment", AsyncMock(return_value=None))
 
-    response = client.get(f"/jobs/r/{ObjectId()}", headers={})
+    response = client.get(f"/jobs/r/{new_id()}", headers={})
 
     assert response.status_code == 404 and response.json() == {"detail": "Job not found"}
 
 
 def test_a_vacancy_link_counts_the_click_and_leads_to_the_vacancy(client, mocker):
     update = AsyncMock(return_value={"link": "https://djinni.co/jobs/1"})
-    mocker.patch.object(jobs_api, "jobs_collection", MagicMock(find_one_and_update=update))
-    job_id = ObjectId()
+    mocker.patch.object(jobs_api.store, "increment", update)
+    job_id = new_id()
 
     response = client.get(f"/jobs/r/{job_id}", headers={})  # httpx does not follow redirects by default
 
     assert response.status_code == 302 and response.headers["location"] == "https://djinni.co/jobs/1"
-    update.assert_awaited_once_with({"_id": job_id}, {"$inc": {"click_count": 1}})
+    update.assert_awaited_once_with(job_id, "click_count")
 
 
 def test_a_vacancy_link_with_a_broken_id_is_a_404(client):
@@ -674,8 +674,7 @@ def test_the_digest_is_the_friday_numbers_with_utc_dates(client, mocker):
 def test_the_digest_with_the_db_down_is_a_503_not_an_empty_week(client, mocker):
     from src.services.job_searcher import digest
 
-    down = MagicMock(find=MagicMock(side_effect=ServerSelectionTimeoutError("no servers")))
-    mocker.patch.object(digest, "jobs_collection", down)
+    mocker.patch.object(digest.store, "find", AsyncMock(side_effect=DOWN))
 
     response = client.get("/jobs/digest", headers=AUTH)
 

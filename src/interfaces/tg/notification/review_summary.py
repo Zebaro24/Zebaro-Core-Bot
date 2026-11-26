@@ -18,16 +18,17 @@ from typing import Any
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramRetryAfter
 from aiogram.types import InlineKeyboardMarkup, InputRichMessage
-from bson import ObjectId
-from pymongo.errors import PyMongoError
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.config import settings
-from src.db.client import jobs_collection, meta_collection
+from src.db import sql
 from src.interfaces.tg.formatters.job import review_summary_html, review_summary_plain
 from src.interfaces.tg.formatters.job_status import status_words
 from src.interfaces.tg.keyboards.job import get_job_summary_kb
+from src.services.job_searcher import store
 from src.services.job_searcher.container import Job
 from src.services.job_searcher.jobs_api import public_status
+from src.services.job_searcher.models import ReviewSummary
 
 logger = logging.getLogger("tg.notification.review_summary")
 
@@ -39,8 +40,10 @@ _STALE_BATCH = 200
 _lock = asyncio.Lock()
 
 
-def _key(day: str) -> str:
-    return f"review_summary:{day}"
+async def _state(day: str) -> dict[str, Any] | None:
+    async with sql.session() as s:
+        row = await s.get(ReviewSummary, day)
+        return {"parts": list(row.parts)} if row is not None else None
 
 
 def today() -> str:
@@ -75,9 +78,9 @@ async def add_to_summary(bot: Bot, ids: list[str]) -> int:
     day = today()
     async with _lock:
         try:
-            state = await meta_collection.find_one({"_id": _key(day)}) or {}
+            state = await _state(day) or {}
             known = True
-        except PyMongoError as e:
+        except SQLAlchemyError as e:
             # Sent as a message of its own and not stored: the day's stored messages stay tracked.
             logger.warning("Review summary: storage unavailable, sending the run's summary apart: %s", e)
             state, known = {}, False
@@ -86,10 +89,8 @@ async def add_to_summary(bot: Bot, ids: list[str]) -> int:
         if known:
             await _save(day, parts)
     try:
-        await jobs_collection.update_many(
-            {"_id": {"$in": [ObjectId(job_id) for job_id in ids]}}, {"$set": {"review_day": day}}
-        )
-    except PyMongoError as e:  # the summary is out; only its later status marks are lost
+        await store.update_where(store.J.id.in_(ids), {"review_day": day})
+    except SQLAlchemyError as e:  # the summary is out; only its later status marks are lost
         logger.warning("Review summary: could not mark the vacancies of %s: %s", day, e)
     return len(set(ids) & shown)
 
@@ -97,23 +98,20 @@ async def add_to_summary(bot: Bot, ids: list[str]) -> int:
 async def refresh_stale_summaries(bot: Bot) -> int:
     """Re-render the days whose vacancies changed status since. Returns how many days."""
     try:
-        found = jobs_collection.find({"review_stale": True}, {"_id": 1, "review_day": 1}).limit(_STALE_BATCH)
-        stale = [doc async for doc in found]
+        stale = await store.find(store.J.review_stale.is_(True), limit=_STALE_BATCH, history=False, description=False)
         if not stale:
             return 0
         # Cleared before the render reads the statuses: a write landing meanwhile marks it again.
-        await jobs_collection.update_many(
-            {"_id": {"$in": [doc["_id"] for doc in stale]}}, {"$unset": {"review_stale": ""}}
-        )
-    except PyMongoError as e:
+        await store.update_where(store.J.id.in_([doc["_id"] for doc in stale]), {"review_stale": None})
+    except SQLAlchemyError as e:
         logger.warning("Review summary: storage unavailable: %s", e)
         return 0
     days = sorted({doc["review_day"] for doc in stale if doc.get("review_day")})
     async with _lock:  # a run adding to the day at the same time must not be rendered over
         for day in days:
             try:
-                state = await meta_collection.find_one({"_id": _key(day)})
-            except PyMongoError as e:
+                state = await _state(day)
+            except SQLAlchemyError as e:
                 logger.warning("Review summary: storage unavailable: %s", e)
                 return 0
             if state and state.get("parts"):
@@ -123,16 +121,22 @@ async def refresh_stale_summaries(bot: Bot) -> int:
 
 async def _save(day: str, parts: list[dict[str, Any]]) -> None:
     try:
-        await meta_collection.update_one({"_id": _key(day)}, {"$set": {"parts": parts}}, upsert=True)
-    except PyMongoError as e:  # tomorrow starts anew anyway; today's next run sends a new message
+        async with sql.session() as s:
+            row = await s.get(ReviewSummary, day, with_for_update=True)
+            if row is None:
+                s.add(ReviewSummary(day=day, parts=list(parts)))
+            else:
+                row.parts = list(parts)
+            await s.commit()
+    except SQLAlchemyError as e:  # tomorrow starts anew anyway; today's next run sends a new message
         logger.warning("Review summary: could not store the messages of %s: %s", day, e)
 
 
 async def _docs(parts: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    ids = [ObjectId(job_id) for part in parts for job_id in part["ids"]]
+    ids = [job_id for part in parts for job_id in part["ids"]]
     try:
-        return {str(doc["_id"]): doc async for doc in jobs_collection.find({"_id": {"$in": ids}}, {"description": 0})}
-    except PyMongoError as e:
+        return {doc["_id"]: doc for doc in await store.find(store.J.id.in_(ids), description=False)}
+    except SQLAlchemyError as e:
         logger.warning("Review summary: could not read the vacancies: %s", e)
         return {}
 

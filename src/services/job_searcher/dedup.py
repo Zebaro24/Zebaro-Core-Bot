@@ -29,9 +29,9 @@ from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from typing import Any
 
-from bson import ObjectId
+from sqlalchemy import and_
 
-from src.db.client import jobs_collection
+from src.services.job_searcher import store
 from src.services.job_searcher.container import Job
 
 logger = logging.getLogger("job_searcher.dedup")
@@ -150,10 +150,10 @@ def _clusters(pairs: list[tuple[Job, str | None]]) -> list[list[tuple[Job, str |
 async def _recent_docs(exclude: set[str]) -> list[dict[str, Any]]:
     """The sent vacancies of the last HISTORY_DAYS, newest first, without their texts."""
     since = datetime.utcnow() - timedelta(days=HISTORY_DAYS)
-    docs = jobs_collection.find(
-        {"found_at": {"$gte": since}, "moderation": {"$ne": "rejected_by_filter"}}, {"description": 0}
+    docs = await store.find(
+        and_(store.J.found_at >= since, store.ne(store.J.moderation, "rejected_by_filter")), description=False
     )
-    found = [doc async for doc in docs if str(doc.get("_id")) not in exclude]
+    found = [doc for doc in docs if str(doc.get("_id")) not in exclude]
     return sorted(found, key=lambda doc: doc.get("found_at") or datetime.min, reverse=True)
 
 
@@ -223,7 +223,7 @@ def _apply_history(cluster: list[tuple[Job, str | None]], recent: list[dict[str,
 async def group_duplicates(jobs: list[Job], job_ids: list[str | None]) -> None:
     """Group this run's vacancies with each other and with the last LOOKBACK_DAYS; store it.
 
-    Runs after the batch is saved: the copies need their Mongo ids for the link buttons.
+    Runs after the batch is saved: the copies need their stored ids for the link buttons.
     """
     pairs = [(job, job_id) for job, job_id in zip(jobs, job_ids, strict=True) if job.moderation != "rejected_by_filter"]
     if not pairs:
@@ -260,20 +260,18 @@ async def _store(pairs: list[tuple[Job, str | None]]) -> None:
         if not job_id or not job.group_id:
             continue
         try:
-            await jobs_collection.update_one(
-                {"_id": ObjectId(job_id)},
+            await store.update(
+                job_id,
                 {
-                    "$set": {
-                        "group_id": job.group_id,
-                        "user_status": job.user_status,
-                        "copies": job.copies,
-                        "similar_to": job.similar_to,
-                        "similar_to_platform": job.similar_to_platform,
-                        "similar_seen_at": job.similar_seen_at,
-                        "similar_status": job.similar_status,
-                        "similar_clicked": job.similar_clicked,
-                        "company_history": job.company_history,
-                    }
+                    "group_id": job.group_id,
+                    "user_status": job.user_status,
+                    "copies": job.copies,
+                    "similar_to": job.similar_to,
+                    "similar_to_platform": job.similar_to_platform,
+                    "similar_seen_at": job.similar_seen_at,
+                    "similar_status": job.similar_status,
+                    "similar_clicked": job.similar_clicked,
+                    "company_history": job.company_history,
                 },
             )
         except Exception as e:
@@ -283,7 +281,7 @@ async def _store(pairs: list[tuple[Job, str | None]]) -> None:
 async def muted_companies() -> set[str]:
     """The companies the owner asked never to be sent again."""
     try:
-        return {company for company in await jobs_collection.distinct("company", {"status_reason": MUTED}) if company}
+        return {company for company in await store.distinct(store.J.company, store.J.status_reason == MUTED) if company}
     except Exception as e:
         logger.warning("DB unavailable for the muted companies, sending them all: %s", e)
         return set()

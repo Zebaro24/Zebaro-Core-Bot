@@ -1,13 +1,11 @@
 import sys
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
 if "src.config" not in sys.modules:
     sys.modules["src.config"] = MagicMock(settings=MagicMock())
-if "src.db.client" not in sys.modules:
-    sys.modules["src.db.client"] = MagicMock(jobs_collection=MagicMock(), start_db=AsyncMock())
 
 from src.interfaces.tg.formatters.job_stats import (
     format_digest_plain,
@@ -207,11 +205,16 @@ def test_no_outcome_yet_shows_no_section():
 
 
 @pytest.mark.asyncio
-async def test_partial_matches_do_not_wait_for_an_answer(mocker):
+async def test_partial_matches_do_not_wait_for_an_answer(sql_db):
     """👀 are a side list: left alone, they are not counted as waiting (16.11.2026)."""
-    from src.services.job_searcher import digest
+    from src.services.job_searcher import digest, store
 
-    find = mocker.patch.object(digest, "_find", AsyncMock(return_value=[]))
-    await digest.get_digest(7)
-    pending = [call.args[0] for call in find.await_args_list if call.args[0].get("user_status") == "pending"]
-    assert pending == [{**pending[0], "moderation": {"$in": ["top", "sent"]}}]
+    found = datetime.utcnow() - timedelta(days=1)
+    await store.put([
+        {"title": tier, "moderation": tier, "user_status": status, "found_at": found}
+        for tier, status in (("top", "pending"), ("sent", "pending"), ("review", "pending"), ("sent", "applied"))
+    ])  # fmt: skip
+
+    me = (await digest.get_digest(7))["me"]
+
+    assert me["pending"]["count"] == 2  # top and sent; the 👀 and the answered one are not waiting

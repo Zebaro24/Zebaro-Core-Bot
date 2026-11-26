@@ -24,19 +24,13 @@ _JOB_IDS = [*(search_job_id(hour) for hour in SEARCH_HOURS), WEEKLY_DIGEST_ID]
 class JobSearcherService(BaseService):
     name = "job_searcher"
     display_name = "Job Searcher"
-    infra_deps = ["mongodb", "playwright"]
+    infra_deps = ["playwright"]
 
     def __init__(self, bot: Bot, scheduler: AsyncIOScheduler) -> None:
         self._bot = bot
         self._scheduler = scheduler
 
     async def on_enable(self) -> None:
-        from src.services.job_searcher.container import ensure_indexes, normalize_stored_dates
-        from src.services.job_searcher.repair import run_repairs
-
-        await normalize_stored_dates()
-        await ensure_indexes()
-        await run_repairs()  # before the searches resume: the Djinni cutoff is this moment
         for job_id in _JOB_IDS:
             job = self._scheduler.get_job(job_id)
             if job:

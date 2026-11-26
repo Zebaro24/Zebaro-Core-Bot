@@ -1,6 +1,6 @@
 """Writing a vacancy's status: one path for the Jobs API, the Telegram buttons and the bot itself.
 
-A change is one `find_one_and_update` that checks the status the writer saw (`expected`), sets
+A change is one conditional update (store.update) that checks the status the writer saw (`expected`), sets
 the stored fields the rest of the bot reads (`user_status`, `outcome`, `status_reason`, their
 dates) and appends the event to `history` — so the status and its journal never part. Telegram
 is told afterwards: `tg_sync` marks the document for the sync loop
@@ -17,13 +17,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from bson import ObjectId
-from bson.errors import InvalidId
-from pymongo import ReturnDocument
-from pymongo.errors import PyMongoError
+from sqlalchemy import and_
+from sqlalchemy.exc import SQLAlchemyError
 
-from src.db.client import jobs_collection
-from src.services.job_searcher import cv
+from src.services.job_searcher import cv, store
 from src.services.job_searcher.dedup import BLOCKED, DECIDED, DUPLICATE, PENDING, group_root
 from src.services.job_searcher.jobs_api import (
     STATUSES,
@@ -93,16 +90,9 @@ def storage_fields(status: str, reason_code: str | None, reason: str | None) -> 
     return {"user_status": user_status, "outcome": outcome, "status_reason": reason_code, "status_reason_text": reason}
 
 
-def _group_query(root: str) -> dict[str, Any]:
-    try:
-        return {"$or": [{"_id": ObjectId(root)}, {"group_id": root}]}
-    except InvalidId:
-        return {"group_id": root}
-
-
 async def group_docs(doc: dict[str, Any]) -> list[dict[str, Any]]:
     """Every copy of the vacancy (the same vacancy on other sites), this one included."""
-    return [copy async for copy in jobs_collection.find(_group_query(group_root(doc)))]
+    return await store.find(store.group_condition(group_root(doc)))
 
 
 def new_event(
@@ -147,11 +137,11 @@ async def set_cv_sent(job_id: str, key: str) -> dict[str, Any] | None:
     None when the vacancy is gone or is not one."""
     if key not in cv.TRACKS:
         raise ValueError(key)
-    return await jobs_collection.find_one_and_update(
-        {"_id": ObjectId(job_id), "user_status": "applied"},
-        {"$set": {"cv_sent": key}},
-        return_document=ReturnDocument.AFTER,
-    )
+    if not store.valid_id(job_id) or not await store.update(
+        job_id, {"cv_sent": key}, where=store.J.user_status == "applied"
+    ):
+        return None
+    return await store.get(job_id)
 
 
 async def write_status(
@@ -208,16 +198,14 @@ async def write_status(
             "attempts": 0,
             "next_at": now,
         }
-    after = await jobs_collection.find_one_and_update(
-        {"$and": [{"_id": doc["_id"]}, status_condition(expected)]},
-        {"$set": change, "$push": {"history": event}},
-        return_document=ReturnDocument.AFTER,
-    )
-    if after is None:
-        fresh = await jobs_collection.find_one({"_id": doc["_id"]})
+    if not await store.update(doc["_id"], change, where=status_condition(expected), event=event):
+        fresh = await store.get(doc["_id"])
         if fresh is None:
             raise JobNotFound(str(doc["_id"]))
         raise StatusConflict(public_status(fresh))
+    after = await store.get(doc["_id"])
+    if after is None:  # deleted between the write and the read: nothing stores vacancies away today
+        raise JobNotFound(str(doc["_id"]))
     if change["user_status"] in DECIDED and doc.get("user_status") not in DECIDED:
         await _close_copies(doc, group if group is not None else await group_docs(doc), event["id"], now)
     logger.info("Job %s: %s → %s by %s", doc["_id"], event["from"], to, actor)
@@ -229,12 +217,11 @@ async def _close_copies(doc: dict[str, Any], group: list[dict[str, Any]], cause:
     waiting = [copy for copy in group if copy["_id"] != doc["_id"] and copy.get("user_status") == PENDING]
     if not waiting:
         return
-    await jobs_collection.update_many(
-        {"_id": {"$in": [copy["_id"] for copy in waiting]}, "user_status": PENDING},
-        {
-            "$set": {"user_status": DUPLICATE, "status_updated_at": now},
-            "$push": {"history": _system_event(waiting[0], DUPLICATE, now, cause=cause)},
-        },
+    await store.update_many(
+        [copy["_id"] for copy in waiting],
+        {"user_status": DUPLICATE, "status_updated_at": now},
+        where=store.J.user_status == PENDING,
+        event=_system_event(waiting[0], DUPLICATE, now, cause=cause),
     )
 
 
@@ -244,7 +231,7 @@ async def undo(job_id: str, event_id: str) -> Written:
     Only the vacancy's last event can be undone, and only while the status is still the one it
     set; otherwise StatusConflict — something changed it since.
     """
-    doc = await jobs_collection.find_one({"_id": ObjectId(job_id)}) if ObjectId.is_valid(job_id) else None
+    doc = await store.get(job_id)
     if doc is None:
         raise JobNotFound(job_id)
     history = doc.get("history") or []
@@ -256,13 +243,20 @@ async def undo(job_id: str, event_id: str) -> Written:
         reason_code=event.get("from_reason_code"), reason=event.get("from_reason"), undo_of=event_id,
     )  # fmt: skip
     now = datetime.utcnow()
-    closed = {"$and": [_group_query(group_root(doc)), {"user_status": DUPLICATE, "history.cause": event_id}]}
+    closed = and_(
+        store.group_condition(group_root(doc)),
+        store.J.user_status == DUPLICATE,
+        store.has_event(store.E.cause == event_id),
+    )
     reopen = _system_event({"user_status": DUPLICATE}, "new", now, undo_of=event_id)
     try:
-        await jobs_collection.update_many(
-            closed, {"$set": {"user_status": PENDING, "status_updated_at": now}, "$push": {"history": reopen}}
+        await store.update_many(
+            await store.ids(closed),
+            {"user_status": PENDING, "status_updated_at": now},
+            where=store.J.user_status == DUPLICATE,
+            event=reopen,
         )
-    except PyMongoError:
+    except SQLAlchemyError:
         # The status is back already and this event is no longer the last one: say it loudly,
         # the copies have to be reopened by hand (their history names the cause).
         logger.error("Undo of %s on job %s: the copies it closed stay repeats", event_id, job_id, exc_info=True)
@@ -359,7 +353,7 @@ async def patch_status(job_id: str, change: StatusChange) -> Written:
     """PATCH /jobs/{id}/status. Raises InvalidParameter, JobNotFound, IsDuplicate, StatusConflict."""
     change.reason, change.evidence = _clean(change.reason), _clean(change.evidence)
     change.suggested_code = _clean(change.suggested_code)
-    doc = await jobs_collection.find_one({"_id": ObjectId(job_id)}) if ObjectId.is_valid(job_id) else None
+    doc = await store.get(job_id)
     if doc is None:
         raise JobNotFound(job_id)
     if public_status(doc) == change.status:

@@ -1,7 +1,7 @@
 """Telegram after a status change: edit the vacancy's message, send the change note.
 
 The write (services/job_searcher/status.py) marks the document `tg_sync: pending`; this loop runs
-every minute, and right away after a PATCH (`kick_status_sync`). The mark lives in MongoDB, so a
+every minute, and right away after a PATCH (`kick_status_sync`). The mark lives in the database, so a
 restart loses nothing. One loop is one sender: changes go out one by one, and a 429 is waited out.
 
 - The message is rendered from the document as it is now, not from the event: edits are
@@ -30,17 +30,18 @@ from aiogram.exceptions import (
     TelegramServerError,
 )
 from aiogram.types import InputRichMessage, ReplyParameters
-from pymongo.errors import PyMongoError
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.config import settings
-from src.db.client import jobs_collection
 from src.interfaces.tg.formatters.job import job_to_html, job_to_rich_html
 from src.interfaces.tg.formatters.job_status import job_status_line, status_change_html
 from src.interfaces.tg.keyboards.job import get_job_status_kb, get_job_undo_kb
 from src.interfaces.tg.notification.ai_notes import add_note
 from src.interfaces.tg.notification.review_summary import refresh_stale_summaries
+from src.services.job_searcher import store
 from src.services.job_searcher.container import Job
 from src.services.job_searcher.jobs_api import public_status
+from src.services.job_searcher.models import JobSync
 from src.services.job_searcher.status import LOUD
 
 logger = logging.getLogger("tg.notification.job_status")
@@ -90,11 +91,9 @@ async def _sync_vacancies(bot: Bot) -> int:
     settled, seen = 0, set()
     for _ in range(_ROUNDS):
         try:
-            due = {"tg_sync.state": "pending", "tg_sync.next_at": {"$lte": datetime.utcnow()}}
             # Only the ids: each one is read in full right before it is sent (sync_one).
-            found = jobs_collection.find(due, {"_id": 1}).sort([("tg_sync.next_at", 1)]).limit(_BATCH)
-            docs = [doc async for doc in found if doc["_id"] not in seen]
-        except PyMongoError as e:
+            docs = [{"_id": i} for i in await store.due_syncs(datetime.utcnow(), _BATCH) if i not in seen]
+        except SQLAlchemyError as e:
             logger.warning("Status sync: storage unavailable: %s", e)
             return settled
         if not docs:
@@ -106,7 +105,7 @@ async def _sync_vacancies(bot: Bot) -> int:
             except _FloodWait as e:
                 logger.warning("Status sync: Telegram asks to wait %s s; the rest goes later", e.seconds)
                 return settled
-            except PyMongoError as e:
+            except SQLAlchemyError as e:
                 logger.warning("Status sync: storage unavailable: %s", e)
                 return settled
     return settled
@@ -119,8 +118,8 @@ async def sync_one(bot: Bot, object_id: Any) -> int:
     for _ in range(_RETRY_AFTER_TRIES):
         # Read right before sending, in full: a button may have edited the message meanwhile, and
         # the message is rendered with its description.
-        doc = await jobs_collection.find_one({"_id": object_id, "tg_sync.state": "pending"})
-        if doc is None:
+        doc = await store.get(object_id)
+        if doc is None or (doc.get("tg_sync") or {}).get("state") != "pending":
             return 0
         sync = doc.get("tg_sync") or {}
         event_id = sync.get("event_id")
@@ -139,7 +138,7 @@ async def sync_one(bot: Bot, object_id: Any) -> int:
             logger.warning("Status sync of %s refused by Telegram: %s", doc["_id"], e)
             await _settle(doc, event_id, FAILED)
             return 1
-        except PyMongoError:
+        except SQLAlchemyError:
             raise
         except Exception:  # an odd document must not hold up every change behind it
             logger.warning("Status sync of %s broke", doc["_id"], exc_info=True)
@@ -232,6 +231,6 @@ async def _later(doc: dict[str, Any], event_id: str | None, pause: timedelta, at
 
 async def _update(doc: dict[str, Any], event_id: str | None, change: dict[str, Any]) -> None:
     try:
-        await jobs_collection.update_one({"_id": doc["_id"], "tg_sync.event_id": event_id}, {"$set": change})
-    except PyMongoError as e:  # sent already; at worst it is sent once more next minute
+        await store.update(doc["_id"], change, where=store.sync_is(store.eq(JobSync.event_id, event_id)))
+    except SQLAlchemyError as e:  # sent already; at worst it is sent once more next minute
         logger.warning("Status sync: could not store the state of %s: %s", doc["_id"], e)

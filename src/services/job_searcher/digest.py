@@ -25,9 +25,11 @@ from statistics import median
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from src.db.client import jobs_collection
-from src.services.job_searcher import cv
+from sqlalchemy import ColumnElement, and_
+
+from src.services.job_searcher import cv, store
 from src.services.job_searcher.extract import english_rank
+from src.services.job_searcher.store import J
 
 logger = logging.getLogger("job_searcher.digest")
 
@@ -64,9 +66,9 @@ CV_COMPARE_MIN = 20
 CV_REPLY_GAP = 0.1
 
 
-async def _find(query: dict[str, Any], strict: bool = False) -> list[dict[str, Any]]:
+async def _find(query: ColumnElement[bool], strict: bool = False) -> list[dict[str, Any]]:
     try:
-        return [doc async for doc in jobs_collection.find(query, {"description": 0})]
+        return await store.find(query, description=False)
     except Exception as e:
         if strict:
             raise
@@ -79,24 +81,19 @@ async def get_digest(days: int = 7, *, strict: bool = False) -> dict[str, Any]:
     gets the error instead, so a dead database is never read as an empty week."""
     now = datetime.utcnow()
     since, before = now - timedelta(days=days), now - timedelta(days=2 * days)
-    found_both = await _find({"found_at": {"$gte": before}, "user_status": {"$ne": "duplicate"}}, strict)
+    found_both = await _find(and_(J.found_at >= before, store.ne(J.user_status, "duplicate")), strict)
     found = [doc for doc in found_both if doc["found_at"] >= since]
     found_prev = [doc for doc in found_both if doc["found_at"] < since]
-    decided = await _find({"status_updated_at": {"$gte": before}, "user_status": {"$in": list(DECISIONS)}}, strict)
-    window = await _find(
-        {
-            "status_updated_at": {"$gte": now - timedelta(days=max(days, SEARCH_WINDOW_DAYS))},
-            "user_status": {"$in": list(DECISIONS)},
-        },
-        strict,
-    )
+    decided = await _find(and_(J.status_updated_at >= before, store.in_(J.user_status, DECISIONS)), strict)
+    window_start = now - timedelta(days=max(days, SEARCH_WINDOW_DAYS))
+    window = await _find(and_(J.status_updated_at >= window_start, store.in_(J.user_status, DECISIONS)), strict)
     # 👀 are a side list, looked through and answered only when one catches the eye (16.11.2026):
     # one left alone is not a vacancy waiting for an answer.
     pending = await _find(
-        {"moderation": {"$in": list(AWAITING)}, "user_status": "pending", "found_at": {"$gte": since}}, strict
+        and_(store.in_(J.moderation, AWAITING), J.user_status == "pending", J.found_at >= since), strict
     )
     # Every application ever: what each CV brought, the single one of before included.
-    applied_all = await _find({"user_status": "applied"}, strict)
+    applied_all = await _find(J.user_status == "applied", strict)
     this_week = [doc for doc in decided if doc["status_updated_at"] >= since]
     last_week = [doc for doc in decided if doc["status_updated_at"] < since]
     market = market_stats(found, found_prev)

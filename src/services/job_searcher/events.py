@@ -20,8 +20,10 @@ from statistics import median
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import and_
+
 from src.config import settings
-from src.db.client import jobs_collection
+from src.services.job_searcher import store
 from src.services.job_searcher.jobs_api import (
     SCOPE,
     STATUSES,
@@ -165,9 +167,10 @@ def event_groups(docs: list[dict[str, Any]], group_by: str, start: datetime, end
 
 async def event_funnel(filters: Filters, group_by: str) -> dict[str, Any]:
     # Any vacancy with an event since `from`: its later events tell how far an application got.
-    query = filters.query(default_tiers=False, by_found=False)
-    query["$and"].append({"history.occurred_at": {"$gte": filters.start}})
-    docs = [doc async for doc in jobs_collection.find(query, {"description": 0})]
+    query = and_(
+        filters.query(default_tiers=False, by_found=False), store.has_event(store.E.occurred_at >= filters.start)
+    )
+    docs = await store.find(query, description=False)
     groups = event_groups(docs, group_by, filters.start, filters.end)
     if not groups and group_by == "none":
         groups = [_finish(_empty("all", "all"))]

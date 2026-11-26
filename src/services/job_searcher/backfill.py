@@ -16,7 +16,7 @@ starts at `new` needs nothing: that is also what makes a second run a no-op.
 
 **silence.** Applications whose last event is older than NO_RESPONSE_DAYS become
 `no_response` (`actor: system`, `approximate: true`), with no Telegram at all. Then the marker
-`meta.jobs_backfill` is set, and the daily check (silence.py) starts working. With
+`jobs_backfill` (table kv) is set, and the daily check (silence.py) starts working. With
 `--skip-silence` neither happens — the real outcomes can be put in first (the AI from Gmail), and
 a later `--apply` (the restore then has nothing to do) runs the silence and switches the check on.
 
@@ -31,8 +31,11 @@ from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any
 
+from sqlalchemy import and_, true
+
 from src.config import settings
-from src.db.client import jobs_collection, meta_collection
+from src.db import sql
+from src.services.job_searcher import store
 from src.services.job_searcher.jobs_api import public_status
 from src.services.job_searcher.reasons import OTHER, REASONS
 from src.services.job_searcher.silence import BACKFILL_ID, is_silent, turn_down_silent
@@ -107,8 +110,8 @@ async def restore(apply: bool, now: datetime | None = None) -> Counter[str]:
     """Restore the missing events; the counts by what was restored (also in a dry run)."""
     now = now or datetime.utcnow()
     counts: Counter[str] = Counter()
-    query = {"$or": [{"user_status": {"$ne": "pending"}}, {"history": {"$ne": None}}]}
-    async for doc in jobs_collection.find(query, {"description": 0}):
+    query = store.ne(store.J.user_status, "pending") | store.has_event(true())
+    for doc in await store.find(query, description=False):
         events = restored_events(doc, now)
         if not events:
             continue
@@ -119,10 +122,7 @@ async def restore(apply: bool, now: datetime | None = None) -> Counter[str]:
             counts["date from found_at"] += 1
         if apply:
             # Only if the history is still what was read: a live write meanwhile wins, a rerun fixes it.
-            result = await jobs_collection.update_one(
-                {"_id": doc["_id"], "history": doc.get("history")}, {"$set": {"history": events + history}}
-            )
-            counts["written"] += result.modified_count
+            counts["written"] += await store.rewrite_history(doc["_id"], history, events + history)
     return counts
 
 
@@ -131,7 +131,8 @@ async def silent_count(now: datetime | None = None) -> int:
     now = now or datetime.utcnow()
     cutoff = now - timedelta(days=settings.no_response_days)
     turned = 0
-    async for doc in jobs_collection.find({"user_status": "applied", "outcome": None}, {"description": 0}):
+    query = and_(store.J.user_status == "applied", store.J.outcome.is_(None))
+    for doc in await store.find(query, description=False):
         events = restored_events(doc, now) + (doc.get("history") or [])
         turned += is_silent({**doc, "history": events}, cutoff)
     return turned
@@ -142,8 +143,8 @@ async def relabel(status: str, suggested: str, code: str, apply: bool) -> int:
     if code not in REASONS.get(status, {}) or code == OTHER:
         raise SystemExit(f"{code!r} is not a code of {status!r} in reasons.py: add it there first")
     changed = 0
-    query = {"history.suggested_code": suggested, "history.reason_code": OTHER}
-    async for doc in jobs_collection.find(query, {"description": 0}):
+    query = and_(store.has_event(store.E.suggested_code == suggested), store.has_event(store.E.reason_code == OTHER))
+    for doc in await store.find(query, description=False):
         history = doc["history"]
         hits = [
             e
@@ -156,10 +157,10 @@ async def relabel(status: str, suggested: str, code: str, apply: bool) -> int:
         if not apply:
             continue
         new_history = [{**e, "reason_code": code} if e in hits else e for e in history]
-        change: dict[str, Any] = {"history": new_history}
+        change: dict[str, Any] = {}
         if history[-1] in hits and doc.get("status_reason") == OTHER:
             change["status_reason"] = code
-        await jobs_collection.update_one({"_id": doc["_id"], "history": history}, {"$set": change})
+        await store.rewrite_history(doc["_id"], history, new_history, change)
     return changed
 
 
@@ -179,11 +180,7 @@ async def run(apply: bool, skip_silence: bool = False) -> None:
         print(f"written: {written.get('written', 0)} restored; silence not run, the daily check stays off")
         return
     turned = await turn_down_silent(settings.no_response_days, sync=False, approximate=True, now=now)
-    await meta_collection.update_one(
-        {"_id": BACKFILL_ID},
-        {"$set": {"done_at": now, "restored": written.get("written", 0), "no_response": turned}},
-        upsert=True,
-    )
+    await sql.kv_merge(BACKFILL_ID, {"done_at": now, "restored": written.get("written", 0), "no_response": turned})
     print(f"written: {written.get('written', 0)} restored, {turned} turned down; the daily check is on")
 
 
