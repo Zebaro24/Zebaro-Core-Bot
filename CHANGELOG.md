@@ -11,6 +11,8 @@ The `vX.Y.Z` tag is the only thing that deploys to the server.
 
 ## Unreleased
 
+## v0.29.0 — 2026-11-26
+
 - **The day's 👀 message opens with the search figures**: cards seen, new, filtered out and the main
   reasons why, sent — and a verdict: "✅ Площадки отвечают — … это рынок, а не поломка", a board whose
   pages showed no card (a broken parser), pages that did not open, or the boards skipped because the
