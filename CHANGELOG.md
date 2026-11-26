@@ -11,6 +11,11 @@ The `vX.Y.Z` tag is the only thing that deploys to the server.
 
 ## Unreleased
 
+- **PostgreSQL is here, empty for now.** A new container, `zebaro-core-pg` (PostgreSQL 17 with pgvector),
+  runs next to everything else; its data is in `data/postgres`, part of the one folder to back up. The
+  bot still keeps everything where it did — the move of the vacancies, the VPN traffic and the rest
+  into it comes with the next release, every value checked on the way.
+
 ## v0.26.0 — 2026-11-26
 
 - **The forum's release message carries the whole changelog section**, as a collapsible quote with
