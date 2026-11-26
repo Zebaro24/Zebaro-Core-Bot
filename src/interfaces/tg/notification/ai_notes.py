@@ -18,7 +18,6 @@ from typing import Any
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-from sqlalchemy.exc import SQLAlchemyError
 
 from src.config import settings
 from src.db import sql
@@ -75,7 +74,7 @@ async def add_note(bot: Bot, doc: dict[str, Any], event: dict[str, Any]) -> None
         )
         try:
             await _save(message.message_id, message.chat.id, [entry], now)
-        except SQLAlchemyError as e:  # sent already: a retry would send it twice; the next note starts anew
+        except sql.UNAVAILABLE as e:  # sent already: a retry would send it twice; the next note starts anew
             logger.warning("AI notes: could not store the new message %s: %s", message.message_id, e)
 
 

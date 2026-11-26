@@ -21,7 +21,7 @@ from alembic.config import Config
 from sqlalchemy import JSON, DateTime, String, event
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Dialect
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
@@ -89,6 +89,10 @@ class UtcDateTime(TypeDecorator):
             return value.astimezone(UTC).replace(tzinfo=None)
         return value
 
+
+# The database is down or unreachable: SQLAlchemy's errors, and the OSError asyncpg raises when it
+# cannot reach the server at all (a stopped container's name does not resolve: socket.gaierror).
+UNAVAILABLE: tuple[type[Exception], ...] = (SQLAlchemyError, OSError)
 
 _counter = int.from_bytes(os.urandom(3), "big")
 _process = os.urandom(5)

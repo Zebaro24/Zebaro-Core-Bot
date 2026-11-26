@@ -32,7 +32,7 @@ class JobRow(Base):
     id: Mapped[str] = mapped_column(ID, primary_key=True)
     # The vacancy as the board shows it.
     platform_name: Mapped[str | None] = mapped_column(String(40))
-    job_id: Mapped[str | None] = mapped_column(String(120))  # the board's own id
+    job_id: Mapped[str | None] = mapped_column(Text)  # the board's own id: whatever the board uses
     title: Mapped[str | None] = mapped_column(Text)
     company: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)

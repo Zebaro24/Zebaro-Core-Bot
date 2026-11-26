@@ -30,9 +30,9 @@ from aiogram.exceptions import (
     TelegramServerError,
 )
 from aiogram.types import InputRichMessage, ReplyParameters
-from sqlalchemy.exc import SQLAlchemyError
 
 from src.config import settings
+from src.db import sql
 from src.interfaces.tg.formatters.job import job_to_html, job_to_rich_html
 from src.interfaces.tg.formatters.job_status import job_status_line, status_change_html
 from src.interfaces.tg.keyboards.job import get_job_status_kb, get_job_undo_kb
@@ -93,7 +93,7 @@ async def _sync_vacancies(bot: Bot) -> int:
         try:
             # Only the ids: each one is read in full right before it is sent (sync_one).
             docs = [{"_id": i} for i in await store.due_syncs(datetime.utcnow(), _BATCH) if i not in seen]
-        except SQLAlchemyError as e:
+        except sql.UNAVAILABLE as e:
             logger.warning("Status sync: storage unavailable: %s", e)
             return settled
         if not docs:
@@ -105,7 +105,7 @@ async def _sync_vacancies(bot: Bot) -> int:
             except _FloodWait as e:
                 logger.warning("Status sync: Telegram asks to wait %s s; the rest goes later", e.seconds)
                 return settled
-            except SQLAlchemyError as e:
+            except sql.UNAVAILABLE as e:
                 logger.warning("Status sync: storage unavailable: %s", e)
                 return settled
     return settled
@@ -138,7 +138,7 @@ async def sync_one(bot: Bot, object_id: Any) -> int:
             logger.warning("Status sync of %s refused by Telegram: %s", doc["_id"], e)
             await _settle(doc, event_id, FAILED)
             return 1
-        except SQLAlchemyError:
+        except sql.UNAVAILABLE:
             raise
         except Exception:  # an odd document must not hold up every change behind it
             logger.warning("Status sync of %s broke", doc["_id"], exc_info=True)
@@ -232,5 +232,5 @@ async def _later(doc: dict[str, Any], event_id: str | None, pause: timedelta, at
 async def _update(doc: dict[str, Any], event_id: str | None, change: dict[str, Any]) -> None:
     try:
         await store.update(doc["_id"], change, where=store.sync_is(store.eq(JobSync.event_id, event_id)))
-    except SQLAlchemyError as e:  # sent already; at worst it is sent once more next minute
+    except sql.UNAVAILABLE as e:  # sent already; at worst it is sent once more next minute
         logger.warning("Status sync: could not store the state of %s: %s", doc["_id"], e)

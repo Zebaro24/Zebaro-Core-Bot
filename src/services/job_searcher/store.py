@@ -145,10 +145,8 @@ def _split(fields: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | Non
             similar = similar or {}
             similar[SIMILAR[key]] = value
         elif key == "tg_sync":
-            if value is None:
-                sync = {"__delete__": True}
-            else:
-                sync.update(value)
+            # The whole entry, as MongoDB's $set of the sub-document: what is not given is cleared.
+            sync = {"__delete__": True} if value is None else {**dict.fromkeys(SYNC_COLUMNS), **value}
         elif key.startswith("tg_sync."):
             sync[key.removeprefix("tg_sync.")] = value
         else:
@@ -235,10 +233,11 @@ async def count(where: ColumnElement[bool]) -> int:
 # --- writing -------------------------------------------------------------------------------------
 
 
-def statements(docs: Iterable[dict[str, Any]]) -> tuple[list[str], list[Any]]:
+def statements(docs: Iterable[dict[str, Any]]) -> tuple[list[str], list[tuple[Any, Any]]]:
     """The ids and the INSERT / UPDATE statements that store whole documents (`put`; the tests' helper
     runs the same ones on a plain connection). `_id` given or made; `group_id` is set after every row is
-    in, so parents need not come first."""
+    in, so parents need not come first. Each step is (statement, parameters): the rows go as an
+    executemany, never as one INSERT with every value in it — asyncpg takes 32767 parameters at most."""
     rows, events, syncs, groups = [], [], [], {}
     for doc in docs:
         doc = dict(doc)
@@ -253,12 +252,12 @@ def statements(docs: Iterable[dict[str, Any]]) -> tuple[list[str], list[Any]]:
             syncs.append({"job_id": job_id, **{name: sync.get(name) for name in SYNC_COLUMNS}})
     if not rows:
         return [], []
-    steps: list[Any] = [insert(J).values(rows)]
-    steps += [sql_update(J).where(J.id == i).values(group_id=g) for i, g in groups.items() if g is not None]
+    steps: list[tuple[Any, Any]] = [(insert(J), rows)]
+    steps += [(sql_update(J).where(J.id == i).values(group_id=g), None) for i, g in groups.items() if g is not None]
     if events:
-        steps.append(insert(E).values(events))
+        steps.append((insert(E), events))
     if syncs:
-        steps.append(insert(JobSync).values(syncs))
+        steps.append((insert(JobSync), syncs))
     return [r["id"] for r in rows], steps
 
 
@@ -268,10 +267,22 @@ async def put(docs: Iterable[dict[str, Any]]) -> list[str]:
     if not steps:
         return []
     async with sql.session() as s:
-        for step in steps:
-            await s.execute(step)
+        for statement, params in steps:
+            await s.execute(statement, params)
         await s.commit()
     return ids
+
+
+async def _lock(s: AsyncSession, job_id: str, where: ColumnElement[bool] | None) -> bool:
+    """Lock the vacancy's row, then check `where` — in that order: a condition on another table
+    (the outbox, the history) read before the lock could be stale by the time it is written on.
+    Each statement after the lock sees what was committed before it (READ COMMITTED). False — no
+    such vacancy, or `where` does not hold."""
+    if (await s.execute(select(J.id).where(J.id == job_id).with_for_update())).scalar() is None:
+        return False
+    if where is None:
+        return True
+    return (await s.execute(select(J.id).where(J.id == job_id, where))).scalar() is not None
 
 
 async def _apply(
@@ -282,15 +293,13 @@ async def _apply(
     event: dict[str, Any] | None,
 ) -> bool:
     values, similar, sync = _split(fields)
-    condition = J.id == job_id if where is None else and_(J.id == job_id, where)
+    if not await _lock(s, job_id, where):
+        return False
     if similar is not None:
         current = (await s.execute(select(J.seen_before).where(J.id == job_id))).scalar()
         values["seen_before"] = {**(current or {}), **similar}
-    # Always an UPDATE, even with nothing to set: it checks the condition and locks the row, so the
-    # event's position cannot be taken twice by writers racing on one vacancy.
-    result = await s.execute(sql_update(J).where(condition).values(values or {"id": J.id}))
-    if not result.rowcount:  # type: ignore[attr-defined]
-        return False
+    if values:
+        await s.execute(sql_update(J).where(J.id == job_id).values(values))
     if sync.pop("__delete__", False):
         await s.execute(delete(JobSync).where(JobSync.job_id == job_id))
     if sync:
@@ -333,7 +342,7 @@ async def update_many(
     """`update` for several vacancies in one transaction; how many changed."""
     changed = 0
     async with sql.session() as s:
-        for job_id in job_ids:
+        for job_id in sorted(set(job_ids)):  # one order of locks for every writer: no deadlock
             changed += await _apply(s, job_id, fields, where, event)
         await s.commit()
     return changed
@@ -369,6 +378,8 @@ async def rewrite_history(
 ) -> bool:
     """Replace the whole history (and set `fields`) if it is still `expected` — the backfill's CAS."""
     async with sql.session() as s:
+        if not await _lock(s, job_id, None):  # before reading: a status write waits, it cannot slip in
+            return False
         current = (await s.scalars(select(E).where(E.job_id == job_id).order_by(E.position))).all()
         if [event_doc(e) for e in current] != [event_doc_like(e) for e in expected]:
             return False

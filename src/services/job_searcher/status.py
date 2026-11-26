@@ -18,8 +18,8 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import and_
-from sqlalchemy.exc import SQLAlchemyError
 
+from src.db import sql
 from src.services.job_searcher import cv, store
 from src.services.job_searcher.dedup import BLOCKED, DECIDED, DUPLICATE, PENDING, group_root
 from src.services.job_searcher.jobs_api import (
@@ -256,7 +256,7 @@ async def undo(job_id: str, event_id: str) -> Written:
             where=store.J.user_status == DUPLICATE,
             event=reopen,
         )
-    except SQLAlchemyError:
+    except sql.UNAVAILABLE:
         # The status is back already and this event is no longer the last one: say it loudly,
         # the copies have to be reopened by hand (their history names the cause).
         logger.error("Undo of %s on job %s: the copies it closed stay repeats", event_id, job_id, exc_info=True)

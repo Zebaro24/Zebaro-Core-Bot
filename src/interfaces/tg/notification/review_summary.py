@@ -18,7 +18,6 @@ from typing import Any
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramRetryAfter
 from aiogram.types import InlineKeyboardMarkup, InputRichMessage
-from sqlalchemy.exc import SQLAlchemyError
 
 from src.config import settings
 from src.db import sql
@@ -80,7 +79,7 @@ async def add_to_summary(bot: Bot, ids: list[str]) -> int:
         try:
             state = await _state(day) or {}
             known = True
-        except SQLAlchemyError as e:
+        except sql.UNAVAILABLE as e:
             # Sent as a message of its own and not stored: the day's stored messages stay tracked.
             logger.warning("Review summary: storage unavailable, sending the run's summary apart: %s", e)
             state, known = {}, False
@@ -90,7 +89,7 @@ async def add_to_summary(bot: Bot, ids: list[str]) -> int:
             await _save(day, parts)
     try:
         await store.update_where(store.J.id.in_(ids), {"review_day": day})
-    except SQLAlchemyError as e:  # the summary is out; only its later status marks are lost
+    except sql.UNAVAILABLE as e:  # the summary is out; only its later status marks are lost
         logger.warning("Review summary: could not mark the vacancies of %s: %s", day, e)
     return len(set(ids) & shown)
 
@@ -103,7 +102,7 @@ async def refresh_stale_summaries(bot: Bot) -> int:
             return 0
         # Cleared before the render reads the statuses: a write landing meanwhile marks it again.
         await store.update_where(store.J.id.in_([doc["_id"] for doc in stale]), {"review_stale": None})
-    except SQLAlchemyError as e:
+    except sql.UNAVAILABLE as e:
         logger.warning("Review summary: storage unavailable: %s", e)
         return 0
     days = sorted({doc["review_day"] for doc in stale if doc.get("review_day")})
@@ -111,7 +110,7 @@ async def refresh_stale_summaries(bot: Bot) -> int:
         for day in days:
             try:
                 state = await _state(day)
-            except SQLAlchemyError as e:
+            except sql.UNAVAILABLE as e:
                 logger.warning("Review summary: storage unavailable: %s", e)
                 return 0
             if state and state.get("parts"):
@@ -128,7 +127,7 @@ async def _save(day: str, parts: list[dict[str, Any]]) -> None:
             else:
                 row.parts = list(parts)
             await s.commit()
-    except SQLAlchemyError as e:  # tomorrow starts anew anyway; today's next run sends a new message
+    except sql.UNAVAILABLE as e:  # tomorrow starts anew anyway; today's next run sends a new message
         logger.warning("Review summary: could not store the messages of %s: %s", day, e)
 
 
@@ -136,7 +135,7 @@ async def _docs(parts: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     ids = [job_id for part in parts for job_id in part["ids"]]
     try:
         return {doc["_id"]: doc for doc in await store.find(store.J.id.in_(ids), description=False)}
-    except SQLAlchemyError as e:
+    except sql.UNAVAILABLE as e:
         logger.warning("Review summary: could not read the vacancies: %s", e)
         return {}
 

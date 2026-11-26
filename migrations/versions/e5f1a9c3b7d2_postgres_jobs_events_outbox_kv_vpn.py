@@ -33,7 +33,7 @@ def upgrade() -> None:
     op.create_table('jobs',
     sa.Column('id', sa.String(length=24), nullable=False),
     sa.Column('platform_name', sa.String(length=40), nullable=True),
-    sa.Column('job_id', sa.String(length=120), nullable=True),
+    sa.Column('job_id', sa.Text(), nullable=True),
     sa.Column('title', sa.Text(), nullable=True),
     sa.Column('company', sa.Text(), nullable=True),
     sa.Column('description', sa.Text(), nullable=True),

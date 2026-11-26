@@ -64,8 +64,8 @@ class SqlJobs:
         with self._sync.begin() as c:
             for table in (JobSync, JobEvent, JobRow):
                 c.execute(delete(table))
-            for step in steps:
-                c.execute(step)
+            for statement, params in steps:
+                c.execute(statement, params)
         self._pushed = copy.deepcopy(self._docs)
         self._pull()
 

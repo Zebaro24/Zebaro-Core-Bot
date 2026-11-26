@@ -97,3 +97,64 @@ async def test_a_click_counts_from_nothing(sql_db):
     assert (await store.get(A) or {})["click_count"] == 2
     assert await store.increment("f" * 24, "click_count") is None
     assert await store.increment("not-an-id", "click_count") is None
+
+
+@pytest.mark.asyncio
+async def test_put_writes_the_plain_columns_a_raw_select_reads(sql_db):
+    # Not through to_doc: a field the mapping dropped or renamed both ways would pass a round trip.
+    from sqlalchemy import select
+
+    await store.put([_doc(A, company="Acme", user_status="applied", similar_to=B, tg_sync={"state": "pending"})])
+
+    async with sql_db.session() as s:
+        row = (await s.execute(select(J.company, J.user_status, J.seen_before, J.found_at).where(J.id == A))).one()
+        sync = (await s.execute(select(store.JobSync.state).where(store.JobSync.job_id == A))).scalar()
+    assert tuple(row) == ("Acme", "applied", {"to": B}, T0) and sync == "pending"
+
+
+def _postgres_only(sql_db) -> None:
+    if sql_db.get_engine().dialect.name != "postgresql":
+        pytest.skip("PostgreSQL behaviour (TEST_DATABASE_URL)")
+
+
+@pytest.mark.asyncio
+async def test_a_big_run_is_stored_whole(sql_db):
+    # One INSERT with every value in it would pass asyncpg's 32767 parameters at ~700 vacancies.
+    docs = [_doc(f"{i:024x}", warnings=[], cv_match=["Python"]) for i in range(1500)]
+
+    assert len(await store.put(docs)) == 1500
+    assert await store.count(J.title == "Python") == 1500
+
+
+@pytest.mark.asyncio
+async def test_two_writers_on_one_vacancy_one_wins_and_the_events_keep_their_places(sql_db):
+    import asyncio
+
+    _postgres_only(sql_db)
+    await store.put([_doc(A, user_status="pending", history=[{"id": "e0", "from": "new", "to": "new"}])])
+
+    async def write(n: int) -> bool:
+        return await store.update(A, {"user_status": f"s{n}"}, where=J.user_status == "pending",
+                                  event={"id": f"e{n}", "from": "new", "to": f"s{n}"})  # fmt: skip
+
+    results = await asyncio.gather(*(write(n) for n in range(1, 6)))
+    plain = await asyncio.gather(*(store.update(A, {}, event={"id": f"x{n}"}) for n in range(5)))
+
+    doc = await store.get(A)
+    assert results.count(True) == 1 and all(plain)
+    assert doc is not None and len(doc["history"]) == 7  # e0, the one winner, five plain ones
+
+
+@pytest.mark.asyncio
+async def test_the_outbox_check_reads_the_entry_as_it_is_now(sql_db):
+    # A newer change replaced the outbox entry: settling the old event must not mark the new one done.
+    await store.put([_doc(A, tg_sync={"state": "pending", "event_id": "old", "notify": False, "attempts": 0})])
+    await store.update(A, {"tg_sync": {"state": "pending", "event_id": "new", "notify": True, "attempts": 0}})
+
+    settled = await store.update(
+        A, {"tg_sync.state": "done"}, where=store.sync_is(store.eq(store.JobSync.event_id, "old"))
+    )
+
+    doc = await store.get(A)
+    assert not settled and doc is not None and doc["tg_sync"]["state"] == "pending"
+    assert doc["tg_sync"]["settled_at"] is None  # replaced whole, nothing carried over
