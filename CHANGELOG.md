@@ -11,6 +11,15 @@ The `vX.Y.Z` tag is the only thing that deploys to the server.
 
 ## Unreleased
 
+- **Everything the bot keeps is in PostgreSQL now** — the vacancies with their whole history, the
+  Telegram status sync, the 👀 summaries and AI notes, the VPN traffic, Spotify, GitHub. Moved with every
+  value checked against the old store: 2888 vacancies, 906 status events, nothing lost. The vacancy ids
+  stay the same, so old buttons and `/jobs/r/…` links keep working, and the Jobs API answers as before.
+- **MongoDB is no longer used.** Its container stays for one more release, untouched, in case of a
+  rollback. `/mongo` is gone with it.
+- **The database being down is handled everywhere**, not only in the Jobs API: Telegram summaries, AI
+  notes and the status sync wait and retry instead of failing.
+
 ## v0.27.0 — 2026-11-26
 
 - **PostgreSQL is here, empty for now.** A new container, `zebaro-core-pg` (PostgreSQL 17 with pgvector),
